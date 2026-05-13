@@ -5,32 +5,32 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-pub struct RustProvider {
+pub struct CSharpProvider {
     query: Query,
 }
 
-impl RustProvider {
+impl CSharpProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_c_sharp::LANGUAGE.into();
         let query_source = include_str!("queries.scm");
         let query = Query::new(&language, query_source)?;
         Ok(Self { query })
     }
 }
 
-impl LanguageProvider for RustProvider {
+impl LanguageProvider for CSharpProvider {
     fn name(&self) -> &'static str {
-        "rust"
+        "c_sharp"
     }
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_c_sharp::LANGUAGE.into();
         let mut parser = Parser::new();
         parser.set_language(&language)?;
 
         let tree = parser
             .parse(source, None)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse rust file"))?;
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse C# file"))?;
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);

@@ -5,32 +5,32 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-pub struct RustProvider {
+pub struct DartProvider {
     query: Query,
 }
 
-impl RustProvider {
+impl DartProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_dart::LANGUAGE.into();
         let query_source = include_str!("queries.scm");
         let query = Query::new(&language, query_source)?;
         Ok(Self { query })
     }
 }
 
-impl LanguageProvider for RustProvider {
+impl LanguageProvider for DartProvider {
     fn name(&self) -> &'static str {
-        "rust"
+        "dart"
     }
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_dart::LANGUAGE.into();
         let mut parser = Parser::new();
         parser.set_language(&language)?;
 
         let tree = parser
             .parse(source, None)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse rust file"))?;
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse dart file"))?;
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
@@ -107,12 +107,15 @@ impl LanguageProvider for RustProvider {
                     (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
                 {
                     imports.push(RawImport {
-                        imported_name: name_str.to_string(),
-                        source: src_str.to_string(),
+                        imported_name: name_str.trim_matches('\'').trim_matches('"').to_string(),
+                        source: src_str.trim_matches('\'').trim_matches('"').to_string(),
                     });
                 }
             }
         }
+
+        // Deduplicate simple identical node extractions
+        nodes.dedup_by(|a, b| a.name == b.name && a.span == b.span && a.kind == b.kind);
 
         Ok(LocalGraph {
             file_path: path.to_path_buf(),

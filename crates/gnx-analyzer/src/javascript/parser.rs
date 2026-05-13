@@ -5,32 +5,32 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-pub struct RustProvider {
+pub struct JavaScriptProvider {
     query: Query,
 }
 
-impl RustProvider {
+impl JavaScriptProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_javascript::LANGUAGE.into();
         let query_source = include_str!("queries.scm");
         let query = Query::new(&language, query_source)?;
         Ok(Self { query })
     }
 }
 
-impl LanguageProvider for RustProvider {
+impl LanguageProvider for JavaScriptProvider {
     fn name(&self) -> &'static str {
-        "rust"
+        "javascript"
     }
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_javascript::LANGUAGE.into();
         let mut parser = Parser::new();
         parser.set_language(&language)?;
 
         let tree = parser
             .parse(source, None)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse rust file"))?;
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse javascript file"))?;
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
@@ -41,14 +41,12 @@ impl LanguageProvider for RustProvider {
         let idx_name_function = self.query.capture_index_for_name("name.function");
         let idx_name_class = self.query.capture_index_for_name("name.class");
         let idx_name_method = self.query.capture_index_for_name("name.method");
-        let idx_name_interface = self.query.capture_index_for_name("name.interface");
         let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
         let idx_function = self.query.capture_index_for_name("function");
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
-        let idx_interface = self.query.capture_index_for_name("interface");
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -69,9 +67,6 @@ impl LanguageProvider for RustProvider {
                 } else if Some(cap_idx) == idx_name_method {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
-                } else if Some(cap_idx) == idx_name_interface {
-                    name_node = Some(cap.node);
-                    kind = Some(NodeKind::Interface);
                 } else if Some(cap_idx) == idx_import_name {
                     import_name = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_source {
@@ -79,7 +74,6 @@ impl LanguageProvider for RustProvider {
                 } else if Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_method
-                    || Some(cap_idx) == idx_interface
                 {
                     root_span_node = Some(cap.node);
                 }

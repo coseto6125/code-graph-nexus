@@ -1,7 +1,16 @@
 // gnx-analyzer
-pub mod typescript;
 pub mod go;
+pub mod java;
+pub mod python;
 pub mod resolution;
 pub mod rust;
-pub mod python;
-pub mod java;
+pub mod typescript;
+pub mod javascript;
+pub mod php;
+pub mod ruby;
+pub mod kotlin;
+pub mod c_sharp;
+pub mod c;
+pub mod cpp;
+pub mod swift;
+pub mod dart;

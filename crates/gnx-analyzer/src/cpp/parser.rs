@@ -5,32 +5,32 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-pub struct RustProvider {
+pub struct CppProvider {
     query: Query,
 }
 
-impl RustProvider {
+impl CppProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_cpp::LANGUAGE.into();
         let query_source = include_str!("queries.scm");
         let query = Query::new(&language, query_source)?;
         Ok(Self { query })
     }
 }
 
-impl LanguageProvider for RustProvider {
+impl LanguageProvider for CppProvider {
     fn name(&self) -> &'static str {
-        "rust"
+        "cpp"
     }
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
-        let language = tree_sitter_rust::LANGUAGE.into();
+        let language = tree_sitter_cpp::LANGUAGE.into();
         let mut parser = Parser::new();
         parser.set_language(&language)?;
 
         let tree = parser
             .parse(source, None)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse rust file"))?;
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse cpp file"))?;
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
@@ -49,6 +49,7 @@ impl LanguageProvider for RustProvider {
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
         let idx_interface = self.query.capture_index_for_name("interface");
+        let idx_import = self.query.capture_index_for_name("import");
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -57,31 +58,34 @@ impl LanguageProvider for RustProvider {
 
             let mut import_name = None;
             let mut import_src = None;
+            let mut is_import = false;
 
             for cap in m.captures {
-                let cap_idx = cap.index;
-                if Some(cap_idx) == idx_name_function {
+                let cap_idx = Some(cap.index);
+                if cap_idx == idx_name_function {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Function);
-                } else if Some(cap_idx) == idx_name_class {
+                } else if cap_idx == idx_name_class {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Class);
-                } else if Some(cap_idx) == idx_name_method {
+                } else if cap_idx == idx_name_method {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
-                } else if Some(cap_idx) == idx_name_interface {
+                } else if cap_idx == idx_name_interface {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Interface);
-                } else if Some(cap_idx) == idx_import_name {
+                } else if cap_idx == idx_import_name {
                     import_name = Some(cap.node);
-                } else if Some(cap_idx) == idx_import_source {
+                } else if cap_idx == idx_import_source {
                     import_src = Some(cap.node);
-                } else if Some(cap_idx) == idx_function
-                    || Some(cap_idx) == idx_class
-                    || Some(cap_idx) == idx_method
-                    || Some(cap_idx) == idx_interface
+                } else if cap_idx == idx_function
+                    || cap_idx == idx_class
+                    || cap_idx == idx_method
+                    || cap_idx == idx_interface
                 {
                     root_span_node = Some(cap.node);
+                } else if cap_idx == idx_import {
+                    is_import = true;
                 }
             }
 
@@ -102,17 +106,43 @@ impl LanguageProvider for RustProvider {
                 }
             }
 
-            if let (Some(i_name), Some(i_src)) = (import_name, import_src) {
-                if let (Ok(name_str), Ok(src_str)) =
-                    (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
-                {
-                    imports.push(RawImport {
-                        imported_name: name_str.to_string(),
-                        source: src_str.to_string(),
-                    });
+            if import_src.is_some() || is_import {
+                let final_import_name = import_name.or(import_src);
+                if let (Some(i_name), Some(i_src)) = (final_import_name, import_src) {
+                    if let (Ok(name_str), Ok(src_str)) =
+                        (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
+                    {
+                        let mut name_s = name_str.to_string();
+                        if name_s.starts_with('<') && name_s.ends_with('>') {
+                            name_s = name_s[1..name_s.len() - 1].to_string();
+                        } else if name_s.starts_with('"') && name_s.ends_with('"') {
+                            name_s = name_s[1..name_s.len() - 1].to_string();
+                        }
+
+                        let mut src_s = src_str.to_string();
+                        if src_s.starts_with('<') && src_s.ends_with('>') {
+                            src_s = src_s[1..src_s.len() - 1].to_string();
+                        } else if src_s.starts_with('"') && src_s.ends_with('"') {
+                            src_s = src_s[1..src_s.len() - 1].to_string();
+                        }
+
+                        imports.push(RawImport {
+                            imported_name: name_s,
+                            source: src_s,
+                        });
+                    }
                 }
             }
         }
+
+        // Deduplicate imports natively using dict to keep uniqueness but keep order (if necessary),
+        // or just sort and dedup.
+        imports.sort_by(|a, b| {
+            a.imported_name
+                .cmp(&b.imported_name)
+                .then(a.source.cmp(&b.source))
+        });
+        imports.dedup_by(|a, b| a.imported_name == b.imported_name && a.source == b.source);
 
         Ok(LocalGraph {
             file_path: path.to_path_buf(),
