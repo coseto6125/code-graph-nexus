@@ -2,5 +2,6 @@
 members = [
     "crates/gnx-core",
     "crates/gnx-analyzer",
+    "crates/gnx-cli",
 ]
 resolver = "2"
