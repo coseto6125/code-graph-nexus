@@ -14,7 +14,7 @@ pub struct ContextArgs {
     pub repo: Option<String>,
 
     /// Output format
-    #[arg(long)]
+    #[arg(long, default_value = "toon")]
     pub format: Option<String>,
 }
 
