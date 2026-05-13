@@ -7,6 +7,13 @@ pub struct QueryArgs {
     /// Query string to match against symbol names
     #[arg(long)]
     pub query: String,
+
+    #[arg(long)]
+    pub repo: Option<String>,
+
+    /// Output format
+    #[arg(long)]
+    pub format: Option<String>,
 }
 
 pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
@@ -35,9 +42,13 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
         "results": results,
     });
 
-    match serde_json::to_string(&json) {
-        Ok(s) => println!("{}", s),
-        Err(e) => return Err(e.to_string()),
+    if args.format.as_deref() == Some("toon") {
+        let bytes = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
+        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
+        println!("{}", output);
+    } else {
+        let s = serde_json::to_string(&json).map_err(|e| e.to_string())?;
+        println!("{}", s);
     }
     
     Ok(())

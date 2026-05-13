@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-import subprocess
-import json
 import argparse
-import sys
 import difflib
+import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
+
 def normalize_json(data: Any) -> Any:
-    """Recursively normalizes JSON data for comparison.
+    """
+    Recursively normalizes JSON data for comparison.
     Sorts lists of dictionaries based on a stable string representation
     if they contain unordered graph edges or nodes.
     """
@@ -23,11 +25,29 @@ def normalize_json(data: Any) -> Any:
     else:
         return data
 
+
 def run_command(cmd: list[str], cwd: Path | None = None) -> Any:
     """Runs a CLI command and parses the JSON output."""
     try:
         result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True)
-        return json.loads(result.stdout)
+        # GitNexus sometimes appends --- Next: ... to the output. Extract just the JSON block.
+        output = result.stdout.strip()
+        if "---" in output:
+            output = output.split("---")[0].strip()
+
+        # If there are preamble messages, find the first '{' or '['
+        start_idx = output.find("{")
+        list_start_idx = output.find("[")
+
+        if start_idx == -1 and list_start_idx == -1:
+            raise json.JSONDecodeError("No JSON object found", output, 0)
+
+        if start_idx != -1 and list_start_idx != -1:
+            actual_start = min(start_idx, list_start_idx)
+        else:
+            actual_start = max(start_idx, list_start_idx)
+
+        return json.loads(output[actual_start:])
     except subprocess.CalledProcessError as e:
         print(f"Command failed: {' '.join(cmd)}")
         print(f"Error output:\n{e.stderr}\n{e.stdout}")
@@ -37,13 +57,15 @@ def run_command(cmd: list[str], cwd: Path | None = None) -> Any:
         print(f"Output was:\n{result.stdout}")
         sys.exit(1)
 
+
 def print_diff(dict1: Any, dict2: Any, name1: str, name2: str) -> None:
     """Prints a unified diff of two JSON objects."""
     str1 = json.dumps(dict1, indent=2, sort_keys=True).splitlines(keepends=True)
     str2 = json.dumps(dict2, indent=2, sort_keys=True).splitlines(keepends=True)
-    
+
     diff = difflib.unified_diff(str1, str2, fromfile=name1, tofile=name2)
     sys.stdout.writelines(diff)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run shadow parity validation between gnx and gnx-rs")
@@ -68,17 +90,17 @@ def main() -> None:
 
     print("Running original gnx analyze...")
     subprocess.run(gnx_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
-    
+
     print("Running new gnx-rs analyze...")
     subprocess.run(gnx_rs_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
 
     print(f"\n[Context Phase: {symbol}]")
     gnx_context_cmd = ["gnx", "context", "--name", symbol, "--repo", str(fixture_path), "--format", "json"]
     gnx_rs_context_cmd = ["cargo", "run", "--bin", "gnx-rs", "--", "context", "--name", symbol, "--repo", str(fixture_path), "--format", "json"]
-    
+
     print("Running original gnx context...")
     gnx_output = run_command(gnx_context_cmd, cwd=workspace_root)
-    
+
     print("Running new gnx-rs context...")
     gnx_rs_output = run_command(gnx_rs_context_cmd, cwd=workspace_root)
 
@@ -91,6 +113,7 @@ def main() -> None:
         print("\n❌ FAILURE: Mismatch detected between gnx and gnx-rs outputs.")
         print_diff(normalized_gnx, normalized_gnx_rs, "gnx (original)", "gnx-rs (new)")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

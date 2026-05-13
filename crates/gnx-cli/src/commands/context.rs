@@ -8,6 +8,14 @@ pub struct ContextArgs {
     /// Name of the symbol to query
     #[arg(long)]
     pub name: String,
+
+    /// Repository path
+    #[arg(long)]
+    pub repo: Option<String>,
+
+    /// Output format
+    #[arg(long)]
+    pub format: Option<String>,
 }
 
 pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
@@ -116,19 +124,17 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
             "uid": source_node.uid.resolve(&graph.string_pool),
             "name": source_node.name.resolve(&graph.string_pool),
             "filePath": source_file.path.resolve(&graph.string_pool),
-            "kind": kind_to_str(&source_node.kind)
         });
         incoming.entry(rel_str).or_default().push(entry);
     }
 
-    let result = serde_json::json!({
+    let json = serde_json::json!({
         "status": "found",
         "symbol": {
             "uid": node.uid.resolve(&graph.string_pool),
             "name": node.name.resolve(&graph.string_pool),
             "kind": kind_to_str(&node.kind),
             "filePath": file_node.path.resolve(&graph.string_pool),
-            "startLine": node.span.0.to_native(),
             "endLine": node.span.2.to_native(),
         },
         "incoming": incoming,
@@ -136,9 +142,13 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
         "processes": []
     });
 
-    match serde_json::to_string(&result) {
-        Ok(s) => println!("{}", s),
-        Err(e) => return Err(e.to_string()),
+    if args.format.as_deref() == Some("toon") {
+        let bytes = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
+        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
+        println!("{}", output);
+    } else {
+        let s = serde_json::to_string(&json).map_err(|e| e.to_string())?;
+        println!("{}", s);
     }
     Ok(())
 }
