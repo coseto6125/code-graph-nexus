@@ -23,6 +23,8 @@ enum Commands {
     Context(commands::context::ContextArgs),
     /// Search for symbols by name
     Query(commands::query::QueryArgs),
+    /// Impact blast radius traversal
+    Impact(commands::impact::ImpactArgs),
 }
 
 fn main() {
@@ -41,6 +43,7 @@ fn main() {
     let result = match cli.command {
         Commands::Context(args) => commands::context::run(args, &engine),
         Commands::Query(args) => commands::query::run(args, &engine),
+        Commands::Impact(args) => commands::impact::run(args, &engine),
     };
 
     if let Err(e) = result {
