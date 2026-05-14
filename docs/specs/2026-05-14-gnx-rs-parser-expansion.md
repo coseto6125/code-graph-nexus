@@ -1,4 +1,4 @@
-# gnx-rs Parser Expansion — Fill gaps + add new languages
+# graph-nexus Parser Expansion — Fill gaps + add new languages
 
 **Goal:** Close the 20 missing-feature cells in the current 14-language parity matrix and add 6+ new languages (starting with Lua), using parallel Sonnet subagents.
 
@@ -10,7 +10,7 @@
 
 ## 1. Background
 
-All language support in `gnx-rs` is implemented via `tree-sitter` + a `queries.scm` capture file + a thin Rust parser at `crates/gnx-analyzer/src/<lang>/parser.rs`. Parser files range from 127 lines (C, the simplest) to 254 lines (TypeScript, the most complete, which includes route-handling and a dedup loop the other parsers lack — when templating a new language, prefer C or Rust as the base, not TS, to avoid copying TS-specific logic). The depth of language support is roughly proportional to the size of `queries.scm`:
+All language support in `graph-nexus` is implemented via `tree-sitter` + a `queries.scm` capture file + a thin Rust parser at `crates/graph-nexus-analyzer/src/<lang>/parser.rs`. Parser files range from 127 lines (C, the simplest) to 254 lines (TypeScript, the most complete, which includes route-handling and a dedup loop the other parsers lack — when templating a new language, prefer C or Rust as the base, not TS, to avoid copying TS-specific logic). The depth of language support is roughly proportional to the size of `queries.scm`:
 
 | Lang | queries.scm | Missing cells |
 |---|---:|---:|
@@ -80,7 +80,7 @@ Tree-sitter query writing is high-template, low-novel-reasoning work: Sonnet is 
 Each subagent is a fresh context — it must re-read sample parsers, `queries.scm` templates, and the target grammar's `node-types.json`. To avoid 26× duplicated reads:
 
 -   **Shared brief**: write a single `docs/plans/parser-worker-brief.md` containing (a) the parser template anatomy, (b) capture naming conventions, (c) verification commands. Each subagent's prompt opens with "read this brief, then [task-specific instructions]" — the brief's content becomes a prompt-cache hit if subagents fire within the 5-minute window.
--   **No shared mutable state during fan-out**: each subagent works on one `crates/gnx-analyzer/src/<lang>/queries.scm` and nothing else. The Config wirings are batched in a separate serial phase (§3.3 Phase 2) so they all touch `config_detector` cleanly.
+-   **No shared mutable state during fan-out**: each subagent works on one `crates/graph-nexus-analyzer/src/<lang>/queries.scm` and nothing else. The Config wirings are batched in a separate serial phase (§3.3 Phase 2) so they all touch `config_detector` cleanly.
 
 ### 3.3 Batch table
 
@@ -99,14 +99,14 @@ Total wall-clock: **~2.5 days** with parallelization vs ~6 days serial. Total es
 
 The shared `docs/plans/parser-worker-brief.md` (to be written in Phase 0) must include:
 
-0.  **Phase 0 hard prerequisite — Swift capture-name alignment**: `crates/gnx-analyzer/src/swift/queries.scm` currently uses `@name.class` / `@name.function`, but `swift/parser.rs` calls `capture_index_for_name("class.name")` etc. (the standard convention used by the other 13 langs). The mismatch means Swift currently produces empty parse output silently — no error, no symbols. **Fix this before any Swift gap-fill worker runs**, otherwise the workers will spin on queries that look correct but resolve to empty captures. Standardize on `@class.name` / `@function.name` to match the other parsers.
+0.  **Phase 0 hard prerequisite — Swift capture-name alignment**: `crates/graph-nexus-analyzer/src/swift/queries.scm` currently uses `@name.class` / `@name.function`, but `swift/parser.rs` calls `capture_index_for_name("class.name")` etc. (the standard convention used by the other 13 langs). The mismatch means Swift currently produces empty parse output silently — no error, no symbols. **Fix this before any Swift gap-fill worker runs**, otherwise the workers will spin on queries that look correct but resolve to empty captures. Standardize on `@class.name` / `@function.name` to match the other parsers.
 1.  **Anatomy of a parser**: walk through `c/parser.rs` (smallest reference, 127 lines) — `Provider::new` loads grammar + query, `parse_file` runs query, captures iterated, `RawNode` / `RawImport` emitted into `LocalGraph`.
 2.  **Anatomy of `queries.scm`**: capture naming convention (`@function.name`, `@function`, `@import.source`, `@import`, `@const.name`, `@struct.name`, `@struct`, `@export`, `@heritage`, `@type`, `@decorator`). Reference: TS as the gold standard.
 3.  **Adding a new capture name**: corresponding handler in `parser.rs` `capture_index_for_name(...)` block + `RawNode` field mapping.
 4.  **Verification recipe**:
     ```bash
-    cargo build -p gnx-analyzer
-    cargo test -p gnx-analyzer --test ast_test   # or per-lang fixture
+    cargo build -p graph-nexus-analyzer
+    cargo test -p graph-nexus-analyzer --test ast_test   # or per-lang fixture
     gnx analyze --repo tests/parity/fixtures/<lang>/sample_project
     gnx context --repo tests/parity/fixtures/<lang>/sample_project --name <known_symbol>
     ```
@@ -118,14 +118,14 @@ The shared `docs/plans/parser-worker-brief.md` (to be written in Phase 0) must i
 ### 5.1 Dependencies
 
 ```toml
-# crates/gnx-analyzer/Cargo.toml
+# crates/graph-nexus-analyzer/Cargo.toml
 tree-sitter-lua = "0.4"  # pin once selected
 ```
 
 ### 5.2 Files to create
 
 ```
-crates/gnx-analyzer/src/lua/
+crates/graph-nexus-analyzer/src/lua/
 ├── mod.rs           # pub mod parser;
 ├── parser.rs        # ~180 lines, copy c/parser.rs and adapt
 └── queries.scm      # ~70 lines, draft below
@@ -179,7 +179,7 @@ crates/gnx-analyzer/src/lua/
 
 ### 5.4 Parser registration
 
-Two sites in `crates/gnx-cli/src/commands/analyze.rs` must be updated together:
+Two sites in `crates/graph-nexus-cli/src/commands/analyze.rs` must be updated together:
 
 ```rust
 // 1. Extension routing — extend the `match ext` arm that picks a provider:
@@ -190,13 +190,13 @@ match ext {
 
 // 2. Provider initialization — add a register_provider call alongside the others:
 pipeline.register_provider(Box::new(
-    gnx_analyzer::lua::parser::LuaProvider::new()?
+    graph_nexus_analyzer::lua::parser::LuaProvider::new()?
 ));
 ```
 
 Both edits live in the same file; do them together to avoid the common pitfall of registering the provider but forgetting the extension routing (the provider then silently never runs on `.lua` files).
 
-Also: `crates/gnx-analyzer/src/lib.rs` needs `pub mod lua;`.
+Also: `crates/graph-nexus-analyzer/src/lib.rs` needs `pub mod lua;`.
 
 ### 5.5 Fixture
 
@@ -277,7 +277,7 @@ Before Phase 1 fan-out, verify:
 -   **Framework-specific extraction** (React component graph, Spring beans, Rails routes) — separate spec; can layer on once base parsers are solid.
 -   **Type inference across files** — keep type captures local; full type resolution is `resolution/` crate's concern, not the per-language parser's.
 -   **Refactoring tools per language** — `rename`-style operations stay generic for now.
--   **LSP integration** — out of scope; gnx-rs is an indexer, not a language server.
+-   **LSP integration** — out of scope; graph-nexus is an indexer, not a language server.
 -   **Per-language Constructor Inference refactor** — Constructor calls are currently handled uniformly by `extract_calls` and all 14 languages are ✓ on this axis. If future work needs distinct graph-edge types for `new Foo()` vs plain `foo()`, that's a separate spec; not in this scope.
 
 ## 10. Open questions

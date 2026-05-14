@@ -1,0 +1,51 @@
+[package]
+name = "graph-nexus"
+description = "Graph Nexus for LLM — code intelligence graph for AI agents and LLMs (multi-language AST analysis + BGE-M3 semantic search)"
+version = "0.1.0"
+edition = "2021"
+default-run = "gnx"
+license.workspace = true
+repository.workspace = true
+
+# cargo-binstall 元資料：使 `cargo binstall graph-nexus` 直接抓 GitHub Release 預編 binary，
+# 跳過 source compile。{ target } / { archive-suffix } / { binary-ext } 由 binstall 依平台自動代入。
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/gnx-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "gnx-v{ version }-{ target }/{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[[bin]]
+name = "gnx"
+path = "src/main.rs"
+
+[lib]
+name = "graph_nexus_cli"
+path = "src/lib.rs"
+
+[dependencies]
+graph-nexus-core = { path = "../graph-nexus-core", version = "0.1.0" }
+graph-nexus-analyzer = { path = "../graph-nexus-analyzer", version = "0.1.0" }
+clap = { version = "4.5.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.115"
+memmap2 = "0.9.10"
+rkyv = "0.8.16"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+etoon = "0.4"
+ignore = "0.4.25"
+fastembed = "5"
+rayon = "1.10"
+tantivy = "0.26.1"
+tempfile = "3.27"
+thiserror = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+unicode-width = "0.2"
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[lints]
+workspace = true

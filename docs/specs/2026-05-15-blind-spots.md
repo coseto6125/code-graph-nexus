@@ -29,7 +29,7 @@
 ### 2.1 Type
 
 ```rust
-// gnx-core/src/analyzer/types.rs
+// graph-nexus-core/src/analyzer/types.rs
 #[derive(Debug, Clone)]
 pub struct BlindSpot {
     /// 偵測到的模式 kind，例如 "eval", "importlib-dynamic-import", "cross-object-getattr".
@@ -140,7 +140,7 @@ blind_spots[2]{kind,line,hint}:
 ## 6. 實作步驟
 
 ### Task A — types + builder pass through
-- `BlindSpot` struct in `gnx-core/src/analyzer/types.rs`
+- `BlindSpot` struct in `graph-nexus-core/src/analyzer/types.rs`
 - `LocalGraph.blind_spots`
 - 修補所有 LocalGraph 建構點 `blind_spots: Vec::new()`
 - `ZeroCopyGraph` 加 archived 對應

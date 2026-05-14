@@ -1,14 +1,12 @@
-# gnx-rs
+# Graph Nexus for LLM
 
-> **非官方的 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) Rust 重製版**  
-> 原作：[Abhigyan Patwari](https://github.com/abhigyanpatwari)，基於
-> [PolyForm Noncommercial 1.0.0](./LICENSE) 授權。
->
-> 必備聲明: Copyright Abhigyan Patwari (https://github.com/abhigyanpatwari/GitNexus)
->
-> 本專案與上游 GitNexus 無關聯亦未獲其背書。僅限非商業用途。
+我寫來給 LLM / AI agent 用的代碼智能圖譜。十幾種語言、毫秒級建圖，然後可以問它「誰呼叫了這個」、「我改這個函式的爆炸半徑多大」、「跟 auth flow 相關的有哪些」這類結構性問題。
 
-這是一個速度極快、純 Rust 打造的**程式碼智慧引擎 (Code Intelligence Engine)**。`gnx-rs` 能夠在毫秒內，為涵蓋 14 種語言的大型專案建構出結構化的知識圖譜。它專為 **LLM AI 代理 (如 Claude, GPT-4, Cursor)** 所設計，具備 Zero-copy 零拷貝硬碟儲存、先進的混合檢索 (向量 + BM25)、以及零維護成本的框架路由推導能力。
+致敬 [GitNexus](https://github.com/abhigyanpatwari/GitNexus)（原作：[Abhigyan Patwari](https://github.com/abhigyanpatwari)）— 同樣的核心想法（repo 的結構化知識圖譜），用 Rust 重寫，並依我自己每天跟 Claude / Cursor 互動的方式重新設計。基於 [PolyForm Noncommercial 1.0.0](./LICENSE) 授權。
+
+> 必備聲明: Copyright Abhigyan Patwari (https://github.com/abhigyanpatwari/GitNexus)。本專案與上游 GitNexus 無關聯亦未獲其背書。僅限非商業用途。
+
+底層細節：rkyv + mmap 的 zero-copy 硬碟儲存、Tantivy BM25 + BGE-M3 dense vector 混合檢索、框架路由自動抽取。CLI 命令是 `gnx`。
 
 [English README](./README.md)
 
@@ -27,10 +25,10 @@
 ## 📦 安裝
 
 ```bash
-cargo install --git https://github.com/coseto6125/gnx-rs --bin gnx
+cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx
 ```
 
-安裝後，執行檔名稱為 `gnx`（在 crates.io 上的套件名為 `gnx-rs`）。
+安裝後，執行檔名稱為 `gnx`（在 crates.io 上的套件名為 `graph-nexus`）。
 
 ## ⚡ 使用方式
 
@@ -63,9 +61,9 @@ gnx context --name validateUser
 
 ```
 crates/
-├── gnx-core        # 零拷貝圖譜定義 (rkyv)、增量快取演算法、圖譜檢索 helper
-├── gnx-analyzer    # Tree-sitter 解析器、BGE-M3 向量生成、HTTP 路由偵測器
-└── gnx-cli         # `gnx` 命令列、Tantivy BM25 全文引擎、Token 最佳化輸出
+├── graph-nexus-core        # 零拷貝圖譜定義 (rkyv)、增量快取演算法、圖譜檢索 helper
+├── graph-nexus-analyzer    # Tree-sitter 解析器、BGE-M3 向量生成、HTTP 路由偵測器
+└── graph-nexus-cli         # `gnx` 命令列、Tantivy BM25 全文引擎、Token 最佳化輸出
 ```
 
 解析器 (Analyzer) 透過 MPSC 通道將 AST 節點傳遞給單一的 Builder 執行緒。Builder 負責組裝圖譜、推導 API 路由與文件分類，最後將其序列化為零拷貝的 `.gitnexus-rs/graph.bin`。讀取端（如 `context` 或 `query`）透過 mmap 直接映射硬碟檔案，達成零延遲查詢。

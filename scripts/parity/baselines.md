@@ -25,8 +25,8 @@ Only `readme.md` from the http.zig repo was scanned (1 file, 0 Zig-specific node
 The `analyze` command exited 0, but no Zig symbols were extracted.
 
 **Fix required:** Add `"zig"` to the extension match in
-`crates/gnx-cli/src/commands/analyze.rs` and implement a `ZigProvider` in
-`crates/gnx-analyzer/src/zig/`.
+`crates/graph-nexus-cli/src/commands/analyze.rs` and implement a `ZigProvider` in
+`crates/graph-nexus-analyzer/src/zig/`.
 
 ### move — sparse checkout
 

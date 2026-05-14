@@ -1,4 +1,4 @@
-# gnx-rs 對齊 + 多 branch + AST rename 設計
+# graph-nexus 對齊 + 多 branch + AST rename 設計
 
 **日期**：2026-05-14
 **狀態**：waiting review
@@ -257,7 +257,7 @@ fn iter_neighbors(&self, node: NodeIdx) -> impl Iterator<Item = NodeIdx> {
 
 #### MergedView 生命週期與構造點
 
-定義位置：`gnx-core::graph::merged_view::MergedView<'a>`，內含 `&'a Archived<ZeroCopyGraph>` (base) + `&'a Archived<DeltaGraph>` (delta) 兩個 reference。
+定義位置：`graph-nexus-core::graph::merged_view::MergedView<'a>`，內含 `&'a Archived<ZeroCopyGraph>` (base) + `&'a Archived<DeltaGraph>` (delta) 兩個 reference。
 
 統一入口：
 ```rust
@@ -288,7 +288,7 @@ impl GraphHandle {
 
 ### 1.8 RAM 模型：Heap vs Mmap（含實測數據）
 
-#### 實測 baseline（2026-05-14 measure，gnx-rs `target/release/gnx` v0.1.0）
+#### 實測 baseline（2026-05-14 measure，graph-nexus `target/release/gnx` v0.1.0）
 
 機器：30 GB RAM，Linux x86_64。`/usr/bin/time -v` 量 peak RSS。
 
@@ -296,7 +296,7 @@ impl GraphHandle {
 
 | Repo | LoC | Files | Analyze time | **Peak RSS** | graph.bin |
 |---|---:|---:|---:|---:|---:|
-| gnx-core (Rust)       | ~10k     | 119   | 294 ms | **68 MB**  | 18 KB |
+| graph-nexus-core (Rust)       | ~10k     | 119   | 294 ms | **68 MB**  | 18 KB |
 | enoract (Python)      | 24.7k    | 8267  | 339 ms | **96 MB**  | 563 KB |
 | enor_mb (mixed)       | ~100k    | ~4k   | 682 ms | **178 MB** | 6.7 MB |
 | llama.cpp (C++)       | 555k     | 885   | 2.4 s  | **661 MB** | 18.6 MB |
@@ -337,7 +337,7 @@ impl GraphHandle {
 | 100 MB | ~50-80 ms |
 | 1 GB | ~500 ms-1 s |
 
-`gnx-core::registry::archive_cache` 提供 **per-process OnceLock**，把驗過的 `&Archived<ZeroCopyGraph>` 快取在 mmap fd 旁邊。下個 query 不重複驗。LLM session 跑 100 個 `gnx context` 從 ~1.5 s（每次驗）變成 ~10 ms（共用）。
+`graph-nexus-core::registry::archive_cache` 提供 **per-process OnceLock**，把驗過的 `&Archived<ZeroCopyGraph>` 快取在 mmap fd 旁邊。下個 query 不重複驗。LLM session 跑 100 個 `gnx context` 從 ~1.5 s（每次驗）變成 ~10 ms（共用）。
 
 cache 自身 footprint：50 byte（pointer + OnceLock header），相對 RSS 可忽略。
 
@@ -458,7 +458,7 @@ fn uid_path(absolute: &Path, repo_root: &Path) -> String {
 }
 ```
 
-統一函式置於 `gnx-core::registry::path::uid_path()`，分析器與 rename 共用，避免 drift。
+統一函式置於 `graph-nexus-core::registry::path::uid_path()`，分析器與 rename 共用，避免 drift。
 
 ---
 
@@ -544,7 +544,7 @@ sequenceDiagram
 
 ```
 crates/
-├── gnx-core/src/
+├── graph-nexus-core/src/
 │   ├── analyzer/         （既有，pipeline 不動）
 │   ├── graph/            （既有，rkyv 不動）
 │   └── registry/         ← 新增模組
@@ -553,8 +553,8 @@ crates/
 │       ├── lock.rs       # flock helper
 │       ├── store.rs      # registry.json IO（atomic write + .bak）
 │       └── audit.rs      # JSONL audit log + rotation
-├── gnx-analyzer/         （既有 + queries.scm 增 usage_identifier）
-└── gnx-cli/src/
+├── graph-nexus-analyzer/         （既有 + queries.scm 增 usage_identifier）
+└── graph-nexus-cli/src/
     ├── commands/
     │   ├── analyze.rs           （改：寫入路由到 registry 解析的 dir）
     │   ├── analyze_here.rs      ← 新
@@ -663,7 +663,7 @@ flowchart TD
 
 ### 4.5 跨平台支援
 
-`fork()` + `setsid()` 是 POSIX-only。跨平台抽象成 `gnx_core::daemon::spawn_detached()`：
+`fork()` + `setsid()` 是 POSIX-only。跨平台抽象成 `graph_nexus_core::daemon::spawn_detached()`：
 
 ```rust
 #[cfg(unix)]
@@ -1052,8 +1052,8 @@ append_line(&audit_path, json_line);
 
 ```
 主線執行緒：
-  [1] gnx-core::registry/ + audit.rs + path.rs + lock.rs       3d
-  [2] gnx-cli::git::safe_exec.rs（hardening 封裝）              0.5d
+  [1] graph-nexus-core::registry/ + audit.rs + path.rs + lock.rs       3d
+  [2] graph-nexus-cli::git::safe_exec.rs（hardening 封裝）              0.5d
   [3] analyze.rs 改寫路由到 registry 解析的 dir                 1d
   [4] analyze_here / init / prune / rename-branch / hook_handle 3d
   [5] AST rename（含 14 lang queries.scm 增量）                 5d
@@ -1115,7 +1115,7 @@ gantt
 | Hook = shell shim | 符合 git 慣例、可被 inspect；代價：多一層 exec（~1ms） |
 | AST rename | 100% 安全；代價：14 lang queries.scm 各加 capture，~5d 工 |
 | Cypher 不對齊 surface | LLM 不打錯 syntax；保留 alias 達 surface compat；代價：複雜 cypher 模式回 unsupported |
-| 無 MCP server daemon | 純 CLI 簡化部署；代價：失去 daemon 化 IPC 加速（gnx-rs 啟動快，影響小） |
+| 無 MCP server daemon | 純 CLI 簡化部署；代價：失去 daemon 化 IPC 加速（graph-nexus 啟動快，影響小） |
 | StringPool offset/len 為 u32（≤4GB） | 既有基礎層設計，對 LLM review monorepo 場景夠用；代價：若未來放 100GB+ monorepo 全文 + 註解，需升 u64。Spec 假設 ≤ 4GB |
 | analyze 增量 vs 全量 | 採 Base+Delta LSM 策略（§1.7）：base graph.bin 不可變，patch 走 delta.bin，compaction 重建 base。詳見 §1.7 |
 | Cross-file resolution 並發 | builder.rs 既有 Pass 1/1.5/2/3 已是 Map-Reduce 兩階段（per-file parallel → global resolve），本 spec 不動既有結構 |

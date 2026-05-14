@@ -6,7 +6,7 @@ Branch: feat/resolver-verify-and-l0
 
 ## Why
 
-The resolver in `crates/gnx-analyzer/src/resolution/resolver.rs` has three tiers
+The resolver in `crates/graph-nexus-analyzer/src/resolution/resolver.rs` has three tiers
 (`SameFile` 1.0 → `ImportScoped` 0.95 → `Global` 0.7). The middle tier
 fails on TS path aliases (`@/x`) and extension elision (`./foo` → `./foo.ts`),
 which forces traffic into `Global` where N same-named candidates all get

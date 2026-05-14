@@ -91,7 +91,7 @@ Options:
 ### 模組劃分
 
 ```
-crates/gnx-cli/src/commands/
+crates/graph-nexus-cli/src/commands/
 ├── summarize.rs        # CLI args + run() + orchestration
 └── summarize/
     ├── mod.rs          # 內部 trait & 共用型別

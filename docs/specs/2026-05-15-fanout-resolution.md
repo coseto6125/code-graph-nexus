@@ -1,6 +1,6 @@
 # Fan-out Resolution — LLM-First Static Analysis Spec
 
-> **核心定位：** gnx-rs 主要面向是 LLM 消費者。LLM 對「沈默漏網」高度敏感 — 一次 query 拿到的資訊，就是它推理的全部依據。所以 gnx 的設計原則不是「高信心邊優先」，而是 **「完整 universe + confidence 編碼不確定性」**，讓 LLM 一次查完，自己根據 confidence 加權判斷。
+> **核心定位：** graph-nexus 主要面向是 LLM 消費者。LLM 對「沈默漏網」高度敏感 — 一次 query 拿到的資訊，就是它推理的全部依據。所以 gnx 的設計原則不是「高信心邊優先」，而是 **「完整 universe + confidence 編碼不確定性」**，讓 LLM 一次查完，自己根據 confidence 加權判斷。
 
 ---
 
@@ -164,7 +164,7 @@ LLM 看到 3 條 0.29 conf 的 `reflection-getattr-fanout` 邊 →
 ## 4. 實作步驟
 
 ### Task 1 — types & infra
-- Create `RawFanoutRef` in `gnx-core/src/analyzer/types.rs`
+- Create `RawFanoutRef` in `graph-nexus-core/src/analyzer/types.rs`
 - Add `pub fanout_refs: Vec<RawFanoutRef>` 到 `LocalGraph`
 - 修補所有 LocalGraph 建構點（~30 處 parser.rs）`fanout_refs: Vec::new()`
 - Builder Pass 新增 fanout_refs 處理：resolve candidates, emit Edge per candidate with `confidence = base / sqrt(N).max(0.1)`

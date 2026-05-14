@@ -127,7 +127,7 @@ positives). The harness has now demonstrated three things:
 ## Repro
 
 ```bash
-cargo build -p gnx-rs --release
+cargo build -p graph-nexus --release
 
 # TS
 (cd .sample_repo/TypeScript && gnx analyze --repo . --dump-resolver dumps/gnx.ts.jsonl)

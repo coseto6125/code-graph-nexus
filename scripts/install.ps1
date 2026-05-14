@@ -1,4 +1,4 @@
-# gnx-rs 一鍵安裝（Windows PowerShell 5.1+）
+# graph-nexus 一鍵安裝（Windows PowerShell 5.1+）
 #
 #   irm https://github.com/e-nor/gitnexus-rs/releases/latest/download/install.ps1 | iex
 #   irm https://github.com/e-nor/gitnexus-rs/releases/download/v0.1.0/install.ps1 | iex
