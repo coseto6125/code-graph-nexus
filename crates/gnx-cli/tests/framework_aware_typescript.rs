@@ -49,3 +49,52 @@ fn express_route_creates_framework_refs_for_handlers() {
         );
     }
 }
+
+#[test]
+fn nestjs_controller_methods_become_framework_refs() {
+    let src = include_str!("fixtures/nestjs_controller.ts");
+    let provider = TypeScriptProvider::new().unwrap();
+    let local = provider
+        .parse_file("test.ts".as_ref(), src.as_bytes())
+        .unwrap();
+
+    let refs: Vec<_> = local
+        .framework_refs
+        .iter()
+        .filter(|r| r.reason == "nestjs-route-handler")
+        .collect();
+
+    // Expect 4 refs (findOne, findAll, create, remove inside @Controller class).
+    // notARoute MUST NOT be captured because enclosing class lacks @Controller.
+    assert_eq!(
+        refs.len(),
+        4,
+        "expected 4 nestjs-route-handler refs (class is @Controller-decorated), got {}: {:?}",
+        refs.len(),
+        local.framework_refs
+    );
+
+    let pairs: Vec<(&str, &str)> = refs
+        .iter()
+        .map(|r| (r.source_name.as_str(), r.target_name.as_str()))
+        .collect();
+    for expected in [
+        ("UsersController", "findOne"),
+        ("UsersController", "findAll"),
+        ("UsersController", "create"),
+        ("UsersController", "remove"),
+    ] {
+        assert!(pairs.contains(&expected), "missing {:?} in {:?}", expected, pairs);
+    }
+
+    // Negative: notARoute must NOT appear (no @Controller on enclosing class).
+    assert!(
+        !pairs.iter().any(|(_, t)| *t == "notARoute"),
+        "notARoute should not be captured (enclosing class lacks @Controller). pairs: {:?}",
+        pairs
+    );
+
+    for r in &refs {
+        assert!(r.confidence > 0.0 && r.confidence <= 1.0);
+    }
+}
