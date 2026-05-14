@@ -1,7 +1,7 @@
 # verify-resolver report (ts)
 
-Oracle records: 8396
-Gnx records: 8052
+Oracle records: 8396 (bad lines: 0)
+Gnx records: 8052 (bad lines: 0)
 
 ## Summary
 

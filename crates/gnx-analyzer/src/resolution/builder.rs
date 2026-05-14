@@ -320,7 +320,7 @@ impl GraphBuilder {
         }
 
         // Pass 2: Resolve imports and build edges
-        let resolver = Resolver::new(&symbol_table);
+        let mut resolver = Resolver::new(&symbol_table);
         if self.resolver_dump_path.is_some() {
             resolver.enable_dump();
         }
@@ -641,8 +641,10 @@ impl GraphBuilder {
 
 /// Serialize captured resolver decisions to a JSONL file. Schema matches
 /// the oracle harness contract: one decision per line, fields ordered for
-/// readable diffs (`src_file`, `name`, `specifier`, `tier`, `target_file`,
-/// `alt_count`, `confidence`).
+/// readable diffs. Each line is a flattened `ResolverDecision` plus the
+/// resolved `target_file` (looked up from `target_id` via the symbol
+/// table). Delegating to `serde_json` keeps escaping (Unicode controls,
+/// surrogates, line separators) compliant with RFC 8259.
 fn write_resolver_dump(
     path: &std::path::Path,
     decisions: &[crate::resolution::resolver::ResolverDecision],
@@ -655,73 +657,166 @@ fn write_resolver_dump(
         }
     }
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let mut line = String::with_capacity(256);
     for d in decisions {
-        let target_file = d.target_id.and_then(|id| symbol_table.file_of(id));
-        line.clear();
-        line.push('{');
-        write_json_str(&mut line, "src_file", &d.src_file);
-        line.push(',');
-        write_json_str(&mut line, "name", &d.name);
-        line.push(',');
-        line.push_str("\"specifier\":");
-        match &d.specifier {
-            Some(s) => push_quoted(&mut line, s),
-            None => line.push_str("null"),
-        }
-        line.push(',');
-        write_json_str(&mut line, "tier", d.tier);
-        line.push(',');
-        line.push_str("\"target_file\":");
-        match target_file {
-            Some(s) => push_quoted(&mut line, s),
-            None => line.push_str("null"),
-        }
-        line.push(',');
-        line.push_str("\"alt_count\":");
-        line.push_str(&d.alt_count.to_string());
-        line.push(',');
-        line.push_str("\"confidence\":");
-        match d.confidence {
-            Some(c) => line.push_str(&format!("{c:.3}")),
-            None => line.push_str("null"),
-        }
-        line.push('}');
-        line.push('\n');
-        f.write_all(line.as_bytes())?;
+        let line = DumpLine {
+            src_file: &d.src_file,
+            name: &d.name,
+            specifier: d.specifier.as_deref(),
+            tier: d.tier,
+            target_file: d.target_id.and_then(|id| symbol_table.file_of(id)),
+            alt_count: d.alt_count,
+            confidence: d.confidence,
+        };
+        // serde_json into a Vec<u8> keeps the return type io::Result. The
+        // alloc cost is per-decision; for dumps this only fires when the
+        // user passed `--dump-resolver`, so production traffic is unaffected.
+        let buf = serde_json::to_vec(&line).map_err(std::io::Error::other)?;
+        f.write_all(&buf)?;
+        f.write_all(b"\n")?;
     }
     f.flush()?;
     Ok(())
 }
 
-fn write_json_str(buf: &mut String, key: &str, val: &str) {
-    buf.push('"');
-    buf.push_str(key);
-    buf.push_str("\":");
-    push_quoted(buf, val);
-}
-
-fn push_quoted(buf: &mut String, s: &str) {
-    buf.push('"');
-    for ch in s.chars() {
-        match ch {
-            '\\' => buf.push_str("\\\\"),
-            '"' => buf.push_str("\\\""),
-            '\n' => buf.push_str("\\n"),
-            '\r' => buf.push_str("\\r"),
-            '\t' => buf.push_str("\\t"),
-            c if (c as u32) < 0x20 => buf.push_str(&format!("\\u{:04x}", c as u32)),
-            c => buf.push(c),
-        }
-    }
-    buf.push('"');
+#[derive(serde::Serialize)]
+struct DumpLine<'a> {
+    src_file: &'a str,
+    name: &'a str,
+    specifier: Option<&'a str>,
+    tier: crate::resolution::resolver::DecisionTier,
+    target_file: Option<&'a str>,
+    alt_count: u32,
+    confidence: Option<f32>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawNode};
+    use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
     use gnx_core::graph::NodeKind;
+
+    /// L0 end-to-end: caller imports `./b`, defining file lives at
+    /// `src/b.ts`. Tier 2 ImportScoped must fire and emit a `Calls` edge
+    /// at confidence 0.95. Locks in the 173-hit win measured on NestJS so
+    /// it can't silently regress.
+    #[test]
+    fn l0_relative_import_produces_import_scoped_edge() {
+        let caller = LocalGraph {
+            file_path: "src/a.ts".into(),
+            content_hash: [0; 32],
+            nodes: vec![RawNode {
+                name: "useThing".into(),
+                kind: NodeKind::Function,
+                span: (0, 0, 0, 0),
+                is_exported: false,
+                heritage: vec![],
+                type_annotation: None,
+                decorators: vec![],
+                calls: vec!["thing".into()],
+            }],
+            documents: vec![],
+            imports: vec![RawImport {
+                source: "./b".into(),
+                imported_name: "thing".into(),
+                alias: None,
+            }],
+            routes: vec![],
+            framework_refs: vec![],
+        };
+        let target = LocalGraph {
+            file_path: "src/b.ts".into(),
+            content_hash: [0; 32],
+            nodes: vec![RawNode {
+                name: "thing".into(),
+                kind: NodeKind::Function,
+                span: (0, 0, 0, 0),
+                is_exported: true,
+                heritage: vec![],
+                type_annotation: None,
+                decorators: vec![],
+                calls: vec![],
+            }],
+            documents: vec![],
+            imports: vec![],
+            routes: vec![],
+            framework_refs: vec![],
+        };
+
+        let mut builder = GraphBuilder::new();
+        builder.add_graph(caller);
+        builder.add_graph(target);
+        let graph = builder.build();
+
+        let calls: Vec<_> = graph
+            .edges
+            .iter()
+            .filter(|e| e.rel_type == RelType::Calls)
+            .collect();
+        assert_eq!(
+            calls.len(),
+            1,
+            "exactly one Calls edge expected (./b → thing), got {}",
+            calls.len()
+        );
+        // ImportScoped confidence = 0.95 — locks in that L0 promoted the
+        // resolution past Tier 3 Global (0.7).
+        assert!(
+            (calls[0].confidence - 0.95).abs() < 1e-6,
+            "Calls edge should be ImportScoped (0.95), got {}",
+            calls[0].confidence
+        );
+    }
+
+    /// `write_resolver_dump` round-trip: produce a dump containing
+    /// boundary characters (quote, backslash, newline, control byte,
+    /// non-ASCII), parse it back as JSON, assert fidelity. Locks in the
+    /// serde-based serializer against silent escape regressions if we
+    /// ever revert to a hand-rolled writer.
+    #[test]
+    fn resolver_dump_round_trips_through_serde_json() {
+        use crate::resolution::resolver::{DecisionTier, ResolverDecision};
+
+        let symbol_table = SymbolTable::new();
+        let decisions = vec![
+            ResolverDecision {
+                src_file: "weird \"name\".ts".into(),
+                name: "fn\\with\nbreak".into(),
+                specifier: Some("./bar".into()),
+                tier: DecisionTier::ImportScoped,
+                target_id: None,
+                alt_count: 0,
+                confidence: Some(0.95),
+            },
+            ResolverDecision {
+                src_file: "中文/檔名.py".into(),
+                name: "你好".into(),
+                specifier: None,
+                tier: DecisionTier::Unresolved,
+                target_id: None,
+                alt_count: 0,
+                confidence: None,
+            },
+        ];
+
+        let tmp = std::env::temp_dir().join(format!("gnx-dump-test-{}.jsonl", std::process::id()));
+        write_resolver_dump(&tmp, &decisions, &symbol_table).expect("write dump");
+        let text = std::fs::read_to_string(&tmp).expect("read dump");
+        let _ = std::fs::remove_file(&tmp);
+
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        for (line, original) in lines.iter().zip(decisions.iter()) {
+            let v: serde_json::Value = serde_json::from_str(line).expect("valid JSONL");
+            assert_eq!(v["src_file"], original.src_file);
+            assert_eq!(v["name"], original.name);
+            assert_eq!(v["alt_count"], 0);
+            match original.tier {
+                DecisionTier::ImportScoped => assert_eq!(v["tier"], "ImportScoped"),
+                DecisionTier::Unresolved => assert_eq!(v["tier"], "Unresolved"),
+                _ => panic!("unexpected tier"),
+            }
+        }
+    }
 
     #[test]
     fn framework_ref_produces_edge_with_confidence_and_reason() {

@@ -1,4 +1,5 @@
 use gnx_core::analyzer::types::RawImport;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -7,16 +8,29 @@ use crate::resolution::index::SymbolTable;
 
 pub type NodeId = u32;
 
+/// Resolver outcome tier captured per `resolve_symbol` call when the dump
+/// is enabled. Distinct from [`ResolutionTier`] because that enum models
+/// only resolution *successes* (and has the unused `Fallback(...)` arm),
+/// whereas the dump also needs to record the `Unresolved` outcome to let
+/// the verification harness compute false negatives.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+pub enum DecisionTier {
+    SameFile,
+    ImportScoped,
+    Global,
+    Unresolved,
+}
+
 /// One resolver attempt, captured when the dump buffer is enabled. The
-/// builder later materializes `target_file` via [`SymbolTable::file_of`]
-/// and serializes the records to JSONL — see
+/// builder serializes a sibling JSONL view of these (resolving
+/// `target_id → target_file` via [`SymbolTable::file_of`]) — see
 /// `docs/superpowers/specs/2026-05-15-resolver-oracle-harness.md`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResolverDecision {
     pub src_file: String,
     pub name: String,
     pub specifier: Option<String>,
-    pub tier: &'static str,
+    pub tier: DecisionTier,
     pub target_id: Option<NodeId>,
     pub alt_count: u32,
     pub confidence: Option<f32>,
@@ -25,10 +39,10 @@ pub struct ResolverDecision {
 /// The core resolver engine that matches symbol names to concrete global nodes.
 pub struct Resolver<'a> {
     symbol_table: &'a SymbolTable,
-    /// Optional decision buffer. `None` = dumping disabled (production path,
-    /// zero overhead). Builder calls [`Resolver::enable_dump`] before pass 2
-    /// when the user requested `--dump-resolver`.
-    decisions: RefCell<Option<Vec<ResolverDecision>>>,
+    /// `None` on the production path → zero-cost (single Option-discriminant
+    /// branch in `record`, no `RefCell` touch). `Some(_)` only when the
+    /// builder enabled dumping via [`Resolver::enable_dump`].
+    decisions: Option<RefCell<Vec<ResolverDecision>>>,
 }
 
 impl<'a> Resolver<'a> {
@@ -36,20 +50,20 @@ impl<'a> Resolver<'a> {
     pub fn new(symbol_table: &'a SymbolTable) -> Self {
         Self {
             symbol_table,
-            decisions: RefCell::new(None),
+            decisions: None,
         }
     }
 
     /// Turn on the decision recorder. Each subsequent `resolve_symbol` call
     /// pushes a [`ResolverDecision`] into the internal buffer.
-    pub fn enable_dump(&self) {
-        *self.decisions.borrow_mut() = Some(Vec::new());
+    pub fn enable_dump(&mut self) {
+        self.decisions = Some(RefCell::new(Vec::new()));
     }
 
     /// Drain the recorded decisions. Returns `None` if dumping was never
     /// enabled.
-    pub fn take_decisions(&self) -> Option<Vec<ResolverDecision>> {
-        self.decisions.borrow_mut().take()
+    pub fn take_decisions(&mut self) -> Option<Vec<ResolverDecision>> {
+        self.decisions.take().map(RefCell::into_inner)
     }
 
     /// Resolves a symbol name to possible target nodes with confidence scores.
@@ -72,7 +86,7 @@ impl<'a> Resolver<'a> {
                 &source_file_str,
                 symbol_name,
                 None,
-                "SameFile",
+                DecisionTier::SameFile,
                 Some(node_id),
                 0,
                 Some(ResolutionTier::SameFile.base_confidence()),
@@ -96,70 +110,66 @@ impl<'a> Resolver<'a> {
 
             if is_match {
                 let exported_name = &import.imported_name;
-                for candidate in resolve_specifier_candidates(source_file, &import.source) {
-                    if let Some(node_id) = self
-                        .symbol_table
-                        .lookup_in_file(&candidate, exported_name)
-                    {
-                        results.push((node_id, ResolutionTier::ImportScoped.base_confidence()));
-                        self.record(
-                            &source_file_str,
-                            symbol_name,
-                            Some(import.source.as_str()),
-                            "ImportScoped",
-                            Some(node_id),
-                            0,
-                            Some(ResolutionTier::ImportScoped.base_confidence()),
-                        );
-                        return results;
+                let mut hit: Option<NodeId> = None;
+                for_each_specifier_candidate(source_file, &import.source, |candidate| {
+                    match self.symbol_table.lookup_in_file(candidate, exported_name) {
+                        Some(id) => {
+                            hit = Some(id);
+                            false // stop enumerating
+                        }
+                        None => true, // keep going
                     }
+                });
+                if let Some(node_id) = hit {
+                    results.push((node_id, ResolutionTier::ImportScoped.base_confidence()));
+                    self.record(
+                        &source_file_str,
+                        symbol_name,
+                        Some(import.source.as_str()),
+                        DecisionTier::ImportScoped,
+                        Some(node_id),
+                        0,
+                        Some(ResolutionTier::ImportScoped.base_confidence()),
+                    );
+                    return results;
                 }
             }
         }
 
-        // Tier 3: Try Global (Fallback)
+        // Tier 3: Try Global (Fallback). Whether or not we get a hit, we
+        // surface the specifier (if any matched the symbol) so the dump can
+        // tell Tier-3 ghost edges and FN_dangling apart.
         let global_matches = self.symbol_table.lookup_global(symbol_name);
-        if !global_matches.is_empty() {
-            // For now, if there are multiple global matches, we just push the first one or all
-            // To match original behavior we push all with Global confidence
-            let first = global_matches[0];
+        let specifier = raw_imports
+            .iter()
+            .find(|i| match &i.alias {
+                Some(a) => a == symbol_name,
+                None => i.imported_name == symbol_name,
+            })
+            .map(|i| i.source.as_str());
+
+        if let Some(&first) = global_matches.first() {
             let alt = (global_matches.len() - 1) as u32;
             for node_id in global_matches {
                 results.push((node_id, ResolutionTier::Global.base_confidence()));
             }
-            // For the dump we record the first match + alt_count so the diff
-            // harness can compute the FP_overmatch class without serializing
-            // every alternative.
-            let specifier = raw_imports
-                .iter()
-                .find(|i| match &i.alias {
-                    Some(a) => a == symbol_name,
-                    None => i.imported_name == symbol_name,
-                })
-                .map(|i| i.source.as_str());
+            // Dump records the first match + alt_count so the diff harness
+            // can compute FP_overmatch without serializing every alternative.
             self.record(
                 &source_file_str,
                 symbol_name,
                 specifier,
-                "Global",
+                DecisionTier::Global,
                 Some(first),
                 alt,
                 Some(ResolutionTier::Global.base_confidence()),
             );
         } else {
-            // Nothing matched — still record so the diff can spot FN_dangling.
-            let specifier = raw_imports
-                .iter()
-                .find(|i| match &i.alias {
-                    Some(a) => a == symbol_name,
-                    None => i.imported_name == symbol_name,
-                })
-                .map(|i| i.source.as_str());
             self.record(
                 &source_file_str,
                 symbol_name,
                 specifier,
-                "Unresolved",
+                DecisionTier::Unresolved,
                 None,
                 0,
                 None,
@@ -168,42 +178,51 @@ impl<'a> Resolver<'a> {
 
         results
     }
-
 }
 
-/// L0 path normalization: expand `import.source` into the set of
-/// `SymbolTable` file keys it could plausibly map to.
+/// Extensions probed during L0 candidate enumeration (covers every
+/// language whose parser is wired into gnx-analyzer).
+const EXT_CANDIDATES: &[&str] = &[
+    ".ts", ".tsx", ".jsx", ".js", ".mjs", ".cjs", ".py", ".pyi", ".rs", ".go", ".java", ".kt",
+    ".rb", ".php", ".cs", ".swift", ".dart", ".sol", ".sql",
+];
+
+/// Package-style suffixes — a directory acting as a module.
+const INDEX_SUFFIXES: &[&str] = &[
+    "/index.ts",
+    "/index.tsx",
+    "/index.js",
+    "/index.jsx",
+    "/__init__.py",
+    "/mod.rs",
+    "/lib.rs",
+    "/main.rs",
+];
+
+/// L0 path normalization: enumerate every `SymbolTable` file key that
+/// `specifier` could plausibly map to, invoking `visit` for each. The
+/// closure returns `true` to keep going, `false` to short-circuit.
 ///
-/// We always include the verbatim specifier first so behavior is a strict
-/// superset of pre-L0 (callers that worked before keep working). After that:
-///
-/// * **Relative** (`./x`, `../x`, `.x`, `..x.y`): join with the source
-///   file's parent directory, accounting for Python-style multi-dot prefixes
-///   and dotted submodule paths (`from .a.b import C`).
+/// * **Verbatim specifier** is visited first so behavior is a strict
+///   superset of pre-L0.
+/// * **Relative** (`./x`, `../x`, `.x`, `..x.y`): joined against the
+///   source file's parent directory, accounting for Python-style
+///   multi-dot prefixes and dotted submodule paths (`from .a.b import C`).
 /// * **Both relative and absolute**: try common extensions (`.ts .tsx .py
 ///   .rs ...`) and package-style suffixes (`/index.ts`, `/__init__.py`,
 ///   `/mod.rs`).
 ///
-/// All candidates use POSIX separators so they line up with the keys stored
-/// by `register_node`.
-fn resolve_specifier_candidates(source_file: &std::path::Path, specifier: &str) -> Vec<String> {
-    const EXT_CANDIDATES: &[&str] = &[
-        ".ts", ".tsx", ".jsx", ".js", ".mjs", ".cjs", ".py", ".pyi", ".rs", ".go", ".java",
-        ".kt", ".rb", ".php", ".cs", ".swift", ".dart", ".sol", ".sql",
-    ];
-    const INDEX_SUFFIXES: &[&str] = &[
-        "/index.ts",
-        "/index.tsx",
-        "/index.js",
-        "/index.jsx",
-        "/__init__.py",
-        "/mod.rs",
-        "/lib.rs",
-        "/main.rs",
-    ];
-
-    let mut out: Vec<String> = Vec::with_capacity(EXT_CANDIDATES.len() + INDEX_SUFFIXES.len() + 4);
-    out.push(specifier.to_string());
+/// A single `String` buffer is reused across all suffixed probes, so
+/// total allocations per call are bounded by O(1) heap activity once
+/// the closure starts running. This matters on the resolver hot path
+/// where Tier 2 fires once per (callsite, heritage, type, framework-ref).
+fn for_each_specifier_candidate<F>(source_file: &std::path::Path, specifier: &str, mut visit: F)
+where
+    F: FnMut(&str) -> bool,
+{
+    if !visit(specifier) {
+        return;
+    }
 
     let dir = source_file.parent().unwrap_or(std::path::Path::new(""));
     let base_path: Option<std::path::PathBuf> = if let Some(rest) = specifier.strip_prefix("./") {
@@ -219,46 +238,61 @@ fn resolve_specifier_candidates(source_file: &std::path::Path, specifier: &str) 
     } else if specifier.starts_with('.') {
         // Python-style relative: count leading dots, then a dotted submodule
         // path. `.foo` from `src/pkg/x.py` → `src/pkg/foo`. `..foo.bar` →
-        // walk parent once, then `foo/bar`.
+        // walk parent once, then `foo/bar`. `...foo` → walk two parents,
+        // then `foo` (PEP 328: N dots = walk N-1 packages).
         let dots = specifier.bytes().take_while(|&b| b == b'.').count();
         let rest = &specifier[dots..];
-        let dotted = rest.replace('.', "/");
+        // Strip any leftover leading `.` (e.g. `....foo` past the dot count)
+        // and the implicit leading `/` that Path::join would otherwise treat
+        // as absolute and discard the base.
+        let dotted = rest.trim_start_matches('.').replace('.', "/");
+        let dotted = dotted.trim_start_matches('/');
         let mut p = dir.to_path_buf();
         for _ in 1..dots {
             p = p.parent().unwrap_or(std::path::Path::new("")).to_path_buf();
         }
-        Some(if dotted.is_empty() { p } else { p.join(&dotted) })
+        Some(if dotted.is_empty() { p } else { p.join(dotted) })
     } else {
-        // Absolute / bare specifier — alias resolution belongs to L1; here
-        // we still emit extension guesses (to cover the rare `import x from
-        // "a/b.ts"` written without `./`).
         None
     };
 
-    let push_with_suffixes = |base: &str, out: &mut Vec<String>| {
-        out.push(base.to_string());
-        for ext in EXT_CANDIDATES {
-            out.push(format!("{base}{ext}"));
-        }
-        for suf in INDEX_SUFFIXES {
-            out.push(format!("{base}{suf}"));
-        }
-    };
-
-    if let Some(b) = base_path {
+    let base = if let Some(b) = base_path {
         let b_str = b.to_string_lossy().replace('\\', "/");
-        let b_str = b_str
-            .trim_start_matches("./")
-            .trim_end_matches('/')
-            .to_string();
-        push_with_suffixes(&b_str, &mut out);
+        Some(
+            b_str
+                .trim_start_matches("./")
+                .trim_end_matches('/')
+                .to_string(),
+        )
     } else if !specifier.contains("://") && !specifier.is_empty() {
         // Absolute-but-pathlike: `a/b` style. Still worth probing.
-        let s = specifier.trim_end_matches('/');
-        push_with_suffixes(s, &mut out);
-    }
+        Some(specifier.trim_end_matches('/').to_string())
+    } else {
+        None
+    };
 
-    out
+    let Some(base) = base else { return };
+
+    if !visit(&base) {
+        return;
+    }
+    let mut buf = String::with_capacity(base.len() + 16);
+    for ext in EXT_CANDIDATES {
+        buf.clear();
+        buf.push_str(&base);
+        buf.push_str(ext);
+        if !visit(&buf) {
+            return;
+        }
+    }
+    for suf in INDEX_SUFFIXES {
+        buf.clear();
+        buf.push_str(&base);
+        buf.push_str(suf);
+        if !visit(&buf) {
+            return;
+        }
+    }
 }
 
 impl<'a> Resolver<'a> {
@@ -268,17 +302,17 @@ impl<'a> Resolver<'a> {
         src_file: &str,
         name: &str,
         specifier: Option<&str>,
-        tier: &'static str,
+        tier: DecisionTier,
         target_id: Option<NodeId>,
         alt_count: u32,
         confidence: Option<f32>,
     ) {
-        // Fast bail-out on the production path: one HashMap-free check.
-        let mut slot = self.decisions.borrow_mut();
-        let Some(buf) = slot.as_mut() else {
+        // Production path: `self.decisions` is `None` → single
+        // Option-discriminant branch and we're out. No RefCell touch.
+        let Some(cell) = self.decisions.as_ref() else {
             return;
         };
-        buf.push(ResolverDecision {
+        cell.borrow_mut().push(ResolverDecision {
             src_file: src_file.to_string(),
             name: name.to_string(),
             specifier: specifier.map(|s| s.to_string()),
@@ -296,7 +330,12 @@ mod tests {
     use std::path::PathBuf;
 
     fn cands(src: &str, spec: &str) -> Vec<String> {
-        resolve_specifier_candidates(&PathBuf::from(src), spec)
+        let mut out = Vec::new();
+        for_each_specifier_candidate(&PathBuf::from(src), spec, |c| {
+            out.push(c.to_string());
+            true
+        });
+        out
     }
 
     #[test]
@@ -351,6 +390,24 @@ mod tests {
         assert!(
             c.contains(&"src/pkg/helpers/util.py".to_string()),
             "should include src/pkg/helpers/util.py: {c:?}"
+        );
+    }
+
+    /// Regression: `...foo` was generating `/foo` because `rest = "/foo"`
+    /// would slip through to `Path::join("/foo")`, which on Unix discards
+    /// the base. PEP 328: three dots = walk two parents.
+    #[test]
+    fn python_triple_dot_walks_two_parents() {
+        let c = cands("src/a/b/c/d.py", "...mod");
+        assert!(
+            c.contains(&"src/a/mod.py".to_string()),
+            "should include src/a/mod.py (walked two parents): {c:?}"
+        );
+        // No /-rooted entries from the dotted base — would mean the bug
+        // came back.
+        assert!(
+            !c.iter().any(|s| s.starts_with("/mod") || s == "/"),
+            "no absolute-rooted candidate should leak: {c:?}"
         );
     }
 
