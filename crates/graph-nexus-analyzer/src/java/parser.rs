@@ -1,4 +1,4 @@
-use crate::calls::extract_calls;
+use super::receiver_types::extract_java_calls;
 use crate::framework_confidence;
 use crate::framework_helpers::{has_import_from, node_span};
 use graph_nexus_core::analyzer::provider::LanguageProvider;
@@ -278,13 +278,9 @@ impl LanguageProvider for JavaProvider {
 
         let mut nodes: Vec<RawNode> = node_map.into_values().collect();
 
-        // Extract call sites and attach to enclosing function/method nodes.
-        extract_calls(
-            tree.root_node(),
-            source,
-            &mut nodes,
-            &["method_invocation", "object_creation_expression"],
-        );
+        // Extract call sites with receiver-type binding for `this.foo()`,
+        // `super.foo()`, and typed-variable `obj.foo()` patterns.
+        extract_java_calls(tree.root_node(), source, &mut nodes);
 
         Ok(LocalGraph {
             content_hash: [0; 32],
