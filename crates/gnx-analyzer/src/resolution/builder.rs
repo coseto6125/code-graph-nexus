@@ -1,0 +1,149 @@
+use crate::resolution::index::SymbolTable;
+use crate::resolution::resolver::Resolver;
+use gnx_core::analyzer::types::LocalGraph;
+use gnx_core::graph::{Edge, File, Node, RelType, ZeroCopyGraph};
+use gnx_core::pool::StringPool;
+
+pub struct GraphBuilder {
+    local_graphs: Vec<LocalGraph>,
+}
+
+impl Default for GraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GraphBuilder {
+    pub fn new() -> Self {
+        Self {
+            local_graphs: Vec::new(),
+        }
+    }
+
+    pub fn add_graph(&mut self, graph: LocalGraph) {
+        self.local_graphs.push(graph);
+    }
+
+    pub fn build(self) -> ZeroCopyGraph {
+        let mut symbol_table = SymbolTable::new();
+        let mut string_pool = StringPool::new();
+        let mut nodes = Vec::new();
+        let mut files = Vec::new();
+
+        // Pass 1: Register all nodes into SymbolTable and StringPool
+        let mut current_node_idx = 0;
+        let mut file_idx = 0;
+
+        for local_graph in &self.local_graphs {
+            let path_str = local_graph.file_path.to_string_lossy().to_string();
+            let path_ref = string_pool.add(&path_str);
+            
+            files.push(File {
+                path: path_ref,
+                mtime: 0, // In a real implementation, fetch actual mtime
+                content_hash: [0; 32],
+            });
+
+            for raw_node in &local_graph.nodes {
+                symbol_table.register_node(&path_str, &raw_node.name, current_node_idx);
+
+                let uid_str = format!("{:?}:{}:{}", raw_node.kind, path_str, raw_node.name);
+                let uid_ref = string_pool.add(&uid_str);
+                let name_ref = string_pool.add(&raw_node.name);
+
+                nodes.push(Node {
+                    uid: uid_ref,
+                    name: name_ref,
+                    file_idx,
+                    kind: raw_node.kind,
+                    span: raw_node.span,
+                });
+
+                current_node_idx += 1;
+            }
+            file_idx += 1;
+        }
+
+        // Pass 2: Resolve imports and build edges
+        let resolver = Resolver::new(&symbol_table);
+        let mut edges = Vec::new();
+        let mut current_node_idx = 0;
+
+        let reason_heritage = string_pool.add("heritage");
+        let reason_type = string_pool.add("type_annotation");
+
+        for local_graph in &self.local_graphs {
+            for raw_node in &local_graph.nodes {
+                // Resolve heritage (base classes, traits)
+                for base in &raw_node.heritage {
+                    let targets = resolver.resolve_symbol(&local_graph.file_path, base, &local_graph.imports);
+                    for (target_id, confidence) in targets {
+                        edges.push(Edge {
+                            source: current_node_idx,
+                            target: target_id,
+                            rel_type: RelType::Calls, // Defaulting to Calls for now
+                            confidence,
+                            reason: reason_heritage.clone(),
+                        });
+                    }
+                }
+
+                // Resolve type annotation
+                if let Some(type_ann) = &raw_node.type_annotation {
+                    let targets = resolver.resolve_symbol(&local_graph.file_path, type_ann, &local_graph.imports);
+                    for (target_id, confidence) in targets {
+                        edges.push(Edge {
+                            source: current_node_idx,
+                            target: target_id,
+                            rel_type: RelType::Accesses,
+                            confidence,
+                            reason: reason_type.clone(),
+                        });
+                    }
+                }
+
+                current_node_idx += 1;
+            }
+        }
+
+        // Final pass: Construct CSR (out_offsets and in_offsets)
+        // Sort edges by source to build out_offsets easily
+        edges.sort_by_key(|e| e.source);
+
+        let num_nodes = nodes.len();
+        let mut out_offsets = vec![0; num_nodes + 1];
+        for edge in &edges {
+            out_offsets[edge.source as usize + 1] += 1;
+        }
+        for i in 0..num_nodes {
+            out_offsets[i + 1] += out_offsets[i];
+        }
+
+        // Build in_edge_idx (indices of edges sorted by target)
+        let mut in_edge_idx: Vec<u32> = (0..edges.len() as u32).collect();
+        in_edge_idx.sort_by_key(|&idx| edges[idx as usize].target);
+
+        let mut in_offsets = vec![0; num_nodes + 1];
+        for &idx in &in_edge_idx {
+            let edge = &edges[idx as usize];
+            in_offsets[edge.target as usize + 1] += 1;
+        }
+        for i in 0..num_nodes {
+            in_offsets[i + 1] += in_offsets[i];
+        }
+
+        ZeroCopyGraph {
+            magic: *b"GNX-RS\0\0",
+            fingerprint: [0; 32],
+            string_pool: string_pool.bytes,
+            files,
+            nodes,
+            edges,
+            out_offsets,
+            in_offsets,
+            in_edge_idx,
+            name_index: Vec::new(), // To be implemented if name indexing is needed
+        }
+    }
+}

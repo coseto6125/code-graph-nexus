@@ -1,39 +1,33 @@
-use gnx_core::analyzer::types::RawImport;
-use gnx_core::graph::RelType;
+/// Heuristics for resolving symbols to global nodes.
+/// Ports the exact ResolutionTier and confidence scoring from original GitNexus.
 
-#[derive(Debug, Clone)]
-pub struct ResolvedEdge {
-    pub source_node_name: String,
-    pub target_node_name: String,
-    pub rel_type: RelType,
-    pub confidence: f32,
-    pub reason: String,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FallbackReason {
+    ImplicitSelf,
+    VueComponent,
+    Unknown,
 }
 
-/// Translates RawImport into concrete edges with confidence scores
-/// matching original GitNexus TypeScript heuristics.
-pub fn resolve_imports(imports: &[RawImport], source_node_name: &str) -> Vec<ResolvedEdge> {
-    imports
-        .iter()
-        .map(|import| {
-            // Original GitNexus TypeScript heuristics for import confidence
-            let confidence = if import.source.starts_with('.') {
-                1.0 // Exact local path
-            } else if import.source.starts_with('@') {
-                0.9 // Monorepo package or path alias
-            } else if import.source.contains('/') {
-                0.8 // Deep path within a package
-            } else {
-                0.5 // Standard library or root level third-party package
-            };
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ResolutionTier {
+    SameFile,
+    ImportScoped,
+    Global,
+    Fallback(FallbackReason),
+}
 
-            ResolvedEdge {
-                source_node_name: source_node_name.to_string(),
-                target_node_name: import.imported_name.clone(),
-                rel_type: RelType::Calls, // Translates into concrete CALLS edges
-                confidence,
-                reason: format!("Resolved from import: {}", import.source),
-            }
-        })
-        .collect()
+impl ResolutionTier {
+    /// Returns the base confidence score for the resolution tier.
+    pub fn base_confidence(&self) -> f32 {
+        match self {
+            ResolutionTier::SameFile => 1.0,
+            ResolutionTier::ImportScoped => 0.95,
+            ResolutionTier::Global => 0.7,
+            ResolutionTier::Fallback(reason) => match reason {
+                FallbackReason::ImplicitSelf => 0.8,
+                FallbackReason::VueComponent => 0.8,
+                FallbackReason::Unknown => 0.4,
+            },
+        }
+    }
 }
