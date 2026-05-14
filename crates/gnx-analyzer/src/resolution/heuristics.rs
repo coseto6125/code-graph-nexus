@@ -12,6 +12,12 @@ pub enum FallbackReason {
 pub enum ResolutionTier {
     SameFile,
     ImportScoped,
+    /// Tier 2.5 — callee carries a qualifier (`A::new`, `Cls.method`) that
+    /// resolves uniquely as a Type via the regular tiers, and the member is
+    /// found in the qualifier's defining file. Higher precision than the
+    /// kind-filtered bare-name Tier 3 because the qualifier scopes lookup
+    /// to one file rather than relying on global uniqueness.
+    QualifierScoped,
     Global,
     Fallback(FallbackReason),
 }
@@ -22,6 +28,7 @@ impl ResolutionTier {
         match self {
             ResolutionTier::SameFile => 1.0,
             ResolutionTier::ImportScoped => 0.95,
+            ResolutionTier::QualifierScoped => 0.85,
             ResolutionTier::Global => 0.7,
             ResolutionTier::Fallback(reason) => match reason {
                 FallbackReason::ImplicitSelf => 0.8,
