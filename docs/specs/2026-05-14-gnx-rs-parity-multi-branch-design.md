@@ -72,8 +72,8 @@ graph TB
 
 從 `git remote get-url origin` 解析 repo name：
 
-- `git@github.com:E-NoR/gitnexus-rs.git` → `<repo>=gitnexus-rs`
-- `https://github.com/E-NoR/gitnexus-rs.git` → `gitnexus-rs`
+- `git@github.com:coseto6125/graph-nexus.git` → `<repo>=gitnexus-rs`
+- `https://github.com/coseto6125/graph-nexus.git` → `gitnexus-rs`
 - 無 remote → `<repo>=<working-tree basename>`
 - 多 remote → 用 `origin`，否則第一個 alphabetic
 - `user`/`org` 資訊保留在 registry 的 `remote_url` 欄位，`gnx list-repos` 顯示時即時解析 — 不放進 path
@@ -470,7 +470,7 @@ fn uid_path(absolute: &Path, repo_root: &Path) -> String {
   "repos": [
     {
       "name": "gitnexus-rs",                                       // 路徑用名（撞名可加 hash）
-      "remote_url": "git@github.com:E-NoR/gitnexus-rs.git",        // credential 已剝除；list-repos 顯示時 parse 出 owner
+      "remote_url": "git@github.com:coseto6125/graph-nexus.git",        // credential 已剝除；list-repos 顯示時 parse 出 owner
       "worktree_path": "/home/enor/gitnexus-rs",                   // canonical absolute
       "index_dir_root": "/home/enor/.gnx/gitnexus-rs",             // = ~/.gnx/<name>
       "branches": [
