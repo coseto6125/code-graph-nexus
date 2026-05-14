@@ -1,0 +1,27 @@
+use actix_web::{get, post, delete, web, HttpResponse, Responder};
+
+#[get("/users/{id}")]
+async fn get_user(path: web::Path<u32>) -> impl Responder {
+    HttpResponse::Ok().body(format!("user {}", path.into_inner()))
+}
+
+#[post("/items")]
+async fn create_item() -> impl Responder {
+    HttpResponse::Created()
+}
+
+#[delete("/items/{id}")]
+async fn delete_item() -> impl Responder {
+    HttpResponse::NoContent()
+}
+
+#[patch("/items/{id}")]
+async fn patch_item() -> impl Responder {
+    HttpResponse::Ok()
+}
+
+// 對照組：非 HTTP verb attribute，不該被抓
+#[allow(dead_code)]
+fn helper() -> u32 {
+    42
+}

@@ -58,3 +58,50 @@ fn axum_route_creates_framework_refs_for_handlers() {
         );
     }
 }
+
+#[test]
+fn actix_attribute_macros_create_framework_refs() {
+    let src = include_str!("fixtures/actix_handler.rs.txt");
+    let provider = RustProvider::new().unwrap();
+    let local = provider
+        .parse_file("test.rs".as_ref(), src.as_bytes())
+        .unwrap();
+
+    // Expect 4 actix-route-* refs from #[get/post/delete/patch].
+    let actix_refs: Vec<_> = local
+        .framework_refs
+        .iter()
+        .filter(|r| r.reason.starts_with("actix-route-"))
+        .collect();
+    assert_eq!(
+        actix_refs.len(),
+        4,
+        "expected 4 actix-route-* refs, got {}: {:?}",
+        actix_refs.len(),
+        local.framework_refs
+    );
+
+    let pairs: Vec<(&str, &str)> = actix_refs
+        .iter()
+        .map(|r| (r.reason.as_str(), r.target_name.as_str()))
+        .collect();
+    for expected in [
+        ("actix-route-get", "get_user"),
+        ("actix-route-post", "create_item"),
+        ("actix-route-delete", "delete_item"),
+        ("actix-route-patch", "patch_item"),
+    ] {
+        assert!(pairs.contains(&expected), "missing {:?} in {:?}", expected, pairs);
+    }
+
+    // Negative: #[allow(dead_code)] MUST NOT match.
+    assert!(
+        !pairs.iter().any(|(_, t)| *t == "helper"),
+        "helper should not be captured: {:?}",
+        pairs
+    );
+
+    for r in &actix_refs {
+        assert!(r.confidence > 0.0 && r.confidence <= 1.0);
+    }
+}

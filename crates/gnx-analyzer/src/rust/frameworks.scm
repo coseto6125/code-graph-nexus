@@ -12,3 +12,15 @@
       function: (identifier) @axum.route.method
       arguments: (arguments
         (identifier) @axum.route.handler))))
+
+;; Actix: #[get("/path")] / #[post(...)] / #[put] / #[delete] / #[patch] / #[head] on a fn.
+;; Matches an attribute_item whose attribute's path identifier is an HTTP verb,
+;; immediately followed by a function_item; captures the verb and the function name.
+(_
+  (attribute_item
+    (attribute
+      (identifier) @actix.route.method
+      (#match? @actix.route.method "^(get|post|put|delete|patch|head)$")))
+  .
+  (function_item
+    name: (identifier) @actix.route.handler))
