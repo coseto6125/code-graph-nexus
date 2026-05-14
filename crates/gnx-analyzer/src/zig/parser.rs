@@ -199,6 +199,7 @@ impl LanguageProvider for ZigProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

@@ -183,6 +183,7 @@ impl LanguageProvider for KotlinProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

@@ -161,6 +161,7 @@ impl LanguageProvider for LuaProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

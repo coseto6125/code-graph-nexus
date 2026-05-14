@@ -137,6 +137,7 @@ impl LanguageProvider for HclProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

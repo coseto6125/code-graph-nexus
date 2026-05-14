@@ -136,6 +136,7 @@ impl LanguageProvider for MoveProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

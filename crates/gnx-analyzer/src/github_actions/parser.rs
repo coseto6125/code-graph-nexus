@@ -192,7 +192,8 @@ impl LanguageProvider for GitHubActionsProvider {
                     file_path: path.to_path_buf(),
                     nodes,
                     documents: vec![],
-                    imports,
+                    imports: vec![],
+                    framework_refs: vec![],
                 });
             }
         };
@@ -215,7 +216,8 @@ impl LanguageProvider for GitHubActionsProvider {
                 file_path: path.to_path_buf(),
                 nodes,
                 documents: vec![],
-                imports,
+                imports: vec![],
+                framework_refs: vec![],
             });
         };
 
@@ -293,7 +295,8 @@ impl LanguageProvider for GitHubActionsProvider {
             file_path: path.to_path_buf(),
             nodes,
             documents: vec![],
-            imports,
+            imports: vec![],
+            framework_refs: vec![],
         })
     }
 }

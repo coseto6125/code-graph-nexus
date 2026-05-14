@@ -137,6 +137,7 @@ impl LanguageProvider for VyperProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

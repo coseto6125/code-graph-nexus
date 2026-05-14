@@ -129,6 +129,7 @@ impl LanguageProvider for VerilogProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

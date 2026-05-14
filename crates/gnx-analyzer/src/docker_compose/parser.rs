@@ -184,6 +184,7 @@ impl LanguageProvider for DockerComposeProvider {
                         nodes,
                         imports,
                         documents: vec![],
+            framework_refs: vec![],
                     });
                 }
             }
@@ -312,6 +313,7 @@ impl LanguageProvider for DockerComposeProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

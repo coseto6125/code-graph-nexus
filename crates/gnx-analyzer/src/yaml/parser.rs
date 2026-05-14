@@ -125,6 +125,7 @@ impl LanguageProvider for YamlProvider {
             nodes: vec![],
             documents,
             imports: vec![],
+            framework_refs: vec![],
         })
     }
 }

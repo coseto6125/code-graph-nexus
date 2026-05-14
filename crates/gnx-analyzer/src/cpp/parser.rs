@@ -186,6 +186,7 @@ impl LanguageProvider for CppProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

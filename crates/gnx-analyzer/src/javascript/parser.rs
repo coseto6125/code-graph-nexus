@@ -227,6 +227,7 @@ impl LanguageProvider for JavaScriptProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

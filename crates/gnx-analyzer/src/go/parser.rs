@@ -240,6 +240,7 @@ impl LanguageProvider for GoProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }
