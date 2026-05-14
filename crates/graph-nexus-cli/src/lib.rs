@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod config_parser;
 pub mod engine;
 pub mod git;
 pub mod git_state;

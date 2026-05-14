@@ -13,6 +13,7 @@ pub struct RenderInput<'a> {
     pub by_file: &'a std::collections::BTreeMap<u32, Vec<usize>>,
     pub top_files: &'a [FileSummary],
     pub top_communities: &'a [CommunitySummary],
+    pub top_entry_points: &'a [super::ranking::EntryPointSummary],
     /// 總 community 數（含 unassigned，僅供 header 顯示）
     pub total_communities: usize,
     pub name_collisions: &'a HashMap<String, Vec<usize>>,
@@ -100,14 +101,31 @@ pub fn markdown(input: &RenderInput) -> String {
                 fs.symbol_count,
                 if fs.symbol_count == 1 { "" } else { "s" },
                 fs.cross_community_in_deg,
-                fs.total_in_deg,
+                fs.total_in_deg
             )
             .unwrap();
         }
         writeln!(out).unwrap();
-    }
+        }
 
-    writeln!(out, "## Architecture (top communities)\n").unwrap();
+        if !input.top_entry_points.is_empty() {
+        writeln!(out, "## Top Entry Points (Routes)\n").unwrap();
+        for (rank, ep) in input.top_entry_points.iter().enumerate() {
+            let handler_str = ep.handler_name.as_deref().unwrap_or("<unknown>");
+            writeln!(
+                out,
+                "{}. `{}` → handler `{}` (downstream weight: {})",
+                rank + 1,
+                ep.route_name,
+                handler_str,
+                ep.score
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+        }
+
+        writeln!(out, "## Architecture (Communities)\n").unwrap();
     if input.top_communities.is_empty() {
         writeln!(out, "_(no communities detected)_\n").unwrap();
     } else {
@@ -212,25 +230,38 @@ pub fn json(input: &RenderInput) -> serde_json::Value {
             })
         })
         .collect();
-
-    let communities: Vec<_> = input
-        .top_communities
-        .iter()
-        .map(|cs| {
-            serde_json::json!({
-                "community_id": cs.community_id,
-                "symbol_count": cs.symbol_count,
-                "file_count": cs.file_count,
-                "anchor_file": cs.anchor_file_idx.map(|fi| file_path(g, fi)),
-            })
+let communities: Vec<_> = input
+    .top_communities
+    .iter()
+    .map(|cs| {
+        serde_json::json!({
+            "community_id": cs.community_id,
+            "symbol_count": cs.symbol_count,
+            "file_count": cs.file_count,
+            "anchor_file": cs.anchor_file_idx.map(|fi| file_path(g, fi)),
         })
-        .collect();
+    })
+    .collect();
+
+let entry_points: Vec<_> = input
+    .top_entry_points
+    .iter()
+    .map(|ep| {
+        serde_json::json!({
+            "route_name": ep.route_name,
+            "handler_name": ep.handler_name,
+            "file_path": file_path(g, ep.file_idx),
+            "score": ep.score,
+        })
+    })
+    .collect();
 
     serde_json::json!({
         "files_total": g.files.len(),
         "symbols_total": g.nodes.len(),
         "top_files": top_files,
         "top_communities": communities,
+        "top_entry_points": entry_points,
         "truncated_file_count": input.by_file.len().saturating_sub(input.top_files.len()),
     })
 }

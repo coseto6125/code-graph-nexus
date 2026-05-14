@@ -207,10 +207,12 @@ pub fn run(args: AnalyzeArgs) -> Result<(), String> {
 
     // Step 4: Build global graph
     let build_start = Instant::now();
+    let aliases = crate::config_parser::parse_configs(&repo_path);
     let mut builder = GraphBuilder::new()
         .with_embeddings(args.embeddings)
         .with_cache(old_file_hashes, old_embeddings_cache)
-        .with_resolver_dump(args.dump_resolver.clone());
+        .with_resolver_dump(args.dump_resolver.clone())
+        .with_path_aliases(aliases);
     for graph in local_graphs {
         builder.add_graph(graph);
     }

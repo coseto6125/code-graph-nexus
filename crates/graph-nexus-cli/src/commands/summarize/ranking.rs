@@ -151,6 +151,82 @@ pub fn top_symbols_in_file(
     candidates
 }
 
+/// Entry point summary for routing nodes.
+#[derive(Debug, Clone)]
+pub struct EntryPointSummary {
+    pub route_name: String,
+    pub handler_name: Option<String>,
+    pub file_idx: u32,
+    pub score: u32,
+}
+
+/// Top-N entry points ranked by downstream logic size (out_deg of the handler).
+pub fn top_entry_points(
+    g: &ArchivedZeroCopyGraph,
+    stats: &DegreeStats,
+    top_n: usize,
+) -> Vec<EntryPointSummary> {
+    let mut summaries = Vec::new();
+
+    for (i, node) in g.nodes.iter().enumerate() {
+        if matches!(node.kind, graph_nexus_core::graph::ArchivedNodeKind::Route) {
+            let route_name = node.name.resolve(&g.string_pool).to_string();
+            let file_idx = node.file_idx.to_native();
+
+            let mut best_handler_name = None;
+            let mut max_score = 0;
+
+            let s = g.in_offsets[i].to_native() as usize;
+            let e = g.in_offsets[i + 1].to_native() as usize;
+            for edge_idx_archived in &g.in_edge_idx[s..e] {
+                let edge_idx = edge_idx_archived.to_native() as usize;
+                let edge = &g.edges[edge_idx];
+
+                let rel: graph_nexus_core::graph::RelType = rkyv::deserialize::<
+                    graph_nexus_core::graph::RelType,
+                    rkyv::rancor::Error,
+                >(&edge.rel_type)
+                .unwrap();
+                if rel == graph_nexus_core::graph::RelType::HandlesRoute {
+                    let handler_idx = edge.source.to_native() as usize;
+                    let handler = &g.nodes[handler_idx];
+                    let handler_name = handler.name.resolve(&g.string_pool).to_string();
+
+                    let score = stats.out_deg[handler_idx];
+                    if score >= max_score {
+                        max_score = score;
+                        best_handler_name = Some(handler_name);
+                    }
+                }
+            }
+
+            summaries.push(EntryPointSummary {
+                route_name,
+                handler_name: best_handler_name,
+                file_idx,
+                score: max_score,
+            });
+        }
+    }
+
+    if top_n == 0 {
+        return Vec::new();
+    }
+
+    let cmp = |a: &EntryPointSummary, b: &EntryPointSummary| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| a.route_name.cmp(&b.route_name))
+    };
+
+    if top_n < summaries.len() {
+        summaries.select_nth_unstable_by(top_n - 1, cmp);
+        summaries.truncate(top_n);
+    }
+    summaries.sort_by(cmp);
+    summaries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

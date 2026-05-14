@@ -61,6 +61,7 @@ pub fn run(args: SummarizeArgs, engine: &Engine) -> Result<(), GnxError> {
 
     let top_files = ranking::top_files(&by_file, &stats, args.top_files);
     let top_communities = ranking::top_communities(g, &by_community, args.top_communities);
+    let top_entry_points = ranking::top_entry_points(g, &stats, 10); // Hardcoded top 10 for entry points
 
     let input = render::RenderInput {
         graph: g,
@@ -68,6 +69,7 @@ pub fn run(args: SummarizeArgs, engine: &Engine) -> Result<(), GnxError> {
         by_file: &by_file,
         top_files: &top_files,
         top_communities: &top_communities,
+        top_entry_points: &top_entry_points,
         total_communities: by_community.len(),
         name_collisions: &name_collisions,
         top_symbols_per_file: args.top_symbols,
