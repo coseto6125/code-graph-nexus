@@ -1,2 +1,24 @@
+._source_code
 .sample_repo/
-.sample_repo/
+
+# Rust build
+target/
+
+# AI tool config / caches (per-user)
+.claude/
+.gemini/
+.fastembed_cache/
+
+# Local index
+.gitnexus-rs/
+
+# Scratch / one-off migration scripts (repo root)
+/test*.py
+/test*.rs
+/test*.js
+/test*.ts
+/test*.java
+/test*.rb
+/test*.scm
+/fix_*.py
+/refactor_*.py
