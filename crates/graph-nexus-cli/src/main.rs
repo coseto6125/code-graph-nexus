@@ -74,6 +74,8 @@ enum Commands {
     Process(commands::process::ProcessArgs),
     /// Check per-repo staleness
     Status(commands::status::StatusArgs),
+    /// Interactive wizard to edit `.gitnexus-rs/config.toml`
+    Config(commands::config::ConfigArgs),
 }
 
 fn main() {
@@ -181,6 +183,15 @@ fn main() {
         return;
     }
 
+    // Config TUI is fully self-contained — reads / writes TOML only.
+    if let Commands::Config(args) = &cli.command {
+        if let Err(e) = commands::config::run(args.clone()) {
+            eprintln!("Command failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Determine the repo root to use for registry resolution: prefer --repo arg, fall back to cwd.
     let repo_opt = match &cli.command {
         Commands::Context(args) => args.repo.as_deref(),
@@ -195,6 +206,7 @@ fn main() {
         Commands::Cluster(args) => args.repo.as_deref(),
         Commands::Status(args) => args.repo.as_deref(),
         Commands::Clean(args) => args.repo.to_str(),
+        Commands::Config(args) => args.repo.as_deref(),
         Commands::Analyze(_)
         | Commands::Init(_)
         | Commands::HookHandle(_)
@@ -241,7 +253,8 @@ fn main() {
         | Commands::VerifyResolver(_)
         | Commands::Doctor(_)
         | Commands::Clean(_)
-        | Commands::Status(_) => Ok(()), // Handled above
+        | Commands::Status(_)
+        | Commands::Config(_) => Ok(()), // Handled above
     };
 
     if let Err(e) = result {

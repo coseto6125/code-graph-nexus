@@ -1,6 +1,6 @@
+use crate::engine::Engine;
 use clap::Args;
 use graph_nexus_core::graph::{NodeKind, RelType};
-use crate::engine::Engine;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -23,7 +23,9 @@ pub struct CypherArgs {
 }
 
 pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::GnxError> {
-    let graph = engine.graph().map_err(|e| graph_nexus_core::GnxError::Rkyv(e.to_string()))?;
+    let graph = engine
+        .graph()
+        .map_err(|e| graph_nexus_core::GnxError::Rkyv(e.to_string()))?;
 
     let caps = match CYPHER_REGEX.captures(&args.query) {
         Some(c) => c,
@@ -39,10 +41,12 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
     let rel_type: Option<RelType> = caps.name("rel_type").and_then(|m| m.as_str().parse().ok());
 
     let is_variable = caps.name("star").is_some();
-    let min_len: usize = caps.name("min_len")
+    let min_len: usize = caps
+        .name("min_len")
         .and_then(|m| m.as_str().parse().ok())
-        .unwrap_or(if is_variable { 1 } else { 1 });
-    let max_len: usize = caps.name("max_len")
+        .unwrap_or(1);
+    let max_len: usize = caps
+        .name("max_len")
         .and_then(|m| m.as_str().parse().ok())
         .unwrap_or(if is_variable { usize::MAX } else { 1 });
 
@@ -95,7 +99,7 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
 
                 let tgt_name = tgt_node.name.resolve(&graph.string_pool);
                 let file_idx = tgt_node.file_idx.to_native() as usize;
-                
+
                 let tgt_path = if file_idx < graph.files.len() {
                     graph.files[file_idx].path.resolve(&graph.string_pool)
                 } else {
@@ -115,7 +119,7 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
             }
         } else {
             let callees = graph_nexus_core::graph_query::callees_of(graph, src_idx as u32, max_len);
-            
+
             for (tgt_idx, depth) in callees {
                 if depth < min_len || depth > max_len {
                     continue;
@@ -129,7 +133,7 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
 
                 let tgt_name = tgt_node.name.resolve(&graph.string_pool);
                 let file_idx = tgt_node.file_idx.to_native() as usize;
-                
+
                 let tgt_path = if file_idx < graph.files.len() {
                     graph.files[file_idx].path.resolve(&graph.string_pool)
                 } else {

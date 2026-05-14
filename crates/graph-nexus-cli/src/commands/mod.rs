@@ -1,6 +1,7 @@
 pub mod analyze;
 pub mod clean;
 pub mod cluster;
+pub mod config;
 pub mod context;
 pub mod cypher;
 pub mod detect_changes;
