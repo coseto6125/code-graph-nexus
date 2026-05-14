@@ -34,14 +34,21 @@ pub struct VerifyResolverArgs {
     pub report: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, Default)]
+#[serde(default)]
 struct Record {
     src_file: String,
     name: String,
     specifier: Option<String>,
+    /// `tier` is stored as a string here (not the analyzer's `DecisionTier`
+    /// enum) because the JSONL is also produced by external oracle scripts
+    /// that emit other values like `"External"` (Rust oracle). Keeping the
+    /// reader tolerant lets one harness compare across producers.
     tier: String,
     target_file: Option<String>,
     alt_count: u32,
+    // confidence is deliberately not read — diff logic doesn't use it,
+    // and ignoring it lets us tolerate producers that omit the field.
 }
 
 #[derive(Debug, Default)]
@@ -56,6 +63,14 @@ struct Counts {
     gnx_only_other: u32,
 }
 
+/// Result of parsing a JSONL dump file. Bad lines are surfaced as a count
+/// rather than silently dropped — see `render_report` which prints
+/// `bad_lines` in the summary so users notice silent producer drift.
+struct ParsedJsonl {
+    records: Vec<Record>,
+    bad_lines: u32,
+}
+
 pub fn run(args: VerifyResolverArgs) -> Result<(), gnx_core::GnxError> {
     let oracle = read_jsonl(&args.oracle)
         .map_err(|e| gnx_core::GnxError::InvalidArgument(format!("read oracle: {e}")))?;
@@ -63,8 +78,17 @@ pub fn run(args: VerifyResolverArgs) -> Result<(), gnx_core::GnxError> {
         .map_err(|e| gnx_core::GnxError::InvalidArgument(format!("read gnx dump: {e}")))?;
 
     let normalize = pick_normalize(&args.lang);
-    let (counts, worst, per_tier) = diff(&oracle, &gnx, normalize);
-    let report = render_report(&args.lang, &counts, &worst, &per_tier, oracle.len(), gnx.len());
+    let (counts, worst, per_tier) = diff(&oracle.records, &gnx.records, normalize);
+    let report = render_report(
+        &args.lang,
+        &counts,
+        &worst,
+        &per_tier,
+        oracle.records.len(),
+        gnx.records.len(),
+        oracle.bad_lines,
+        gnx.bad_lines,
+    );
 
     match args.report.as_deref() {
         Some(p) => {
@@ -84,55 +108,27 @@ pub fn run(args: VerifyResolverArgs) -> Result<(), gnx_core::GnxError> {
     Ok(())
 }
 
-fn read_jsonl(path: &std::path::Path) -> std::io::Result<Vec<Record>> {
+fn read_jsonl(path: &std::path::Path) -> std::io::Result<ParsedJsonl> {
     use std::io::BufRead;
     let f = std::fs::File::open(path)?;
     let r = std::io::BufReader::new(f);
-    let mut out = Vec::new();
+    let mut records = Vec::new();
+    let mut bad_lines = 0u32;
     for (lineno, line) in r.lines().enumerate() {
         let line = line?;
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
+        match serde_json::from_str::<Record>(line) {
+            Ok(rec) => records.push(rec),
             Err(e) => {
+                bad_lines += 1;
                 tracing::warn!("{}:{}: invalid JSON: {}", path.display(), lineno + 1, e);
-                continue;
             }
-        };
-        out.push(Record {
-            src_file: v
-                .get("src_file")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string(),
-            name: v
-                .get("name")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string(),
-            specifier: v
-                .get("specifier")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string()),
-            tier: v
-                .get("tier")
-                .and_then(|x| x.as_str())
-                .unwrap_or("Unresolved")
-                .to_string(),
-            target_file: v
-                .get("target_file")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string()),
-            alt_count: v
-                .get("alt_count")
-                .and_then(|x| x.as_u64())
-                .unwrap_or(0) as u32,
-        });
+        }
     }
-    Ok(out)
+    Ok(ParsedJsonl { records, bad_lines })
 }
 
 /// Normalize a target file path for extension-equivalence comparison.
@@ -151,7 +147,8 @@ fn pick_normalize(lang: &str) -> Normalizer {
 fn normalize_ts(s: &str) -> String {
     let s = s.replace('\\', "/");
     let s = s.trim_start_matches("./").to_string();
-    let s = strip_one_of(&s, &[".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".d.ts"]);
+    // Order matters: longer suffixes first so `foo.d.ts` strips to `foo`, not `foo.d`.
+    let s = strip_one_of(&s, &[".d.ts", ".tsx", ".jsx", ".mjs", ".cjs", ".ts", ".js"]);
     strip_one_of(&s, &["/index", "/main"])
 }
 
@@ -332,6 +329,7 @@ fn push_offender(buf: &mut Vec<WorstOffender>, o: &Record, class: &'static str, 
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_report(
     lang: &str,
     counts: &Counts,
@@ -339,16 +337,27 @@ fn render_report(
     per_tier: &HashMap<String, Counts>,
     oracle_total: usize,
     gnx_total: usize,
+    oracle_bad: u32,
+    gnx_bad: u32,
 ) -> String {
     let mut s = String::new();
     s.push_str(&format!("# verify-resolver report ({lang})\n\n"));
     s.push_str(&format!(
-        "Oracle records: {oracle_total}\nGnx records: {gnx_total}\n\n"
+        "Oracle records: {oracle_total} (bad lines: {oracle_bad})\nGnx records: {gnx_total} (bad lines: {gnx_bad})\n\n"
     ));
+    if oracle_bad > 0 || gnx_bad > 0 {
+        s.push_str(
+            "> ⚠ Some input lines failed JSON parse — totals above are post-skip. \
+                    Check the warn-level logs for line numbers.\n\n",
+        );
+    }
     s.push_str("## Summary\n\n");
     s.push_str("| class | count |\n|---|---|\n");
     s.push_str(&format!("| TP (correct) | {} |\n", counts.tp));
-    s.push_str(&format!("| FP_ghost (wrong target) | {} |\n", counts.fp_ghost));
+    s.push_str(&format!(
+        "| FP_ghost (wrong target) | {} |\n",
+        counts.fp_ghost
+    ));
     s.push_str(&format!(
         "| FP_overmatch (Global with alts) | {} |\n",
         counts.fp_overmatch
@@ -447,7 +456,14 @@ mod tests {
 
     #[test]
     fn diff_classifies_tp_when_target_files_match_under_normalization() {
-        let oracle = vec![mk("s.ts", "X", Some("./y"), "ImportScoped", Some("y.ts"), 0)];
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("./y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
         let gnx = vec![mk(
             "s.ts",
             "X",
@@ -464,7 +480,14 @@ mod tests {
 
     #[test]
     fn diff_classifies_fp_ghost_when_target_files_differ() {
-        let oracle = vec![mk("s.ts", "X", Some("@/y"), "ImportScoped", Some("y.ts"), 0)];
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("@/y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
         let gnx = vec![mk(
             "s.ts",
             "X",
@@ -480,7 +503,14 @@ mod tests {
 
     #[test]
     fn diff_classifies_fp_overmatch_when_global_has_alternatives() {
-        let oracle = vec![mk("s.ts", "X", Some("@/y"), "ImportScoped", Some("y.ts"), 0)];
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("@/y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
         let gnx = vec![mk(
             "s.ts",
             "X",
@@ -497,7 +527,14 @@ mod tests {
 
     #[test]
     fn diff_classifies_fn_dangling_when_gnx_unresolved() {
-        let oracle = vec![mk("s.ts", "X", Some("@/y"), "ImportScoped", Some("y.ts"), 0)];
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("@/y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
         let gnx = vec![mk("s.ts", "X", Some("@/y"), "Unresolved", None, 0)];
         let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
         assert_eq!(c.fn_dangling, 1);
@@ -506,7 +543,14 @@ mod tests {
 
     #[test]
     fn diff_prefers_best_gnx_attempt_per_key() {
-        let oracle = vec![mk("s.ts", "X", Some("@/y"), "ImportScoped", Some("y.ts"), 0)];
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("@/y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
         // gnx records two attempts for same (src, name): Unresolved then Global → Global wins
         let gnx = vec![
             mk("s.ts", "X", None, "Unresolved", None, 0),
@@ -514,5 +558,101 @@ mod tests {
         ];
         let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
         assert_eq!(c.tp, 1, "should pick the Global resolution, not Unresolved");
+    }
+
+    #[test]
+    fn ts_extension_equivalence_strips_d_ts_before_ts() {
+        // `foo.d.ts` and `foo.ts` should normalize identically. Caught a
+        // bug where `.ts` was listed before `.d.ts` and stripped first,
+        // leaving `foo.d` ≠ `foo`.
+        assert_eq!(normalize_ts("a/b.d.ts"), normalize_ts("a/b.ts"));
+    }
+
+    #[test]
+    fn diff_counts_oracle_only_when_gnx_never_saw_the_key() {
+        // Oracle has a binding gnx never resolved (e.g. import in a file
+        // with no callsite). Should land in `oracle_only` and not affect
+        // any other counter.
+        let oracle = vec![mk(
+            "s.ts",
+            "X",
+            Some("./y"),
+            "ImportScoped",
+            Some("y.ts"),
+            0,
+        )];
+        let gnx: Vec<Record> = vec![];
+        let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
+        assert_eq!(c.oracle_only, 1);
+        assert_eq!(c.tp, 0);
+        assert_eq!(c.fp_ghost, 0);
+        assert_eq!(c.fn_dangling, 0);
+    }
+
+    #[test]
+    fn diff_treats_oracle_unresolved_plus_gnx_connected_as_fp_ghost() {
+        // Oracle says the import didn't resolve; gnx still produced an
+        // edge (likely Tier-3 same-name match). Conservative: count as
+        // ghost since gnx is connecting things tsc couldn't.
+        let oracle = vec![mk("s.ts", "X", Some("@/y"), "Unresolved", None, 0)];
+        let gnx = vec![mk(
+            "s.ts",
+            "X",
+            Some("@/y"),
+            "Global",
+            Some("somewhere.ts"),
+            0,
+        )];
+        let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
+        assert_eq!(c.fp_ghost, 1);
+        assert_eq!(c.tp, 0);
+    }
+
+    #[test]
+    fn diff_ignores_both_unresolved_pairs() {
+        // Neither side resolved — no defect, no signal. Should not bump
+        // any of the headline counters.
+        let oracle = vec![mk("s.ts", "X", Some("nope"), "Unresolved", None, 0)];
+        let gnx = vec![mk("s.ts", "X", Some("nope"), "Unresolved", None, 0)];
+        let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
+        assert_eq!(c.tp, 0);
+        assert_eq!(c.fp_ghost, 0);
+        assert_eq!(c.fn_dangling, 0);
+        assert_eq!(c.oracle_only, 0);
+    }
+
+    #[test]
+    fn diff_buckets_gnx_only_records_by_tier() {
+        // gnx resolved Tier 1 SameFile entries oracle never sees — those
+        // should land in `gnx_only_same_file` (excluded from diff). Other
+        // tier hits oracle never sees go to `gnx_only_other`.
+        let oracle: Vec<Record> = vec![];
+        let gnx = vec![
+            mk("s.ts", "X", None, "SameFile", Some("s.ts"), 0),
+            mk("s.ts", "Y", Some("@/z"), "Global", Some("z.ts"), 0),
+        ];
+        let (c, _, _) = diff(&oracle, &gnx, normalize_ts);
+        assert_eq!(c.gnx_only_same_file, 1);
+        assert_eq!(c.gnx_only_other, 1);
+    }
+
+    #[test]
+    fn read_jsonl_skips_malformed_lines_and_counts_them() {
+        use std::io::Write;
+        let path =
+            std::env::temp_dir().join(format!("gnx-jsonl-test-{}.jsonl", std::process::id()));
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(
+            br#"{"src_file":"a.ts","name":"X","specifier":null,"tier":"SameFile","target_file":null,"alt_count":0}
+this is not json
+{"src_file":"b.ts","name":"Y","specifier":null,"tier":"Global","target_file":"y.ts","alt_count":1}
+"#,
+        )
+        .unwrap();
+        drop(f);
+        let parsed = read_jsonl(&path).expect("read_jsonl succeeds even with bad lines");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(parsed.records.len(), 2);
+        assert_eq!(parsed.bad_lines, 1);
     }
 }
