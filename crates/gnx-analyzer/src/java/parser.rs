@@ -1,4 +1,5 @@
 use crate::calls::extract_calls;
+use crate::framework_confidence;
 use crate::framework_helpers::{has_import_from, node_span};
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
@@ -228,7 +229,7 @@ impl LanguageProvider for JavaProvider {
                     pending_spring_refs.push(RawFrameworkRef {
                         source_name: class_name.to_string(),
                         target_name: target_name.to_string(),
-                        confidence: 0.8,
+                        confidence: framework_confidence::SPRING_AUTOWIRED,
                         reason: "spring-autowired".to_string(),
                         span: node_span(&tgt),
                     });
@@ -244,7 +245,7 @@ impl LanguageProvider for JavaProvider {
                     pending_spring_refs.push(RawFrameworkRef {
                         source_name: class_name.to_string(),
                         target_name: method_name.to_string(),
-                        confidence: 0.9,
+                        confidence: framework_confidence::SPRING_ROUTE,
                         reason: "spring-route-handler".to_string(),
                         span: node_span(&mth),
                     });

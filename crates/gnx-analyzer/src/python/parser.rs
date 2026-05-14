@@ -1,4 +1,5 @@
 use crate::calls::extract_calls;
+use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
     Span, MODULE_LEVEL_SOURCE,
@@ -10,7 +11,68 @@ use gnx_core::analyzer::types::{
 use gnx_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Node, Parser, Query, QueryCursor};
+
+// Framework-presence gates: only claim "this is a FastAPI/Django/Celery ref"
+// when the file actually imports the framework. Reflection fan-out and
+// blind_spots are intentionally not gated — they are language-level patterns.
+const FASTAPI_REQUIRED: &[&str] = &["fastapi"];
+const DJANGO_REQUIRED: &[&str] = &["django"];
+const CELERY_REQUIRED: &[&str] = &["celery"];
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index lookup in
+/// `parse_file` (eval / exec / compile / dynamic-import / builtin-import /
+/// cross-getattr) so the dispatch reads as a flat table.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "python-eval",
+        "eval(arg) — runtime Python code execution; called function is not statically determinable",
+    ),
+    (
+        "python-exec",
+        "exec(arg) — runtime statement execution; executed code is not statically determinable",
+    ),
+    (
+        "python-compile",
+        "compile(arg) — runtime bytecode compile; produced code object is not statically determinable",
+    ),
+    (
+        "python-dynamic-import",
+        "importlib.import_module(...) — dynamic module loading; imported module name depends on runtime value",
+    ),
+    (
+        "python-builtin-import",
+        "__import__(...) — dynamic builtin import; module name depends on runtime value",
+    ),
+    (
+        "python-cross-getattr",
+        "getattr(<obj>, name)() with obj != self — cross-object reflection; target class not enumerated by gnx Phase 2",
+    ),
+];
+
+/// Push a Django signal RawFrameworkRef when both `sig_node` (signal name) and
+/// `handler_node` (handler identifier) decode as UTF-8. Shared by `@receiver`
+/// decorator and `signal.connect(handler)` capture sites — only `reason` differs.
+fn push_django_signal_ref(
+    sig_node: Node,
+    handler_node: Node,
+    source: &[u8],
+    reason: &str,
+    dest: &mut Vec<RawFrameworkRef>,
+) {
+    if let (Ok(sig), Ok(handler)) = (
+        std::str::from_utf8(&source[sig_node.start_byte()..sig_node.end_byte()]),
+        std::str::from_utf8(&source[handler_node.start_byte()..handler_node.end_byte()]),
+    ) {
+        dest.push(RawFrameworkRef {
+            source_name: sig.to_string(),
+            target_name: handler.to_string(),
+            confidence: framework_confidence::DJANGO_SIGNAL,
+            reason: reason.to_string(),
+            span: node_span(&handler_node),
+        });
+    }
+}
 
 pub struct PythonProvider {
     query: Query,
@@ -114,15 +176,66 @@ impl LanguageProvider for PythonProvider {
             .parse(source, None)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse python file"))?;
 
+        let idx = &self.indices;
+
+        // Pre-scan pass: walk the same query once just to populate `imports`.
+        // We then compute framework-presence flags up-front so the main pass
+        // can short-circuit framework-specific captures the moment they fire
+        // (skip ref construction + push entirely, not just the final extend).
+        let mut imports: Vec<RawImport> = Vec::new();
+        {
+            let mut pre_cursor = QueryCursor::new();
+            let mut pre_matches = pre_cursor.matches(&self.query, tree.root_node(), source);
+            while let Some(m) = pre_matches.next() {
+                let mut import_name_node = None;
+                let mut import_src_node = None;
+                let mut import_alias_node = None;
+                for cap in m.captures {
+                    let cap_idx = Some(cap.index);
+                    if cap_idx == idx.import_name {
+                        import_name_node = Some(cap.node);
+                    } else if cap_idx == idx.import_source {
+                        import_src_node = Some(cap.node);
+                    } else if cap_idx == idx.import_alias {
+                        import_alias_node = Some(cap.node);
+                    }
+                }
+                if let Some(i_name) = import_name_node {
+                    if let Ok(name_str) =
+                        std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()])
+                    {
+                        let src_str = if let Some(i_src) = import_src_node {
+                            std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()])
+                                .unwrap_or("")
+                                .to_string()
+                        } else {
+                            "".to_string()
+                        };
+                        let alias = import_alias_node.and_then(|a| {
+                            std::str::from_utf8(&source[a.start_byte()..a.end_byte()])
+                                .ok()
+                                .map(|s| s.to_string())
+                        });
+                        imports.push(RawImport {
+                            alias,
+                            imported_name: name_str.to_string(),
+                            source: src_str,
+                        });
+                    }
+                }
+            }
+        }
+
+        let has_fastapi = has_import_from(&imports, FASTAPI_REQUIRED);
+        let has_django = has_import_from(&imports, DJANGO_REQUIRED);
+        let has_celery = has_import_from(&imports, CELERY_REQUIRED);
+
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
         let mut nodes: Vec<RawNode> = Vec::new();
-        let mut imports: Vec<RawImport> = Vec::new();
         let mut routes: Vec<RawRoute> = Vec::new();
         let mut blind_spots: Vec<BlindSpot> = Vec::new();
-
-        let idx = &self.indices;
 
         // Collect (target_name, span) for FastAPI Depends() refs; resolve
         // the enclosing function via span containment after nodes are built.
@@ -146,10 +259,6 @@ impl LanguageProvider for PythonProvider {
             let mut heritage = Vec::new();
             let mut is_exported_explicit = false;
             let mut decorators = Vec::new();
-
-            let mut import_name_node = None;
-            let mut import_src_node = None;
-            let mut import_alias_node = None;
 
             let mut route_method = None;
             let mut route_path = None;
@@ -188,12 +297,11 @@ impl LanguageProvider for PythonProvider {
                     {
                         decorators.push(d_str.to_string());
                     }
-                } else if cap_idx == idx.import_name {
-                    import_name_node = Some(cap.node);
-                } else if cap_idx == idx.import_source {
-                    import_src_node = Some(cap.node);
-                } else if cap_idx == idx.import_alias {
-                    import_alias_node = Some(cap.node);
+                } else if cap_idx == idx.import_name
+                    || cap_idx == idx.import_source
+                    || cap_idx == idx.import_alias
+                {
+                    // Already collected in the pre-scan pass; nothing to do here.
                 } else if cap_idx == idx.route_method {
                     route_method = Some(cap.node);
                 } else if cap_idx == idx.route_path {
@@ -204,93 +312,106 @@ impl LanguageProvider for PythonProvider {
                 } else if cap_idx == idx.function || cap_idx == idx.class {
                     root_span_node = Some(cap.node);
                 } else if cap_idx == idx.fastapi_depends_target {
+                    if !has_fastapi {
+                        continue;
+                    }
                     if let Ok(target_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         pending_depends.push((target_name.to_string(), node_span(&cap.node)));
                     }
                 } else if cap_idx == idx.fastapi_route_app {
+                    if !has_fastapi {
+                        continue;
+                    }
                     fa_route_app_node = Some(cap.node);
                 } else if cap_idx == idx.fastapi_route_method {
+                    if !has_fastapi {
+                        continue;
+                    }
                     fa_route_method_node = Some(cap.node);
                 } else if cap_idx == idx.fastapi_route_handler {
+                    if !has_fastapi {
+                        continue;
+                    }
                     fa_route_handler_node = Some(cap.node);
                 } else if cap_idx == idx.django_url_handler {
+                    if !has_django {
+                        continue;
+                    }
                     if let Ok(target_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         pending_django_refs.push(RawFrameworkRef {
                             source_name: MODULE_LEVEL_SOURCE.to_string(),
                             target_name: target_name.to_string(),
-                            confidence: 0.9,
+                            confidence: framework_confidence::DJANGO_URL,
                             reason: "django-url-path".to_string(),
                             span: node_span(&cap.node),
                         });
                     }
                 } else if cap_idx == idx.django_signal_receiver_name {
+                    if !has_django {
+                        continue;
+                    }
                     dj_recv_name_node = Some(cap.node);
                 } else if cap_idx == idx.django_signal_receiver_handler {
+                    if !has_django {
+                        continue;
+                    }
                     dj_recv_handler_node = Some(cap.node);
                 } else if cap_idx == idx.django_signal_connect_name {
+                    if !has_django {
+                        continue;
+                    }
                     dj_connect_name_node = Some(cap.node);
                 } else if cap_idx == idx.django_signal_connect_handler {
+                    if !has_django {
+                        continue;
+                    }
                     dj_connect_handler_node = Some(cap.node);
                 } else if cap_idx == idx.celery_task_handler {
+                    if !has_celery {
+                        continue;
+                    }
                     if let Ok(target_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         pending_celery_refs.push(RawFrameworkRef {
                             source_name: MODULE_LEVEL_SOURCE.to_string(),
                             target_name: target_name.to_string(),
-                            confidence: 0.9,
+                            confidence: framework_confidence::CELERY_TASK,
                             reason: "celery-task".to_string(),
                             span: node_span(&cap.node),
                         });
                     }
                 } else if cap_idx == idx.reflection_getattr_site {
                     pending_getattr_sites.push(node_span(&cap.node));
-                } else if cap_idx == idx.blind_eval {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-eval".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "eval(arg) — runtime Python code execution; called function is not statically determinable".to_string(),
-                    });
-                } else if cap_idx == idx.blind_exec {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-exec".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "exec(arg) — runtime statement execution; executed code is not statically determinable".to_string(),
-                    });
-                } else if cap_idx == idx.blind_compile {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-compile".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "compile(arg) — runtime bytecode compile; produced code object is not statically determinable".to_string(),
-                    });
-                } else if cap_idx == idx.blind_dynamic_import {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-dynamic-import".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "importlib.import_module(...) — dynamic module loading; imported module name depends on runtime value".to_string(),
-                    });
-                } else if cap_idx == idx.blind_builtin_import {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-builtin-import".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "__import__(...) — dynamic builtin import; module name depends on runtime value".to_string(),
-                    });
-                } else if cap_idx == idx.blind_cross_getattr {
-                    blind_spots.push(BlindSpot {
-                        kind: "python-cross-getattr".to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: "getattr(<obj>, name)() with obj != self — cross-object reflection; target class not enumerated by gnx Phase 2".to_string(),
-                    });
+                } else {
+                    // Blind-spot dispatch: one row per kind, no per-arm boilerplate.
+                    let blind_match: Option<(&str, &str)> = if cap_idx == idx.blind_eval {
+                        Some(BLIND_SPEC[0])
+                    } else if cap_idx == idx.blind_exec {
+                        Some(BLIND_SPEC[1])
+                    } else if cap_idx == idx.blind_compile {
+                        Some(BLIND_SPEC[2])
+                    } else if cap_idx == idx.blind_dynamic_import {
+                        Some(BLIND_SPEC[3])
+                    } else if cap_idx == idx.blind_builtin_import {
+                        Some(BLIND_SPEC[4])
+                    } else if cap_idx == idx.blind_cross_getattr {
+                        Some(BLIND_SPEC[5])
+                    } else {
+                        None
+                    };
+                    if let Some((kind, hint)) = blind_match {
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
+                    }
                 }
             }
 
@@ -307,7 +428,7 @@ impl LanguageProvider for PythonProvider {
                     pending_fastapi_refs.push(RawFrameworkRef {
                         source_name: app_str.to_string(),
                         target_name: handler_str.to_string(),
-                        confidence: 0.9,
+                        confidence: framework_confidence::FASTAPI_ROUTE,
                         reason: format!("fastapi-route-{}", method_str),
                         span: node_span(&handler_n),
                     });
@@ -315,35 +436,24 @@ impl LanguageProvider for PythonProvider {
             }
 
             if let (Some(sig_n), Some(handler_n)) = (dj_recv_name_node, dj_recv_handler_node) {
-                if let (Ok(sig_str), Ok(handler_str)) = (
-                    std::str::from_utf8(&source[sig_n.start_byte()..sig_n.end_byte()]),
-                    std::str::from_utf8(&source[handler_n.start_byte()..handler_n.end_byte()]),
-                ) {
-                    pending_django_refs.push(RawFrameworkRef {
-                        source_name: sig_str.to_string(),
-                        target_name: handler_str.to_string(),
-                        confidence: 0.9,
-                        reason: "django-signal-receiver".to_string(),
-                        span: node_span(&handler_n),
-                    });
-                }
+                push_django_signal_ref(
+                    sig_n,
+                    handler_n,
+                    source,
+                    "django-signal-receiver",
+                    &mut pending_django_refs,
+                );
             }
 
-            if let (Some(sig_n), Some(handler_n)) =
-                (dj_connect_name_node, dj_connect_handler_node)
+            if let (Some(sig_n), Some(handler_n)) = (dj_connect_name_node, dj_connect_handler_node)
             {
-                if let (Ok(sig_str), Ok(handler_str)) = (
-                    std::str::from_utf8(&source[sig_n.start_byte()..sig_n.end_byte()]),
-                    std::str::from_utf8(&source[handler_n.start_byte()..handler_n.end_byte()]),
-                ) {
-                    pending_django_refs.push(RawFrameworkRef {
-                        source_name: sig_str.to_string(),
-                        target_name: handler_str.to_string(),
-                        confidence: 0.9,
-                        reason: "django-signal-connect".to_string(),
-                        span: node_span(&handler_n),
-                    });
-                }
+                push_django_signal_ref(
+                    sig_n,
+                    handler_n,
+                    source,
+                    "django-signal-connect",
+                    &mut pending_django_refs,
+                );
             }
 
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
@@ -387,31 +497,10 @@ impl LanguageProvider for PythonProvider {
                 }
             }
 
-            if let Some(i_name) = import_name_node {
-                if let Ok(name_str) =
-                    std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()])
-                {
-                    let src_str = if let Some(i_src) = import_src_node {
-                        std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()])
-                            .unwrap_or("")
-                            .to_string()
-                    } else {
-                        "".to_string()
-                    };
-
-                    let alias = import_alias_node.and_then(|a| {
-                        std::str::from_utf8(&source[a.start_byte()..a.end_byte()])
-                            .ok()
-                            .map(|s| s.to_string())
-                    });
-
-                    imports.push(RawImport {
-                        alias,
-                        imported_name: name_str.to_string(),
-                        source: src_str,
-                    });
-                }
-            }
+            // Imports were collected up-front in the pre-scan pass — see top of
+            // parse_file. Skipping a duplicate populate here keeps `imports` as
+            // the single source of truth and lets the framework gates run before
+            // any pending_*_refs push.
 
             if is_route {
                 if let (Some(r_method), Some(r_path), Some(root)) =
@@ -436,37 +525,27 @@ impl LanguageProvider for PythonProvider {
         extract_calls(tree.root_node(), source, &mut nodes, &["call"]);
 
         // Resolve FastAPI Depends() refs: find the innermost enclosing
-        // Function/Method node whose span contains the capture span.
+        // Function/Method node whose span contains the capture span. The site
+        // capture itself was gated by `has_fastapi` in the main loop, so no
+        // additional gate is needed here.
         for (target_name, span) in pending_depends {
             if let Some(source_name) = enclosing_function_name(&nodes, span) {
                 pending_fastapi_refs.push(RawFrameworkRef {
                     source_name,
                     target_name,
-                    confidence: 0.6,
+                    confidence: framework_confidence::FASTAPI_DEPENDS,
                     reason: "fastapi-depends".to_string(),
                     span,
                 });
             }
         }
 
-        // Framework-presence gates: only claim "this is a FastAPI/Django/Celery
-        // ref" when the file actually imports the framework. Refraction fan-out
-        // and blind_spots are intentionally not gated — they are language-level
-        // patterns, not framework-specific.
-        const FASTAPI_REQUIRED: &[&str] = &["fastapi"];
-        const DJANGO_REQUIRED: &[&str] = &["django"];
-        const CELERY_REQUIRED: &[&str] = &["celery"];
-
+        // pending_*_refs were only populated when the matching framework gate
+        // was satisfied, so we can merge unconditionally here.
         let mut framework_refs: Vec<RawFrameworkRef> = Vec::new();
-        if has_import_from(&imports, FASTAPI_REQUIRED) {
-            framework_refs.extend(pending_fastapi_refs);
-        }
-        if has_import_from(&imports, DJANGO_REQUIRED) {
-            framework_refs.extend(pending_django_refs);
-        }
-        if has_import_from(&imports, CELERY_REQUIRED) {
-            framework_refs.extend(pending_celery_refs);
-        }
+        framework_refs.extend(pending_fastapi_refs);
+        framework_refs.extend(pending_django_refs);
+        framework_refs.extend(pending_celery_refs);
 
         // Resolve reflection-getattr fan-out sites: enclosing method (source)
         // dispatches to any sibling method on the same class. Skip sites with
@@ -486,7 +565,7 @@ impl LanguageProvider for PythonProvider {
             fanout_refs.push(RawFanoutRef {
                 source_name,
                 candidates,
-                base_confidence: 0.5,
+                base_confidence: framework_confidence::FANOUT_BASE,
                 reason: "reflection-getattr-fanout".to_string(),
                 span,
             });

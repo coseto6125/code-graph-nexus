@@ -1,7 +1,7 @@
 use rkyv::{Archive, Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[rkyv(compare(PartialEq))]
 #[rkyv(derive(Debug))]
 pub struct StrRef {

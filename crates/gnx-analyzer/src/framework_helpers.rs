@@ -108,12 +108,15 @@ pub fn has_import_from(imports: &[RawImport], modules: &[&str]) -> bool {
         }
         // Dotted submodule (`django.urls` under required `django`) or
         // scoped-package (`@nestjs/common` under required `@nestjs`).
-        value.starts_with(&format!("{}.", module)) || value.starts_with(&format!("{}/", module))
+        // Zero-alloc byte compare avoids `format!()` per pair.
+        let v = value.as_bytes();
+        let m = module.as_bytes();
+        v.len() > m.len() && v.starts_with(m) && (v[m.len()] == b'.' || v[m.len()] == b'/')
     }
     imports.iter().any(|imp| {
-        modules.iter().any(|m| {
-            matches_module(&imp.source, m) || matches_module(&imp.imported_name, m)
-        })
+        modules
+            .iter()
+            .any(|m| matches_module(&imp.source, m) || matches_module(&imp.imported_name, m))
     })
 }
 
