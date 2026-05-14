@@ -21,7 +21,6 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
     let graph = engine.graph().map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
-    let query_lower = args.query.to_lowercase();
     let mut used_semantic = false;
 
     if let Some(vectors) = graph.embeddings.as_ref() {
@@ -79,17 +78,21 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
     }
 
     if !used_semantic {
-        for node in graph.nodes.iter() {
-            let name = node.name.resolve(&graph.string_pool);
-            if name.to_lowercase().contains(&query_lower) {
+        let repo_path = std::path::PathBuf::from(args.repo.as_deref().unwrap_or("."));
+        let tantivy_results = crate::search::TantivyEngine::search(&repo_path, &args.query);
+
+        for (score, uid) in tantivy_results {
+            if let Some(node) = graph.nodes.iter().find(|n| n.uid.resolve(&graph.string_pool) == uid) {
+                let name = node.name.resolve(&graph.string_pool);
                 let file_node = &graph.files[node.file_idx.to_native() as usize];
                 
                 results.push(serde_json::json!(format!(
-                    "[{}] {}:{} ({})",
+                    "[{}] {}:{} ({}) [bm25:{:.4}]",
                     kind_to_str(&node.kind),
                     file_node.path.resolve(&graph.string_pool),
                     node.span.0.to_native() + 1,
-                    name
+                    name,
+                    score
                 )));
             }
         }

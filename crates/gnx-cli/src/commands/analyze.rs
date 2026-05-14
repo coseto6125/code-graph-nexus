@@ -143,6 +143,12 @@ pub fn run(args: AnalyzeArgs) -> Result<(), String> {
     file.sync_all()
         .map_err(|e| format!("Failed to sync graph.bin: {}", e))?;
     let save_duration = save_start.elapsed();
+
+    // Step 6: Build Tantivy Index
+    let index_start = Instant::now();
+    crate::search::TantivyEngine::build_index(&repo_path, &global_graph);
+    let index_duration = index_start.elapsed();
+
     let total_duration = start_time.elapsed();
 
     println!("Graph analysis complete.");
@@ -150,6 +156,7 @@ pub fn run(args: AnalyzeArgs) -> Result<(), String> {
     println!("  Analyze time: {:?}", analyze_duration);
     println!("  Build time:   {:?}", build_duration);
     println!("  Save time:    {:?}", save_duration);
+    println!("  Index time:   {:?}", index_duration);
     println!("  Total time:   {:?}", total_duration);
     println!("Graph saved to {:?}", bin_path);
 

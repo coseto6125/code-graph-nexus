@@ -1,11 +1,19 @@
 [package]
-name = "gnx-cli"
-version = "0.1.0"
-edition = "2021"
-default-run = "gnx-rs"
+name = "gnx-rs"
+description = "Unofficial Rust reimplementation of GitNexus — code intelligence engine with 14-language AST analysis and BGE-M3 semantic search"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+default-run = "gnx"
 
 [[bin]]
-name = "gnx-rs"
+name = "gnx"
 path = "src/main.rs"
 
 [dependencies]
@@ -20,3 +28,5 @@ tracing-subscriber = "0.3.18"
 etoon = "0.4"
 ignore = "0.4.25"
 fastembed = "5"
+rayon = "1.10"
+tantivy = "0.26.1"
