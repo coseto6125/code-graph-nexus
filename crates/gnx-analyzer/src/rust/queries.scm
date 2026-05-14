@@ -1,22 +1,22 @@
 ;; Structs
 (struct_item
   (visibility_modifier)? @export
-  name: (type_identifier) @name.class) @class
+  name: (type_identifier) @struct_item.name) @class
 
 ;; Enums
 (enum_item
   (visibility_modifier)? @export
-  name: (type_identifier) @name.class) @class
+  name: (type_identifier) @enum_item.name) @class
 
 ;; Traits
 (trait_item
   (visibility_modifier)? @export
-  name: (type_identifier) @name.interface) @interface
+  name: (type_identifier) @trait_item.name) @interface
 
 ;; Functions
 (function_item
   (visibility_modifier)? @export
-  name: (identifier) @name.function
+  name: (identifier) @function_item.name
   return_type: (return_type type: (_) @type)?) @function
 
 ;; Methods in impl
@@ -24,11 +24,12 @@
   trait: [
     (type_identifier)
     (scoped_identifier)
+    (generic_type)
   ] @heritage
   body: (declaration_list
     (function_item
       (visibility_modifier)? @export
-      name: (identifier) @name.method
+      name: (identifier) @function_item.name
       return_type: (return_type type: (_) @type)?) @method))
 
 ;; Methods in trait
@@ -36,7 +37,7 @@
   body: (declaration_list
     (function_signature_item
       (visibility_modifier)? @export
-      name: (identifier) @name.method
+      name: (identifier) @function_item.name
       return_type: (return_type type: (_) @type)?) @method))
 
 ;; Imports (use std::collections::HashMap)

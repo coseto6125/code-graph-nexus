@@ -1,7 +1,7 @@
 ;; Functions
 (function_definition
   name: (identifier) @function.name
-  return_type: (type) @type) @function
+  return_type: (_) @type) @function
 
 (function_definition
   name: (identifier) @function.name) @function
@@ -9,7 +9,18 @@
 ;; Classes
 (class_definition
   name: (identifier) @class.name
-  superclasses: (argument_list (identifier) @heritage)?) @class
+  superclasses: (argument_list (identifier) @heritage)) @class
+
+(class_definition
+  name: (identifier) @class.name
+  superclasses: (argument_list (attribute) @heritage)) @class
+
+(class_definition
+  name: (identifier) @class.name) @class
+
+;; Export marker (Naming Convention: not starting with _)
+((function_definition name: (identifier) @n) @export (#not-match? @n "^_"))
+((class_definition name: (identifier) @n) @export (#not-match? @n "^_"))
 
 ;; Imports (from ... import ...)
 (import_from_statement

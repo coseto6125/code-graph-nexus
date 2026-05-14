@@ -42,6 +42,7 @@ impl LanguageProvider for PythonProvider {
         let idx_class_name = self.query.capture_index_for_name("class.name");
         let idx_type = self.query.capture_index_for_name("type");
         let idx_heritage = self.query.capture_index_for_name("heritage");
+        let idx_export = self.query.capture_index_for_name("export");
         let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
         let idx_import_alias = self.query.capture_index_for_name("import.alias");
@@ -55,6 +56,7 @@ impl LanguageProvider for PythonProvider {
             let mut root_span_node = None;
             let mut type_annotation_node = None;
             let mut heritage = Vec::new();
+            let mut is_exported_explicit = false;
 
             let mut import_name_node = None;
             let mut import_src_node = None;
@@ -74,6 +76,8 @@ impl LanguageProvider for PythonProvider {
                     if let Ok(h) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
                         heritage.push(h.to_string());
                     }
+                } else if cap_idx == idx_export {
+                    is_exported_explicit = true;
                 } else if cap_idx == idx_import_name {
                     import_name_node = Some(cap.node);
                 } else if cap_idx == idx_import_source {
@@ -106,9 +110,12 @@ impl LanguageProvider for PythonProvider {
                                 existing.heritage.push(h);
                             }
                         }
+                        if existing.type_annotation.is_none() && type_str.is_some() {
+                            existing.type_annotation = type_str;
+                        }
                     } else {
                         nodes.push(RawNode {
-                            is_exported: !name_str.starts_with('_'),
+                            is_exported: is_exported_explicit || !name_str.starts_with('_'),
                             heritage,
                             type_annotation: type_str,
                             name: name_str.to_string(),

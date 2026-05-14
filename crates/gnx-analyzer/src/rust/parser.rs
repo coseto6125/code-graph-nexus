@@ -38,10 +38,11 @@ impl LanguageProvider for RustProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_name_function = self.query.capture_index_for_name("name.function");
-        let idx_name_class = self.query.capture_index_for_name("name.class");
-        let idx_name_method = self.query.capture_index_for_name("name.method");
-        let idx_name_interface = self.query.capture_index_for_name("name.interface");
+        let idx_name_struct = self.query.capture_index_for_name("struct_item.name");
+        let idx_name_enum = self.query.capture_index_for_name("enum_item.name");
+        let idx_name_trait = self.query.capture_index_for_name("trait_item.name");
+        let idx_name_function = self.query.capture_index_for_name("function_item.name");
+
         let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
         let idx_import_alias = self.query.capture_index_for_name("import.alias");
@@ -69,30 +70,36 @@ impl LanguageProvider for RustProvider {
 
             for cap in m.captures {
                 let cap_idx = cap.index;
-                if Some(cap_idx) == idx_name_function {
+                if Some(cap_idx) == idx_name_struct {
                     name_node = Some(cap.node);
-                    kind = Some(NodeKind::Function);
-                } else if Some(cap_idx) == idx_name_class {
+                    if kind.is_none() { kind = Some(NodeKind::Class); }
+                } else if Some(cap_idx) == idx_name_enum {
                     name_node = Some(cap.node);
-                    kind = Some(NodeKind::Class);
-                } else if Some(cap_idx) == idx_name_method {
+                    if kind.is_none() { kind = Some(NodeKind::Class); }
+                } else if Some(cap_idx) == idx_name_trait {
                     name_node = Some(cap.node);
-                    kind = Some(NodeKind::Method);
-                } else if Some(cap_idx) == idx_name_interface {
+                    if kind.is_none() { kind = Some(NodeKind::Interface); }
+                } else if Some(cap_idx) == idx_name_function {
                     name_node = Some(cap.node);
-                    kind = Some(NodeKind::Interface);
+                    if kind.is_none() { kind = Some(NodeKind::Function); }
                 } else if Some(cap_idx) == idx_import_name {
                     import_name = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_source {
                     import_src = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_alias {
                     import_alias = Some(cap.node);
-                } else if Some(cap_idx) == idx_function
-                    || Some(cap_idx) == idx_class
-                    || Some(cap_idx) == idx_method
-                    || Some(cap_idx) == idx_interface
-                {
+                } else if Some(cap_idx) == idx_function {
                     root_span_node = Some(cap.node);
+                    kind = Some(NodeKind::Function);
+                } else if Some(cap_idx) == idx_class {
+                    root_span_node = Some(cap.node);
+                    kind = Some(NodeKind::Class);
+                } else if Some(cap_idx) == idx_method {
+                    root_span_node = Some(cap.node);
+                    kind = Some(NodeKind::Method);
+                } else if Some(cap_idx) == idx_interface {
+                    root_span_node = Some(cap.node);
+                    kind = Some(NodeKind::Interface);
                 } else if Some(cap_idx) == idx_export {
                     is_exported = true;
                 } else if Some(cap_idx) == idx_heritage {
@@ -127,9 +134,10 @@ impl LanguageProvider for RustProvider {
             }
 
             if let (Some(i_name), Some(i_src)) = (import_name, import_src) {
-                if let (Ok(name_str), Ok(src_str)) =
-                    (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
-                {
+                if let (Ok(name_str), Ok(src_str)) = (
+                    std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]),
+                    std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()])
+                ) {
                     let alias = if let Some(a_node) = import_alias {
                         std::str::from_utf8(&source[a_node.start_byte()..a_node.end_byte()]).ok().map(|s| s.to_string())
                     } else {

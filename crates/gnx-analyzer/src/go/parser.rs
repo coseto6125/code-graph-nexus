@@ -60,7 +60,7 @@ impl LanguageProvider for GoProvider {
             let mut kind = None;
             let mut root_node = None;
             let mut heritage = Vec::new();
-            let mut type_annotation = None;
+            let mut type_annotation: Option<String> = None;
 
             let mut is_import = false;
             let mut import_alias = None;
@@ -88,7 +88,12 @@ impl LanguageProvider for GoProvider {
                     }
                 } else if cap_idx == idx_type {
                     if let Ok(t_name) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
-                        type_annotation = Some(t_name.to_string());
+                        if let Some(ref mut existing) = type_annotation {
+                            existing.push_str(" ");
+                            existing.push_str(t_name);
+                        } else {
+                            type_annotation = Some(t_name.to_string());
+                        }
                     }
                 } else if cap_idx == idx_import {
                     is_import = true;
@@ -100,8 +105,8 @@ impl LanguageProvider for GoProvider {
             }
 
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_node) {
-                if let Ok(name) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
-                    let name = name.to_string();
+                if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
+                    let name = name_str.to_string();
                     let is_exported = name.chars().next().map_or(false, |c| c.is_uppercase());
                     let start = root.start_position();
                     let end = root.end_position();

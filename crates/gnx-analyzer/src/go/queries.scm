@@ -8,6 +8,7 @@
         type: [
           (type_identifier) @heritage
           (pointer_type (type_identifier) @heritage)
+          (qualified_type) @heritage
         ]
       )*
     )?
@@ -17,7 +18,16 @@
 ;; Interfaces
 (type_spec
   name: (type_identifier) @interface.name
-  type: (interface_type)) @interface
+  type: (interface_type
+    (method_spec_list
+      [
+        (method_spec name: (field_identifier))
+        (type_identifier) @heritage
+        (qualified_type) @heritage
+      ]*
+    )?
+  )
+) @interface
 
 ;; Methods
 (method_declaration
@@ -26,15 +36,29 @@
       type: [
         (type_identifier) @type
         (pointer_type (type_identifier) @type)
+        (qualified_type) @type
       ]
     )
   )
   name: (field_identifier) @method.name
+  result: [
+    (type_identifier) @type
+    (pointer_type (type_identifier) @type)
+    (qualified_type) @type
+    (parameter_list) @type
+  ]?
 ) @method
 
 ;; Functions
 (function_declaration
-  name: (identifier) @function.name) @function
+  name: (identifier) @function.name
+  result: [
+    (type_identifier) @type
+    (pointer_type (type_identifier) @type)
+    (qualified_type) @type
+    (parameter_list) @type
+  ]?
+) @function
 
 ;; Imports
 (import_spec
