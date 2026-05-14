@@ -127,8 +127,8 @@ pub fn detect_communities(nodes: &[Node], edges: &[Edge], config: &LeidenConfig)
                 adj[i].clear();
             }
         }
-        for i in 0..n {
-            adj[i].retain(|&(t, _)| connected[t as usize]);
+        for adj_i in adj.iter_mut() {
+            adj_i.retain(|&(t, _)| connected[t as usize]);
         }
     }
 
