@@ -81,13 +81,8 @@ impl LanguageProvider for MoveProvider {
                     if kind.is_none() {
                         kind = Some(NodeKind::Const);
                     }
-                } else if Some(cap_idx) == idx_class {
-                    root_span_node = Some(cap.node);
-                } else if Some(cap_idx) == idx_function {
-                    root_span_node = Some(cap.node);
-                } else if Some(cap_idx) == idx_struct {
-                    root_span_node = Some(cap.node);
-                } else if Some(cap_idx) == idx_const {
+                } else if [idx_class, idx_function, idx_struct, idx_const].contains(&Some(cap_idx))
+                {
                     root_span_node = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_name {
                     import_name = Some(cap.node);

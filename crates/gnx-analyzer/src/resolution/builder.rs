@@ -131,12 +131,12 @@ impl GraphBuilder {
 
         // Pass 1: Register all nodes into SymbolTable and StringPool
         let mut current_node_idx = 0;
-        let mut file_idx = 0;
         let mut embed_texts = Vec::new();
 
         let mut final_embeddings: Vec<Option<Vec<f32>>> = Vec::new();
 
-        for local_graph in &self.local_graphs {
+        for (file_idx, local_graph) in self.local_graphs.iter().enumerate() {
+            let file_idx = file_idx as u32;
             let path_str = local_graph.file_path.to_string_lossy().to_string();
             let path_ref = string_pool.add(&path_str);
             
@@ -192,15 +192,13 @@ impl GraphBuilder {
             // `local_graph.documents` but the graph.bin DocumentBlock storage is
             // not wired up yet. Skipped here intentionally — re-enable when the
             // `DocumentBlock` type lands in `gnx_core::graph`.
-
-            file_idx += 1;
         }
 
         // Pass 1.5: Extract Routes
         let mut route_edges = Vec::new();
         let mut current_handler_idx = 0;
-        let mut file_idx = 0;
-        for local_graph in &self.local_graphs {
+        for (file_idx, local_graph) in self.local_graphs.iter().enumerate() {
+            let file_idx = file_idx as u32;
             let path_str = local_graph.file_path.to_string_lossy().to_string();
             
             for raw_node in &local_graph.nodes {
@@ -282,7 +280,6 @@ impl GraphBuilder {
                     // We just register the Route node here.
                 }
             }
-            file_idx += 1;
         }
 
         // Pass 2: Resolve imports and build edges

@@ -7,6 +7,8 @@ use gnx_analyzer::{
     typescript::parser::TypeScriptProvider,
 };
 
+// Test binary 列舉所有 LanguageProvider 構造，Box<dyn Fn> 型別冗長但平鋪直敘為佳。
+#[allow(clippy::type_complexity)]
 fn main() {
     let providers: Vec<(&str, Box<dyn Fn() -> anyhow::Result<()>>)> = vec![
         ("C", Box::new(|| { CProvider::new().map(|_| ()) })),
