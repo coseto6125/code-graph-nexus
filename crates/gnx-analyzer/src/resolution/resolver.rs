@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use crate::resolution::heuristics::ResolutionTier;
-use crate::resolution::index::{ResolveTarget, SymbolTable};
+use crate::resolution::index::{FileMeta, ResolveTarget, SymbolTable};
 
 pub type NodeId = u32;
 
@@ -155,8 +155,12 @@ impl<'a> Resolver<'a> {
             })
             .map(|i| i.source.as_str());
         let raw_count = self.symbol_table.global_match_count(symbol_name);
+        let caller_meta = FileMeta::from_path(&source_file_str);
 
-        if let Some(node_id) = self.symbol_table.lookup_unique_global(symbol_name, target) {
+        if let Some(node_id) =
+            self.symbol_table
+                .lookup_unique_global(symbol_name, target, caller_meta)
+        {
             results.push((node_id, ResolutionTier::Global.base_confidence()));
             self.record(
                 &source_file_str,
@@ -516,5 +520,77 @@ mod tests {
             ResolveTarget::Callable,
         );
         assert_eq!(out, vec![(0, ResolutionTier::SameFile.base_confidence())]);
+    }
+
+    // ── Layer-1 barriers (language + vendor) ────────────────────────────────
+
+    #[test]
+    fn tier3_language_barrier_blocks_cross_language() {
+        // Rust caller's bare `is_some` must not resolve to a uniquely-named
+        // Move function. Pins against the residual fan-out where a Rust
+        // `result.is_some()` was wrongly connecting to a vendor `.move` test
+        // fixture's `is_some` definition.
+        let st = st_with(&[("lib/option.move", "is_some", NodeKind::Function)]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("src/caller.rs"),
+            "is_some",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(
+            out.is_empty(),
+            "rust caller must not cross language boundary to move target, got {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn tier3_vendor_barrier_blocks_source_caller() {
+        // A unique callable defined under `/vendor/` is invisible to a
+        // non-vendor caller. Pins vendor test corpora away from production
+        // resolution surface even when language and uniqueness match.
+        let st = st_with(&[(
+            "crates/vendor/tree-sitter-x/tests/helper.rs",
+            "uniquely_named_helper",
+            NodeKind::Function,
+        )]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("crates/gnx-cli/src/main.rs"),
+            "uniquely_named_helper",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(
+            out.is_empty(),
+            "non-vendor caller must not reach vendor target, got {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn tier3_intra_vendor_resolution_preserved() {
+        // Vendor → vendor calls remain resolvable. The barrier is asymmetric
+        // by design (source ↛ vendor, but vendor ↔ vendor is fine for the
+        // vendor crate's internal cohesion).
+        let st = st_with(&[(
+            "crates/vendor/tree-sitter-x/src/helper.rs",
+            "vendor_helper",
+            NodeKind::Function,
+        )]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("crates/vendor/tree-sitter-x/src/caller.rs"),
+            "vendor_helper",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert_eq!(
+            out,
+            vec![(0, ResolutionTier::Global.base_confidence())],
+            "intra-vendor resolution must still emit, got {:?}",
+            out
+        );
     }
 }

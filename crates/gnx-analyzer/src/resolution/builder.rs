@@ -1112,6 +1112,7 @@ mod tests {
             imports: vec![],
             routes: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         }
     }
 
