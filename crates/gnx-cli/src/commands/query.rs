@@ -1,6 +1,8 @@
+use crate::commands::format::kind_to_str;
 use crate::engine::Engine;
+use crate::output::{emit, OutputFormat};
 use clap::Args;
-use gnx_core::graph::ArchivedNodeKind;
+use gnx_core::GnxError;
 use rayon::prelude::*;
 
 #[derive(Args, Debug)]
@@ -17,8 +19,9 @@ pub struct QueryArgs {
     pub format: Option<String>,
 }
 
-pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
-    let graph = engine.graph().map_err(|e| e.to_string())?;
+pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), GnxError> {
+    let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
+    let format = OutputFormat::parse(args.format.as_deref());
 
     let mut results = Vec::new();
     let mut used_semantic = false;
@@ -61,7 +64,7 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
                     for (similarity, node) in scored_nodes.into_iter().take(20) {
                         let name = node.name.resolve(&graph.string_pool);
                         let file_node = &graph.files[node.file_idx.to_native() as usize];
-                        
+
                         // Output the highly token-optimized string format
                         results.push(serde_json::json!(format!(
                             "[{}] {}:{} ({}) [score:{:.4}]",
@@ -85,7 +88,7 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
             if let Some(node) = graph.nodes.iter().find(|n| n.uid.resolve(&graph.string_pool) == uid) {
                 let name = node.name.resolve(&graph.string_pool);
                 let file_node = &graph.files[node.file_idx.to_native() as usize];
-                
+
                 results.push(serde_json::json!(format!(
                     "[{}] {}:{} ({}) [bm25:{:.4}]",
                     kind_to_str(&node.kind),
@@ -98,41 +101,10 @@ pub fn run(args: QueryArgs, engine: &Engine) -> Result<(), String> {
         }
     }
 
-    let json = serde_json::json!({
+    let result = serde_json::json!({
         "status": "success",
         "results": results,
     });
 
-    if args.format.as_deref() == Some("toon") {
-        let bytes = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
-        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
-        println!("{}", output);
-    } else if args.format.as_deref() == Some("json") {
-        let s = serde_json::to_string(&json).map_err(|e| e.to_string())?;
-        println!("{}", s);
-    } else {
-        for r in &results {
-            if let Some(s) = r.as_str() {
-                println!("{}", s);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn kind_to_str(kind: &ArchivedNodeKind) -> &'static str {
-    match kind {
-        ArchivedNodeKind::File => "File",
-        ArchivedNodeKind::Function => "Function",
-        ArchivedNodeKind::Class => "Class",
-        ArchivedNodeKind::Method => "Method",
-        ArchivedNodeKind::Interface => "Interface",
-        ArchivedNodeKind::Constructor => "Constructor",
-        ArchivedNodeKind::Property => "Property",
-        ArchivedNodeKind::Variable => "Variable",
-        ArchivedNodeKind::Const => "Const",
-        ArchivedNodeKind::Import => "Import",
-        ArchivedNodeKind::Route => "Route",
-    }
+    emit(&result, format)
 }

@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode, RawRoute};
 use gnx_core::graph::NodeKind;
@@ -184,6 +185,7 @@ impl LanguageProvider for TypeScriptProvider {
                             is_exported,
                             heritage: heritage.clone(),
                             type_annotation: type_annotation.clone(),
+                                                    calls: Vec::new(),
                         });
                     }
                 }
@@ -236,11 +238,16 @@ impl LanguageProvider for TypeScriptProvider {
             }
         }
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(tree.root_node(), source, &mut nodes, &["call_expression"]);
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes,
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

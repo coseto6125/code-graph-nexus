@@ -42,6 +42,6 @@
 
 ;; Routes
 (scoped_call_expression
-  name: (identifier) @route.method (#match? @route.method "(?i)^(get|post|put|delete|patch)$")
-  arguments: (arguments (string) @route.path)
+  name: (_) @route.method (#match? @route.method "(?i)^(get|post|put|delete|patch)$")
+  arguments: (_) @route.path
 ) @route.call

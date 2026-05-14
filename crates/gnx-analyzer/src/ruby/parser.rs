@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode, RawRoute};
 use gnx_core::graph::NodeKind;
@@ -35,7 +36,7 @@ impl LanguageProvider for RubyProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut nodes= Vec::new();
         let mut imports = Vec::new();
         let mut routes: Vec<RawRoute> = Vec::new();
 
@@ -111,6 +112,7 @@ impl LanguageProvider for RubyProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
+                                            calls: Vec::new(),
                     });
                 }
             }
@@ -147,11 +149,21 @@ impl LanguageProvider for RubyProvider {
             }
         }
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(
+            tree.root_node(),
+            source,
+            &mut nodes,
+            &["call", "method_call"],
+        );
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes,
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

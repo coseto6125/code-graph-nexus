@@ -27,6 +27,7 @@ fn test_mmap_graph_access() {
             file_idx: 0,
             kind: NodeKind::Function,
             span: (1, 0, 10, 0),
+            community_id: 0,
         }],
         edges: vec![],
         out_offsets: vec![0, 0],
@@ -34,6 +35,9 @@ fn test_mmap_graph_access() {
         in_edge_idx: vec![],
         name_index: vec![0],
         embeddings: None,
+        process_start: 1,
+        traces_offsets: vec![],
+        traces_data: vec![],
     };
 
     // Use rkyv::to_bytes for rkyv 0.8.x

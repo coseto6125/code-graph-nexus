@@ -3,6 +3,9 @@ use std::path::PathBuf;
 
 mod commands;
 mod engine;
+mod git;
+mod output;
+pub mod search;
 
 use engine::Engine;
 
@@ -33,6 +36,8 @@ enum Commands {
     Analyze(commands::analyze::AnalyzeArgs),
     /// List all API routes
     RouteMap(commands::route_map::RouteMapArgs),
+    /// Detect changed symbols & affected execution flows from git diff
+    DetectChanges(commands::detect_changes::DetectChangesArgs),
 }
 
 fn main() {
@@ -58,6 +63,7 @@ fn main() {
         Commands::Query(args) => args.repo.as_ref(),
         Commands::Impact(args) => args.repo.as_ref(),
         Commands::RouteMap(args) => args.repo.as_ref(),
+        Commands::DetectChanges(args) => args.repo.as_ref(),
         Commands::Analyze(_) => None,
     };
 
@@ -73,16 +79,17 @@ fn main() {
         }
     };
 
-    let result = match cli.command {
+    let result: Result<(), gnx_core::GnxError> = match cli.command {
         Commands::Context(args) => commands::context::run(args, &engine),
         Commands::Query(args) => commands::query::run(args, &engine),
         Commands::Impact(args) => commands::impact::run(args, &engine),
         Commands::RouteMap(args) => commands::route_map::run(args, &engine),
+        Commands::DetectChanges(args) => commands::detect_changes::run(args, &engine),
         Commands::Analyze(_) => Ok(()), // Handled above
     };
 
     if let Err(e) = result {
-        eprintln!("Command failed: {}", e);
+        eprintln!("Command failed: {e}");
         std::process::exit(1);
     }
 }

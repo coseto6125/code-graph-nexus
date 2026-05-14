@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -35,7 +36,7 @@ impl LanguageProvider for GoProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut nodes= Vec::new();
         let mut imports = Vec::new();
 
         let idx_struct_name = self.query.capture_index_for_name("struct.name");
@@ -142,6 +143,7 @@ impl LanguageProvider for GoProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
+                                calls: Vec::new(),
                     });
                 }
             }
@@ -201,11 +203,16 @@ impl LanguageProvider for GoProvider {
         imports.sort_by(|a, b| a.source.cmp(&b.source).then(a.imported_name.cmp(&b.imported_name)));
         imports.dedup_by(|a, b| a.source == b.source && a.imported_name == b.imported_name);
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(tree.root_node(), source, &mut nodes, &["call_expression"]);
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes,
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

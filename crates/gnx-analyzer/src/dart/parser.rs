@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -35,7 +36,7 @@ impl LanguageProvider for DartProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut nodes= Vec::new();
         let mut imports = Vec::new();
 
         let idx_class_name = self.query.capture_index_for_name("class.name");
@@ -127,6 +128,7 @@ impl LanguageProvider for DartProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
+                                            calls: Vec::new(),
                     });
                 }
             }
@@ -155,11 +157,21 @@ impl LanguageProvider for DartProvider {
         // Deduplicate simple identical node extractions
         nodes.dedup_by(|a, b| a.name == b.name && a.span == b.span && a.kind == b.kind);
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(
+            tree.root_node(),
+            source,
+            &mut nodes,
+            &["call_expression", "method_invocation"],
+        );
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

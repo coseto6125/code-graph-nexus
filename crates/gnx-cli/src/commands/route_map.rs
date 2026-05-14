@@ -1,6 +1,8 @@
 use crate::engine::Engine;
+use crate::output::{emit, OutputFormat};
 use clap::Args;
 use gnx_core::graph::ArchivedNodeKind;
+use gnx_core::GnxError;
 
 #[derive(Args, Debug)]
 pub struct RouteMapArgs {
@@ -12,8 +14,9 @@ pub struct RouteMapArgs {
     pub format: Option<String>,
 }
 
-pub fn run(args: RouteMapArgs, engine: &Engine) -> Result<(), String> {
-    let graph = engine.graph().map_err(|e| e.to_string())?;
+pub fn run(args: RouteMapArgs, engine: &Engine) -> Result<(), GnxError> {
+    let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
+    let format = OutputFormat::parse(args.format.as_deref());
 
     let mut results = Vec::new();
 
@@ -31,19 +34,10 @@ pub fn run(args: RouteMapArgs, engine: &Engine) -> Result<(), String> {
         }
     }
 
-    let json = serde_json::json!({
+    let result = serde_json::json!({
         "status": "success",
         "results": results,
     });
 
-    if args.format.as_deref() == Some("toon") {
-        let bytes = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
-        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
-        println!("{}", output);
-    } else {
-        let s = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
-        println!("{}", s);
-    }
-
-    Ok(())
+    emit(&result, format)
 }

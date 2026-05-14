@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -35,7 +36,7 @@ impl LanguageProvider for CppProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut nodes= Vec::new();
         let mut imports = Vec::new();
 
         let idx_name_function = self.query.capture_index_for_name("name.function");
@@ -122,6 +123,7 @@ impl LanguageProvider for CppProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
+                                calls: Vec::new(),
                     });
                 }
             }
@@ -158,11 +160,16 @@ impl LanguageProvider for CppProvider {
         });
         imports.dedup_by(|a, b| a.imported_name == b.imported_name && a.source == b.source && a.alias == b.alias);
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(tree.root_node(), source, &mut nodes, &["call_expression"]);
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

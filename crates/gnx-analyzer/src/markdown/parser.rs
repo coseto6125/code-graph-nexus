@@ -1,6 +1,6 @@
 use anyhow::Result;
 use gnx_core::analyzer::provider::LanguageProvider;
-use gnx_core::analyzer::types::{LocalGraph, RawNode};
+use gnx_core::analyzer::types::{LocalGraph, RawDocumentBlock};
 use gnx_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -38,7 +38,7 @@ impl LanguageProvider for MarkdownProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut documents: Vec<gnx_core::analyzer::types::RawDocumentBlock> = Vec::new();
 
         let idx_document = self.query.capture_index_for_name("document").unwrap_or(u32::MAX);
         let idx_section = self.query.capture_index_for_name("section").unwrap_or(u32::MAX);
@@ -72,13 +72,9 @@ impl LanguageProvider for MarkdownProvider {
                     
                     let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
 
-                    nodes.push(RawNode {
-                        decorators: vec![],
+                    documents.push(RawDocumentBlock {
                         name: filename,
-                        kind: NodeKind::Document,
-                        is_exported: true,
-                        heritage: vec![],
-                        type_annotation: None,
+                        is_section: false,
                         span: (
                             start.row as u32,
                             start.column as u32,
@@ -94,20 +90,16 @@ impl LanguageProvider for MarkdownProvider {
                         let start = root.start_position();
                         let end = root.end_position();
                         
-                        nodes.push(RawNode {
-                            decorators: vec![],
-                            name: name_str.trim().to_string(),
-                            kind: NodeKind::Section,
-                            is_exported: true,
-                            heritage: vec![],
-                            type_annotation: None,
-                            span: (
+                        documents.push(RawDocumentBlock {
+                        name: name_str.trim().to_string(),
+                        is_section: true,
+                        span: (
                                 start.row as u32,
                                 start.column as u32,
                                 end.row as u32,
                                 end.column as u32,
                             ),
-                        });
+                    });
                     }
                 }
             }
@@ -117,7 +109,8 @@ impl LanguageProvider for MarkdownProvider {
             content_hash: [0; 32],
             routes: vec![],
             file_path: path.to_path_buf(),
-            nodes,
+            nodes: vec![],
+            documents,
             imports: vec![],
         })
     }

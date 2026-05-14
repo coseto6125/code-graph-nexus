@@ -1,6 +1,8 @@
+use crate::commands::format::{kind_to_str, rel_to_str};
 use crate::engine::Engine;
+use crate::output::{emit, OutputFormat};
 use clap::Args;
-use gnx_core::graph::{ArchivedNodeKind, ArchivedRelType};
+use gnx_core::GnxError;
 use std::collections::HashMap;
 
 #[derive(Args, Debug)]
@@ -18,8 +20,9 @@ pub struct ContextArgs {
     pub format: Option<String>,
 }
 
-pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
-    let graph = engine.graph().map_err(|e| e.to_string())?;
+pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), GnxError> {
+    let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
+    let format = OutputFormat::parse(args.format.as_deref());
 
     // Find matching nodes
     let mut matching_nodes = Vec::new();
@@ -30,46 +33,12 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
     }
 
     if matching_nodes.is_empty() {
-        let json = serde_json::json!({
+        let result = serde_json::json!({
             "status": "error",
             "message": format!("Symbol '{}' not found.", args.name)
         });
-        match args.format.as_deref() {
-            Some("json") => println!("{}", serde_json::to_string_pretty(&json).unwrap()),
-            _ => println!("{}", serde_json::to_string(&json).unwrap()),
-        }
-        return Ok(());
+        return emit(&result, format);
     }
-
-    fn kind_to_str(kind: &ArchivedNodeKind) -> &'static str {
-        match kind {
-            ArchivedNodeKind::File => "File",
-            ArchivedNodeKind::Function => "Function",
-            ArchivedNodeKind::Class => "Class",
-            ArchivedNodeKind::Method => "Method",
-            ArchivedNodeKind::Interface => "Interface",
-            ArchivedNodeKind::Constructor => "Constructor",
-            ArchivedNodeKind::Property => "Property",
-            ArchivedNodeKind::Variable => "Variable",
-            ArchivedNodeKind::Const => "Const",
-            ArchivedNodeKind::Import => "Import",
-            ArchivedNodeKind::Route => "Route",
-    }
-}
-
-fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
-    match rel {
-        ArchivedRelType::Defines => "defines",
-        ArchivedRelType::Imports => "imports",
-        ArchivedRelType::Calls => "calls",
-        ArchivedRelType::Extends => "extends",
-        ArchivedRelType::Implements => "implements",
-        ArchivedRelType::HasMethod => "has_method",
-        ArchivedRelType::HasProperty => "has_property",
-        ArchivedRelType::Accesses => "accesses",
-        ArchivedRelType::HandlesRoute => "handles_route",
-    }
-}
 
     if matching_nodes.len() > 1 {
         let mut candidates = Vec::new();
@@ -84,16 +53,12 @@ fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
                 "score": 1.0,
             }));
         }
-        let json = serde_json::json!({
+        let result = serde_json::json!({
             "status": "ambiguous",
             "message": format!("Found {} symbols matching '{}'. Use uid, file_path, or kind to disambiguate.", candidates.len(), args.name),
             "candidates": candidates
         });
-        match serde_json::to_string(&json) {
-            Ok(s) => println!("{}", s),
-            Err(e) => return Err(e.to_string()),
-        }
-        return Ok(());
+        return emit(&result, format);
     }
 
     let (node_idx, node) = matching_nodes[0];
@@ -152,13 +117,5 @@ fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
         "processes": []
     });
 
-    if args.format.as_deref() == Some("toon") {
-        let bytes = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
-        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
-        println!("{}", output);
-    } else {
-        let s = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
-        println!("{}", s);
-    }
-    Ok(())
+    emit(&result, format)
 }

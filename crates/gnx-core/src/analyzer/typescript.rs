@@ -15,8 +15,10 @@ impl LanguageProvider for TypeScriptProvider {
         // Full tree-sitter extraction logic matching original GitNexus behavior
         // will be added in the next planning phase.
         Ok(LocalGraph {
+            content_hash: [0; 32],
             file_path: path.to_path_buf(),
             nodes: vec![],
+            documents: vec![],
             imports: vec![],
             routes: vec![],
         })

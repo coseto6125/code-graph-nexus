@@ -1,3 +1,4 @@
+use crate::calls::extract_calls;
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -35,7 +36,7 @@ impl LanguageProvider for RustProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut nodes= Vec::new();
         let mut imports = Vec::new();
 
         let idx_name_struct = self.query.capture_index_for_name("struct_item.name");
@@ -136,6 +137,7 @@ impl LanguageProvider for RustProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
+                                            calls: Vec::new(),
                     });
                 }
             }
@@ -160,11 +162,21 @@ impl LanguageProvider for RustProvider {
             }
         }
 
+        // Extract call sites and attach to enclosing function/method nodes.
+        extract_calls(
+            tree.root_node(),
+            source,
+            &mut nodes,
+            &["call_expression", "macro_invocation"],
+        );
+
         Ok(LocalGraph {
+            content_hash: [0; 32],
             routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,
+                    documents: vec![],
         })
     }
 }

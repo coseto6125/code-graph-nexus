@@ -187,6 +187,12 @@ impl GraphBuilder {
 
                 current_node_idx += 1;
             }
+
+            // NOTE: documents (markdown/yaml section/doc nodes) are parsed into
+            // `local_graph.documents` but the graph.bin DocumentBlock storage is
+            // not wired up yet. Skipped here intentionally — re-enable when the
+            // `DocumentBlock` type lands in `gnx_core::graph`.
+
             file_idx += 1;
         }
 
@@ -286,19 +292,37 @@ impl GraphBuilder {
 
         let reason_heritage = string_pool.add("heritage");
         let reason_type = string_pool.add("type_annotation");
+        let reason_call = string_pool.add("call");
 
         for local_graph in &self.local_graphs {
             for raw_node in &local_graph.nodes {
-                // Resolve heritage (base classes, traits)
+                // Resolve heritage (base classes, traits) — emit Extends edge.
                 for base in &raw_node.heritage {
                     let targets = resolver.resolve_symbol(&local_graph.file_path, base, &local_graph.imports);
                     for (target_id, confidence) in targets {
                         edges.push(Edge {
                             source: current_node_idx,
                             target: target_id,
-                            rel_type: RelType::Calls, // Defaulting to Calls for now
+                            rel_type: RelType::Extends,
                             confidence,
                             reason: reason_heritage.clone(),
+                        });
+                    }
+                }
+
+                // Resolve calls (function invocations from this node's body).
+                for callee in &raw_node.calls {
+                    let targets = resolver.resolve_symbol(&local_graph.file_path, callee, &local_graph.imports);
+                    for (target_id, confidence) in targets {
+                        if target_id == current_node_idx {
+                            continue; // skip self-recursion edges (Louvain/process noise)
+                        }
+                        edges.push(Edge {
+                            source: current_node_idx,
+                            target: target_id,
+                            rel_type: RelType::Calls,
+                            confidence,
+                            reason: reason_call.clone(),
                         });
                     }
                 }
@@ -323,12 +347,14 @@ impl GraphBuilder {
 
         edges.extend(route_edges);
 
-        // Pass 3: Community detection (Louvain) over Calls/Extends/Implements edges.
+        // Pass 3: Community detection (Leiden) over Calls/Extends/Implements edges.
+        // Leiden's refinement phase prevents the badly-connected-hub failure
+        // mode where Louvain pins a hub to its first-touched chain.
         // Writes community_id back onto each Node in place.
-        let assignments = gnx_core::algorithms::louvain::detect_communities(
+        let assignments = gnx_core::algorithms::leiden::detect_communities(
             &nodes,
             &edges,
-            &gnx_core::algorithms::louvain::LouvainConfig::default(),
+            &gnx_core::algorithms::leiden::LeidenConfig::default(),
         );
         for (node, &c) in nodes.iter_mut().zip(assignments.iter()) {
             node.community_id = c;

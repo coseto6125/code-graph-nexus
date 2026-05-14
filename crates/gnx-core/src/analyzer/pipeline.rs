@@ -107,7 +107,11 @@ impl AnalyzerPipeline {
                 files.into_par_iter().for_each_with(tx, |sender, (abs_path, rel_path)| {
                     if let Some(provider) = self.find_provider(&rel_path) {
                         if let Ok(source) = std::fs::read(&abs_path) {
-                            if let Ok(local_graph) = provider.parse_file(&rel_path, &source) {
+                            if let Ok(mut local_graph) = provider.parse_file(&rel_path, &source) {
+                                use sha2::{Sha256, Digest};
+                                let mut hasher = Sha256::new();
+                                hasher.update(&source);
+                                local_graph.content_hash = hasher.finalize().into();
                                 let _ = sender.send(local_graph);
                             }
                         }
@@ -133,13 +137,23 @@ mod tests {
 
     #[test]
     fn test_pipeline_execution() {
+        // Pipeline calls std::fs::read on each abs_path, so the test must
+        // materialise real files. Use a tempdir + emit empty `.ts`/`.txt`.
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.ts");
+        let b = tmp.path().join("b.ts");
+        let c = tmp.path().join("c.txt");
+        std::fs::write(&a, b"").unwrap();
+        std::fs::write(&b, b"").unwrap();
+        std::fs::write(&c, b"").unwrap();
+
         let mut pipeline = AnalyzerPipeline::new();
         pipeline.register_provider(Box::new(TypeScriptProvider));
 
         let files = vec![
-            (PathBuf::from("a.ts"), PathBuf::from("a.ts")),
-            (PathBuf::from("b.ts"), PathBuf::from("b.ts")),
-            (PathBuf::from("c.txt"), PathBuf::from("c.txt")), // Should be ignored based on extension
+            (a.clone(), PathBuf::from("a.ts")),
+            (b.clone(), PathBuf::from("b.ts")),
+            (c.clone(), PathBuf::from("c.txt")), // Should be ignored based on extension
         ];
 
         let results = pipeline.analyze(files);

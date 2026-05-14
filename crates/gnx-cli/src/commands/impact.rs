@@ -1,6 +1,8 @@
+use crate::commands::format::kind_to_str;
 use crate::engine::Engine;
+use crate::output::{emit, OutputFormat};
 use clap::{Args, ValueEnum};
-use gnx_core::graph::ArchivedNodeKind;
+use gnx_core::GnxError;
 use std::collections::{HashSet, VecDeque};
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
@@ -31,8 +33,9 @@ pub struct ImpactArgs {
     pub format: Option<String>,
 }
 
-pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), String> {
-    let graph = engine.graph().map_err(|e| e.to_string())?;
+pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), GnxError> {
+    let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
+    let format = OutputFormat::parse(args.format.as_deref());
 
     // Find the target node index by UID
     let mut start_idx = None;
@@ -46,11 +49,10 @@ pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), String> {
     let start_idx = match start_idx {
         Some(idx) => idx,
         None => {
-            let json = serde_json::json!({
+            let result = serde_json::json!({
                 "error": format!("Symbol UID '{}' not found", args.target)
             });
-            println!("{}", json);
-            return Ok(());
+            return emit(&result, format);
         }
     };
 
@@ -109,7 +111,7 @@ pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), String> {
         }
     }
 
-    let json = serde_json::json!({
+    let result = serde_json::json!({
         "status": "success",
         "target": args.target,
         "direction": match args.direction {
@@ -119,30 +121,5 @@ pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), String> {
         "impact": results,
     });
 
-    if args.format.as_deref() == Some("toon") {
-        let bytes = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
-        let output = _etoon::toon::encode(&bytes).map_err(|e| e.to_string())?;
-        println!("{}", output);
-    } else {
-        let s = serde_json::to_string(&json).map_err(|e| e.to_string())?;
-        println!("{}", s);
-    }
-
-    Ok(())
-}
-
-fn kind_to_str(kind: &ArchivedNodeKind) -> &'static str {
-    match kind {
-        ArchivedNodeKind::File => "File",
-        ArchivedNodeKind::Function => "Function",
-        ArchivedNodeKind::Class => "Class",
-        ArchivedNodeKind::Method => "Method",
-        ArchivedNodeKind::Interface => "Interface",
-        ArchivedNodeKind::Constructor => "Constructor",
-        ArchivedNodeKind::Property => "Property",
-        ArchivedNodeKind::Variable => "Variable",
-        ArchivedNodeKind::Const => "Const",
-        ArchivedNodeKind::Import => "Import",
-        ArchivedNodeKind::Route => "Route",
-    }
+    emit(&result, format)
 }
