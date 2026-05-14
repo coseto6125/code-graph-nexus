@@ -5,7 +5,7 @@ use crate::framework_helpers::{
 };
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{
-    LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode, RawRoute,
+    BlindSpot, LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode, RawRoute,
 };
 use gnx_core::graph::NodeKind;
 use std::path::Path;
@@ -39,6 +39,12 @@ struct PythonCaptureIndices {
     django_url_handler: Option<u32>,
     celery_task_handler: Option<u32>,
     reflection_getattr_site: Option<u32>,
+    blind_eval: Option<u32>,
+    blind_exec: Option<u32>,
+    blind_compile: Option<u32>,
+    blind_dynamic_import: Option<u32>,
+    blind_builtin_import: Option<u32>,
+    blind_cross_getattr: Option<u32>,
 }
 
 impl PythonProvider {
@@ -72,6 +78,12 @@ impl PythonProvider {
             django_url_handler: query.capture_index_for_name("django.url.handler"),
             celery_task_handler: query.capture_index_for_name("celery.task.handler"),
             reflection_getattr_site: query.capture_index_for_name("reflection.getattr.site"),
+            blind_eval: query.capture_index_for_name("blind.eval"),
+            blind_exec: query.capture_index_for_name("blind.exec"),
+            blind_compile: query.capture_index_for_name("blind.compile"),
+            blind_dynamic_import: query.capture_index_for_name("blind.dynamic_import"),
+            blind_builtin_import: query.capture_index_for_name("blind.builtin_import"),
+            blind_cross_getattr: query.capture_index_for_name("blind.cross_getattr"),
         };
         Ok(Self { query, indices })
     }
@@ -97,6 +109,7 @@ impl LanguageProvider for PythonProvider {
         let mut nodes: Vec<RawNode> = Vec::new();
         let mut imports: Vec<RawImport> = Vec::new();
         let mut routes: Vec<RawRoute> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
 
         let idx = &self.indices;
 
@@ -209,6 +222,48 @@ impl LanguageProvider for PythonProvider {
                     }
                 } else if cap_idx == idx.reflection_getattr_site {
                     pending_getattr_sites.push(node_span(&cap.node));
+                } else if cap_idx == idx.blind_eval {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-eval".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "eval(arg) — runtime Python code execution; called function is not statically determinable".to_string(),
+                    });
+                } else if cap_idx == idx.blind_exec {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-exec".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "exec(arg) — runtime statement execution; executed code is not statically determinable".to_string(),
+                    });
+                } else if cap_idx == idx.blind_compile {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-compile".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "compile(arg) — runtime bytecode compile; produced code object is not statically determinable".to_string(),
+                    });
+                } else if cap_idx == idx.blind_dynamic_import {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-dynamic-import".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "importlib.import_module(...) — dynamic module loading; imported module name depends on runtime value".to_string(),
+                    });
+                } else if cap_idx == idx.blind_builtin_import {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-builtin-import".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "__import__(...) — dynamic builtin import; module name depends on runtime value".to_string(),
+                    });
+                } else if cap_idx == idx.blind_cross_getattr {
+                    blind_spots.push(BlindSpot {
+                        kind: "python-cross-getattr".to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: "getattr(<obj>, name)() with obj != self — cross-object reflection; target class not enumerated by gnx Phase 2".to_string(),
+                    });
                 }
             }
 
@@ -369,7 +424,7 @@ impl LanguageProvider for PythonProvider {
             documents: vec![],
             framework_refs,
             fanout_refs,
-            blind_spots: vec![],
+            blind_spots,
         })
     }
 }
