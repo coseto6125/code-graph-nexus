@@ -1,20 +1,20 @@
 ;; Functions
 (function_definition
-  declarator: (function_declarator
-    declarator: (identifier) @name.function)) @function
+  type: (_) @type
+  declarator: [
+    (function_declarator
+      declarator: (identifier) @function.name)
+    (pointer_declarator
+      declarator: (function_declarator
+        declarator: (identifier) @function.name))
+  ]) @function
 
-(function_definition
-  declarator: (pointer_declarator
-    declarator: (function_declarator
-      declarator: (identifier) @name.function))) @function
-
-;; Structs
+;; Structs & Enums
 (struct_specifier
-  name: (type_identifier) @name.class) @class
+  name: (type_identifier) @struct.name) @struct
 
-;; Enums
 (enum_specifier
-  name: (type_identifier) @name.class) @class
+  name: (type_identifier) @struct.name) @struct
 
 ;; Includes
 (preproc_include

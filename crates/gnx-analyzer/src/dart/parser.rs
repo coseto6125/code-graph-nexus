@@ -38,48 +38,64 @@ impl LanguageProvider for DartProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_name_function = self.query.capture_index_for_name("name.function");
-        let idx_name_class = self.query.capture_index_for_name("name.class");
-        let idx_name_method = self.query.capture_index_for_name("name.method");
-        let idx_name_interface = self.query.capture_index_for_name("name.interface");
-        let idx_import_name = self.query.capture_index_for_name("import.name");
+        let idx_class_name = self.query.capture_index_for_name("class.name");
+        let idx_function_name = self.query.capture_index_for_name("function.name");
+        let idx_method_name = self.query.capture_index_for_name("method.name");
+        let idx_interface_name = self.query.capture_index_for_name("interface.name");
+        let idx_heritage = self.query.capture_index_for_name("heritage");
+        let idx_type = self.query.capture_index_for_name("type");
         let idx_import_source = self.query.capture_index_for_name("import.source");
+        let idx_import_alias = self.query.capture_index_for_name("import.alias");
 
-        let idx_function = self.query.capture_index_for_name("function");
         let idx_class = self.query.capture_index_for_name("class");
+        let idx_function = self.query.capture_index_for_name("function");
         let idx_method = self.query.capture_index_for_name("method");
         let idx_interface = self.query.capture_index_for_name("interface");
+        let idx_import = self.query.capture_index_for_name("import");
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
             let mut root_span_node = None;
+            let mut heritage = Vec::new();
+            let mut type_annotation = None;
 
-            let mut import_name = None;
-            let mut import_src = None;
+            let mut import_source = None;
+            let mut import_alias = None;
 
             for cap in m.captures {
                 let cap_idx = cap.index;
-                if Some(cap_idx) == idx_name_function {
-                    name_node = Some(cap.node);
-                    kind = Some(NodeKind::Function);
-                } else if Some(cap_idx) == idx_name_class {
+                if Some(cap_idx) == idx_class_name {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Class);
-                } else if Some(cap_idx) == idx_name_method {
+                } else if Some(cap_idx) == idx_function_name {
+                    name_node = Some(cap.node);
+                    kind = Some(NodeKind::Function);
+                } else if Some(cap_idx) == idx_method_name {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
-                } else if Some(cap_idx) == idx_name_interface {
+                } else if Some(cap_idx) == idx_interface_name {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Interface);
-                } else if Some(cap_idx) == idx_import_name {
-                    import_name = Some(cap.node);
+                } else if Some(cap_idx) == idx_heritage {
+                    if let Ok(h) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        heritage.push(h.trim().to_string());
+                    }
+                } else if Some(cap_idx) == idx_type {
+                    if let Ok(t) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        type_annotation = Some(t.trim().to_string());
+                    }
                 } else if Some(cap_idx) == idx_import_source {
-                    import_src = Some(cap.node);
-                } else if Some(cap_idx) == idx_function
+                    import_source = Some(cap.node);
+                } else if Some(cap_idx) == idx_import_alias {
+                    import_alias = Some(cap.node);
+                }
+
+                if Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_method
                     || Some(cap_idx) == idx_interface
+                    || Some(cap_idx) == idx_import
                 {
                     root_span_node = Some(cap.node);
                 }
@@ -87,12 +103,15 @@ impl LanguageProvider for DartProvider {
 
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
+                    let name_str = name_str.trim();
+                    let is_exported = !name_str.starts_with('_');
                     let start = root.start_position();
                     let end = root.end_position();
+                    
                     nodes.push(RawNode {
-                        is_exported: false,
-                        heritage: vec![],
-                        type_annotation: None,
+                        is_exported,
+                        heritage: heritage.clone(),
+                        type_annotation: type_annotation.clone(),
                         name: name_str.to_string(),
                         kind: k,
                         span: (
@@ -105,14 +124,22 @@ impl LanguageProvider for DartProvider {
                 }
             }
 
-            if let (Some(i_name), Some(i_src)) = (import_name, import_src) {
-                if let (Ok(name_str), Ok(src_str)) =
-                    (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
-                {
+            if let Some(i_src) = import_source {
+                if let Ok(src_str) = std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]) {
+                    let clean_src = src_str.trim().trim_matches('\'').trim_matches('"').to_string();
+                    
+                    let alias_str = if let Some(i_alias) = import_alias {
+                        std::str::from_utf8(&source[i_alias.start_byte()..i_alias.end_byte()])
+                            .ok()
+                            .map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    };
+
                     imports.push(RawImport {
-                        alias: None,
-                        imported_name: name_str.trim_matches('\'').trim_matches('"').to_string(),
-                        source: src_str.trim_matches('\'').trim_matches('"').to_string(),
+                        alias: alias_str,
+                        imported_name: clean_src.clone(),
+                        source: clean_src,
                     });
                 }
             }

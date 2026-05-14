@@ -38,31 +38,34 @@ impl LanguageProvider for CProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_name_function = self.query.capture_index_for_name("name.function");
-        let idx_name_class = self.query.capture_index_for_name("name.class");
+        let idx_function_name = self.query.capture_index_for_name("function.name");
+        let idx_struct_name = self.query.capture_index_for_name("struct.name");
+        let idx_type = self.query.capture_index_for_name("type");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
         let idx_function = self.query.capture_index_for_name("function");
-        let idx_class = self.query.capture_index_for_name("class");
+        let idx_struct = self.query.capture_index_for_name("struct");
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
             let mut root_span_node = None;
-
+            let mut type_node = None;
             let mut import_src = None;
 
             for cap in m.captures {
                 let cap_idx = cap.index;
-                if Some(cap_idx) == idx_name_function {
+                if Some(cap_idx) == idx_function_name {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Function);
-                } else if Some(cap_idx) == idx_name_class {
+                } else if Some(cap_idx) == idx_struct_name {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Class);
+                } else if Some(cap_idx) == idx_type {
+                    type_node = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_source {
                     import_src = Some(cap.node);
-                } else if Some(cap_idx) == idx_function || Some(cap_idx) == idx_class {
+                } else if Some(cap_idx) == idx_function || Some(cap_idx) == idx_struct {
                     root_span_node = Some(cap.node);
                 }
             }
@@ -71,10 +74,17 @@ impl LanguageProvider for CProvider {
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let start = root.start_position();
                     let end = root.end_position();
+
+                    let type_annotation = type_node.and_then(|t| {
+                        std::str::from_utf8(&source[t.start_byte()..t.end_byte()])
+                            .ok()
+                            .map(|s| s.to_string())
+                    });
+
                     nodes.push(RawNode {
-                        is_exported: false,
+                        is_exported: true,
                         heritage: vec![],
-                        type_annotation: None,
+                        type_annotation,
                         name: name_str.to_string(),
                         kind: k,
                         span: (
