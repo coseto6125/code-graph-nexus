@@ -2,6 +2,8 @@
 name = "gnx-core"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rkyv = "0.8.16"
@@ -32,3 +34,6 @@ cc = "1.0.94"
 tempfile = "3.27.0"
 memmap2 = "0.9.10"
 filetime = "0.2"
+
+[lints]
+workspace = true
