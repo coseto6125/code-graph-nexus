@@ -291,6 +291,7 @@ impl LanguageProvider for RustProvider {
             imports,
             documents: vec![],
             framework_refs,
+            fanout_refs: vec![],
         })
     }
 }

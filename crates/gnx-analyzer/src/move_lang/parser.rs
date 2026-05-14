@@ -137,6 +137,7 @@ impl LanguageProvider for MoveProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

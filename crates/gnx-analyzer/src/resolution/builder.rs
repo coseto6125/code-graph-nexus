@@ -430,6 +430,45 @@ impl GraphBuilder {
                     }
                 }
             }
+
+            // Pass: fanout refs — emit one Edge per resolved candidate with
+            // confidence = base / sqrt(N), floored at 0.1. Used for reflection-
+            // style dynamic dispatch where the static analyzer can enumerate
+            // candidates but cannot pick the one that actually runs at runtime.
+            for fanout_ref in &local_graph.fanout_refs {
+                let source_id = symbol_table.lookup_in_file(
+                    &local_graph.file_path.to_string_lossy(),
+                    &fanout_ref.source_name,
+                );
+
+                let Some(source_id) = source_id else { continue };
+
+                let n = fanout_ref.candidates.len() as f32;
+                if n < 1.0 {
+                    continue;
+                }
+
+                let confidence = (fanout_ref.base_confidence / n.sqrt()).max(0.1);
+
+                for candidate_name in &fanout_ref.candidates {
+                    // Resolve candidate via same-file → import-scoped → global.
+                    let targets = resolver.resolve_symbol(
+                        &local_graph.file_path,
+                        candidate_name,
+                        &local_graph.imports,
+                    );
+                    for (target_id, _) in targets {
+                        let reason_ref = string_pool.add(&fanout_ref.reason);
+                        edges.push(Edge {
+                            source: source_id,
+                            target: target_id,
+                            rel_type: RelType::References,
+                            confidence,
+                            reason: reason_ref,
+                        });
+                    }
+                }
+            }
         }
 
         edges.extend(route_edges);
@@ -734,6 +773,7 @@ mod tests {
             }],
             routes: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         };
         let target = LocalGraph {
             file_path: "src/b.ts".into(),
@@ -752,6 +792,7 @@ mod tests {
             imports: vec![],
             routes: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         };
 
         let mut builder = GraphBuilder::new();
@@ -831,6 +872,168 @@ mod tests {
     }
 
     #[test]
+    fn fanout_ref_emits_n_edges_with_confidence_decay() {
+        use gnx_core::analyzer::types::RawFanoutRef;
+
+        let g = LocalGraph {
+            file_path: "test.py".into(),
+            content_hash: [0; 32],
+            nodes: vec![
+                RawNode {
+                    name: "dispatch".into(),
+                    kind: NodeKind::Method,
+                    span: (0, 0, 5, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+                RawNode {
+                    name: "handle_a".into(),
+                    kind: NodeKind::Method,
+                    span: (10, 0, 12, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+                RawNode {
+                    name: "handle_b".into(),
+                    kind: NodeKind::Method,
+                    span: (14, 0, 16, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+                RawNode {
+                    name: "handle_c".into(),
+                    kind: NodeKind::Method,
+                    span: (18, 0, 20, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+            ],
+            documents: vec![],
+            imports: vec![],
+            routes: vec![],
+            framework_refs: vec![],
+            fanout_refs: vec![RawFanoutRef {
+                source_name: "dispatch".into(),
+                candidates: vec!["handle_a".into(), "handle_b".into(), "handle_c".into()],
+                base_confidence: 0.5,
+                reason: "reflection-getattr-fanout".into(),
+                span: (0, 0, 0, 0),
+            }],
+        };
+
+        let mut builder = GraphBuilder::new();
+        builder.add_graph(g);
+        let graph = builder.build();
+
+        let fanout_edges: Vec<_> = graph
+            .edges
+            .iter()
+            .filter(|e| e.rel_type == RelType::References)
+            .collect();
+
+        // Expect 3 edges (one per candidate), each with confidence ≈ 0.5 / sqrt(3) ≈ 0.29.
+        assert_eq!(
+            fanout_edges.len(),
+            3,
+            "expected 3 fan-out edges, got {}",
+            fanout_edges.len()
+        );
+
+        let expected_conf = 0.5_f32 / (3.0_f32).sqrt();
+        for e in &fanout_edges {
+            assert!(
+                (e.confidence - expected_conf).abs() < 0.01,
+                "expected conf ≈ {}, got {}",
+                expected_conf,
+                e.confidence
+            );
+            let reason_start = e.reason.offset as usize;
+            let reason_end = reason_start + e.reason.len as usize;
+            let reason_str = std::str::from_utf8(&graph.string_pool[reason_start..reason_end])
+                .expect("reason utf-8");
+            assert_eq!(reason_str, "reflection-getattr-fanout");
+        }
+    }
+
+    #[test]
+    fn fanout_ref_minimum_confidence_cap() {
+        use gnx_core::analyzer::types::RawFanoutRef;
+
+        // 60 candidates → 0.5/sqrt(60) ≈ 0.0645，應 cap 到 0.1
+        let mut nodes = vec![RawNode {
+            name: "dispatch".into(),
+            kind: NodeKind::Method,
+            span: (0, 0, 5, 0),
+            is_exported: false,
+            heritage: vec![],
+            type_annotation: None,
+            decorators: vec![],
+            calls: vec![],
+        }];
+        let mut candidates = vec![];
+        for i in 0..60u32 {
+            let name = format!("h{}", i);
+            candidates.push(name.clone());
+            nodes.push(RawNode {
+                name,
+                kind: NodeKind::Method,
+                span: (10 + i, 0, 10 + i + 1, 0),
+                is_exported: false,
+                heritage: vec![],
+                type_annotation: None,
+                decorators: vec![],
+                calls: vec![],
+            });
+        }
+        let g = LocalGraph {
+            file_path: "test.py".into(),
+            content_hash: [0; 32],
+            nodes,
+            documents: vec![],
+            imports: vec![],
+            routes: vec![],
+            framework_refs: vec![],
+            fanout_refs: vec![RawFanoutRef {
+                source_name: "dispatch".into(),
+                candidates,
+                base_confidence: 0.5,
+                reason: "reflection-getattr-fanout".into(),
+                span: (0, 0, 0, 0),
+            }],
+        };
+        let mut builder = GraphBuilder::new();
+        builder.add_graph(g);
+        let graph = builder.build();
+
+        let fanout_edges: Vec<_> = graph
+            .edges
+            .iter()
+            .filter(|e| e.rel_type == RelType::References)
+            .collect();
+
+        assert_eq!(fanout_edges.len(), 60);
+        for e in &fanout_edges {
+            assert!(
+                (e.confidence - 0.1).abs() < 1e-5,
+                "expected cap 0.1, got {}",
+                e.confidence
+            );
+        }
+    }
+
+    #[test]
     fn framework_ref_produces_edge_with_confidence_and_reason() {
         let g = LocalGraph {
             file_path: "test.py".into(),
@@ -860,6 +1063,7 @@ mod tests {
             documents: vec![],
             imports: vec![],
             routes: vec![],
+            fanout_refs: vec![],
             framework_refs: vec![RawFrameworkRef {
                 source_name: "handler".into(),
                 target_name: "get_db".into(),

@@ -127,6 +127,7 @@ impl LanguageProvider for SqlProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

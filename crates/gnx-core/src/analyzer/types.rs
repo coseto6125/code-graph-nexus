@@ -47,6 +47,19 @@ pub struct RawFrameworkRef {
     pub span: (u32, u32, u32, u32),
 }
 
+/// Reflection-style fan-out reference: a single call site whose target cannot
+/// be uniquely picked at static-analysis time, but where the analyzer can
+/// enumerate the candidate set. The builder emits one `References` edge per
+/// candidate with confidence `base_confidence / sqrt(N)` (floored at 0.1).
+#[derive(Debug, Clone)]
+pub struct RawFanoutRef {
+    pub source_name: String,
+    pub candidates: Vec<String>,
+    pub base_confidence: f32,
+    pub reason: String,
+    pub span: (u32, u32, u32, u32),
+}
+
 #[derive(Debug, Clone)]
 pub struct LocalGraph {
     pub file_path: PathBuf,
@@ -56,4 +69,5 @@ pub struct LocalGraph {
     pub imports: Vec<RawImport>,
     pub routes: Vec<RawRoute>,
     pub framework_refs: Vec<RawFrameworkRef>,
+    pub fanout_refs: Vec<RawFanoutRef>,
 }

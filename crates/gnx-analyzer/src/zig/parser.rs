@@ -200,6 +200,7 @@ impl LanguageProvider for ZigProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }
