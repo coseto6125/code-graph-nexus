@@ -2,6 +2,8 @@
 name = "gnx-analyzer"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 gnx-core = { path = "../gnx-core" }
@@ -45,3 +47,6 @@ tree-sitter-verilog = "1.0.3"
 tree-sitter-vyper = { path = "../vendor/tree-sitter-vyper" }
 tree-sitter-sequel = "0.3.11"
 tree-sitter-zig = "1.1.2"
+
+[lints]
+workspace = true
