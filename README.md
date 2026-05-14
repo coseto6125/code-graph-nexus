@@ -89,26 +89,26 @@ All commands accept `--format text|json|toon`. The default for query is a highly
 
 ## Language Matrix
 
-For the 14 languages graph-nexus shares with upstream, here's the per-dimension coverage. Legend: `✓` supported, `△` partial / basic, **缺** upstream documents this but the Rust path is missing or not fully wired, `—` not claimed / not applicable.
+For the 14 languages graph-nexus shares with upstream, here's the per-dimension coverage from an evidence-based audit of `crates/graph-nexus-analyzer/src/<lang>/`. Legend: `✓` clearly supported, `△` partial / basic, `—` not applicable / not implemented.
 
 | Language | Imports | Named | Exports | Heritage | Types | Ctor | Config | Frameworks | Entry |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | ✓ | ✓ |
-| JavaScript | ✓ | ✓ | ✓ | ✓ | — | △ | △ | ✓ | ✓ |
-| Python | ✓ | ✓ | ✓ | ✓ | ✓ | △ | **缺** | ✓ | ✓ |
-| Java | ✓ | △ | ✓ | ✓ | ✓ | △ | — | ✓ | ✓ |
-| Kotlin | ✓ | ✓ | ✓ | ✓ | ✓ | △ | — | **缺** | ✓ |
-| C# | ✓ | ✓ | ✓ | ✓ | ✓ | △ | **缺** | **缺** | ✓ |
-| Go | ✓ | — | ✓ | ✓ | ✓ | △ | **缺** | △ | ✓ |
-| Rust | ✓ | ✓ | ✓ | ✓ | ✓ | △ | — | ✓ | ✓ |
-| PHP | ✓ | ✓ | △ | ✓ | ✓ | △ | **缺** | △ | ✓ |
-| Ruby | ✓ | — | △ | ✓ | — | △ | — | △ | ✓ |
-| Swift | **缺** | **缺** | **缺** | **缺** | **缺** | **缺** | **缺** | **缺** | **缺** |
-| C | △ | — | △ | — | ✓ | △ | — | **缺** | ✓ |
-| C++ | △ | — | △ | ✓ | ✓ | △ | — | **缺** | ✓ |
-| Dart | ✓ | — | △ | ✓ | ✓ | △ | — | **缺** | ✓ |
+| TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | △ | ✓ | ✓ | ✓ |
+| JavaScript | ✓ | ✓ | ✓ | ✓ | — | △ | ✓ | △ | ✓ |
+| Python | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Java | ✓ | △ | ✓ | ✓ | ✓ | △ | △ | ✓ | △ |
+| Kotlin | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | — | — |
+| C# | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | — | — |
+| Go | ✓ | ✓ | — | ✓ | △ | △ | ✓ | △ | △ |
+| Rust | ✓ | ✓ | ✓ | ✓ | ✓ | △ | ✓ | ✓ | △ |
+| PHP | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | △ | ✓ |
+| Ruby | ✓ | — | — | ✓ | — | △ | △ | △ | ✓ |
+| Swift | ✓ | — | ✓ | ✓ | △ | △ | △ | — | — |
+| C | ✓ | — | — | △ | △ | △ | △ | — | — |
+| C++ | ✓ | ✓ | ✓ | ✓ | △ | △ | △ | — | — |
+| Dart | ✓ | ✓ | — | ✓ | △ | △ | △ | — | — |
 
-Swift parser code exists, but `gnx analyze` currently does not register the Swift provider. Extra Rust-side providers exist for Bash, Lua, Crystal, Solidity, Move, Dockerfile, Docker Compose, GitHub Actions, HCL, SQL, Vyper, Cairo, Nim, Verilog, YAML, Markdown, and Zig (the 17 languages beyond upstream's 14-language matrix); they are outside upstream's matrix and vary in depth.
+Takeaways: **Imports** are universal; **Heritage** covers 13/14 (Go is exception). **Python** is the strongest (full receiver-type binding for `Ctor` is Python-only today). **Config parsing** is wired for 5 toolchains: `tsconfig.json` / `package.json` / `go.mod` / `Cargo.toml` / `pyproject.toml`. Constructor inference is generally only `△` outside Python. Beyond these 14, the Rust providers cover 17 more languages (Bash, Crystal, Cairo, Dockerfile, Docker Compose, GitHub Actions, HCL, Lua, Markdown, Move, Nim, Solidity, SQL, Verilog, Vyper, YAML, Zig) at the structural level only.
 
 ## 🏗️ Architecture
 

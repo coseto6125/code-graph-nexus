@@ -8,6 +8,8 @@
 
 ## 跟上游 GitNexus 的差別
 
+> **不是 drop-in 替代品。** 上游是範圍更大的 Node/TypeScript agent platform（MCP server、resources、hooks、generated skills）；graph-nexus 是無狀態 Rust CLI，專為 shell-mediated LLM 調用優化 — 不同 scope、不同 trade-off。
+
 | 維度 | GitNexus | graph-nexus | 為什麼對 LLM agent 更合適 |
 |---|---|---|---|
 | **受眾** | 人類開發者 + IDE 整合 | AI 程式碼代理 | 優化目標決定下面每一行 |
@@ -17,6 +19,17 @@
 | **支援語言數** | 14 (TypeScript, JavaScript, Python, Java, Kotlin, C#, Go, Rust, PHP, Ruby, Swift, C, C++, Dart) | 31 — 上面 14 種 + Bash, Crystal, Cairo, Dockerfile, Docker Compose, GitHub Actions, HCL, Lua, Markdown, Move, Nim, Solidity, SQL, Verilog, Vyper, YAML, Zig | Mixed-stack repo（DevOps config / Web3 合約 / infra-as-code）不再是盲區 |
 
 > 語言深度有差。graph-nexus 在 31 種語言做結構層級（function / class / method / imports）解析，但**還沒**追上 GitNexus 在每種語言提供的完整 9 維度覆蓋（Named Bindings、Heritage、Constructor Inference、Config 等）。31 是廣度，不是 parity。
+
+### 工具與整合對照
+
+| LLM 面向 | 原版 GitNexus (`._source_code`) | Graph Nexus Rust (`gnx`) |
+| :--- | :--- | :--- |
+| **Agent 整合** | MCP server、resources、prompts、setup、hooks、generated skills | 無狀態 CLI，可透過 shell/tool wrapper 調用。**目前沒有內建 MCP server。** |
+| **核心查詢工具** | `query`, `context`, `impact`, `detect_changes`, `rename`, `cypher`, group tools | `query`, `context`, `impact`, `detect-changes`, `route-map`, `cypher`, `summarize`, `rename` |
+| **Context 輸出** | 完整的 MCP responses 與 repo skills | 精簡 `toon`/JSON/text，適合 shell-mediated LLM 調用 |
+| **搜尋** | 文件化的 BM25 + semantic + RRF 混合 | 有 embedding 走混合；沒有就 fallback Tantivy BM25 |
+| **Runtime / 儲存** | Node.js + LadybugDB | Rust + mmap `rkyv` graph 檔 |
+| **最適合場景** | 有強 MCP/editor 整合的 agent runtime | 想要小執行檔、少零件的 local LLM harness / scripts |
 
 底層細節：rkyv + mmap 的 zero-copy 硬碟儲存、Tantivy BM25 + BGE-M3 dense vector 混合檢索、框架路由自動抽取。CLI 命令是 `gnx`。
 
@@ -35,9 +48,15 @@
 
 ## 📦 安裝
 
-```bash
-cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx
-```
+| 平台 / 對象 | 指令 | 備註 |
+| :--- | :--- | :--- |
+| macOS Homebrew | `brew tap coseto6125/tap && brew install graph-nexus` | tap formula 公開後可用。Package：`graph-nexus`；binary：`gnx` |
+| Linux / macOS | `curl -sSfL https://github.com/coseto6125/graph-nexus/releases/latest/download/install.sh \| sh` | 安裝預編 GitHub Release 二進位 |
+| Windows PowerShell | `irm https://github.com/coseto6125/graph-nexus/releases/latest/download/install.ps1 \| iex` | 安裝預編 GitHub Release 二進位 |
+| Rust 原始碼 build | `cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx` | crates.io 發布前的安裝方式 |
+| 手動下載 | [GitHub Releases](https://github.com/coseto6125/graph-nexus/releases) | 挑選對應 target 的 archive 並驗證 `.sha256` |
+
+> `cargo install graph-nexus` 故意不列：crates.io publish 仍被卡，要等所有 analyzer grammar 依賴都能在 crates.io 上發布。
 
 安裝後，執行檔名稱為 `gnx`（在 crates.io 上的套件名為 `graph-nexus`）。
 
@@ -67,6 +86,29 @@ gnx context --name validateUser
 ```
 
 所有指令皆支援 `--format text|json|toon`。`query` 的預設輸出為極度優化的 `text` 格式。
+
+## 語言矩陣
+
+graph-nexus 與上游共有的 14 種語言，逐維度覆蓋如下（基於 `crates/graph-nexus-analyzer/src/<lang>/` 程式碼 audit）。圖例：`✓` 明確支援、`△` 部分 / 基本、`—` 不適用 / 未實作。
+
+| 語言 | Imports | Named | Exports | Heritage | Types | Ctor | Config | Frameworks | Entry |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | △ | ✓ | ✓ | ✓ |
+| JavaScript | ✓ | ✓ | ✓ | ✓ | — | △ | ✓ | △ | ✓ |
+| Python | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Java | ✓ | △ | ✓ | ✓ | ✓ | △ | △ | ✓ | △ |
+| Kotlin | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | — | — |
+| C# | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | — | — |
+| Go | ✓ | ✓ | — | ✓ | △ | △ | ✓ | △ | △ |
+| Rust | ✓ | ✓ | ✓ | ✓ | ✓ | △ | ✓ | ✓ | △ |
+| PHP | ✓ | ✓ | ✓ | ✓ | ✓ | △ | △ | △ | ✓ |
+| Ruby | ✓ | — | — | ✓ | — | △ | △ | △ | ✓ |
+| Swift | ✓ | — | ✓ | ✓ | △ | △ | △ | — | — |
+| C | ✓ | — | — | △ | △ | △ | △ | — | — |
+| C++ | ✓ | ✓ | ✓ | ✓ | △ | △ | △ | — | — |
+| Dart | ✓ | ✓ | — | ✓ | △ | △ | △ | — | — |
+
+重點：**Imports** 全面支援；**Heritage** 14 中 13 都有（Go 例外）。**Python 最完整**（Constructor 接收者型別綁定目前只在 Python 完整實作）。**Config 解析**目前覆蓋 5 種 toolchain：`tsconfig.json` / `package.json` / `go.mod` / `Cargo.toml` / `pyproject.toml`。Constructor inference 在 Python 外大多 `△`。除了這 14 種以外，Rust 端還有 17 個 provider（Bash、Crystal、Cairo、Dockerfile、Docker Compose、GitHub Actions、HCL、Lua、Markdown、Move、Nim、Solidity、SQL、Verilog、Vyper、YAML、Zig），但僅停留在結構層級。
 
 ## 🏗️ 系統架構
 
