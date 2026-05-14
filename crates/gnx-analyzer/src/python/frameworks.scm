@@ -88,3 +88,49 @@
       (identifier) @_obj (#eq? @_obj "self")
       .
       (identifier) @reflection.getattr.name_var))) @reflection.getattr.site
+
+;; ---- Blind spots: truly unresolvable patterns ----
+;; Spec: docs/superpowers/specs/2026-05-15-blind-spots.md §3
+;; Unlike fan-out (candidates can be enumerated), these patterns cannot even
+;; be listed — runtime data drives the target. Emit BlindSpot metadata so
+;; the LLM is told "I cannot see what this calls" rather than silently miss.
+
+;; eval(...)
+((call function: (identifier) @blind.eval)
+  (#eq? @blind.eval "eval"))
+
+;; exec(...)
+((call function: (identifier) @blind.exec)
+  (#eq? @blind.exec "exec"))
+
+;; compile(...)
+((call function: (identifier) @blind.compile)
+  (#eq? @blind.compile "compile"))
+
+;; importlib.import_module(...)
+(call
+  function: (attribute
+    object: (identifier) @_mod
+    attribute: (identifier) @blind.dynamic_import)
+  (#eq? @_mod "importlib")
+  (#eq? @blind.dynamic_import "import_module"))
+
+;; __import__(...)
+((call function: (identifier) @blind.builtin_import)
+  (#eq? @blind.builtin_import "__import__"))
+
+;; getattr(<not-self>, name_var)() — cross-object reflection.
+;; Second arg must be an identifier (variable), not a string literal. Outer
+;; call invokes the getattr result. The first arg must NOT be `self` —
+;; that case is handled by the Phase 2 reflection fan-out above.
+(call
+  function: (call
+    function: (identifier) @_g
+    arguments: (argument_list
+      .
+      (identifier) @_obj
+      .
+      (identifier)))
+  arguments: (argument_list)
+  (#eq? @_g "getattr")
+  (#not-eq? @_obj "self")) @blind.cross_getattr

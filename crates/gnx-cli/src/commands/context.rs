@@ -63,6 +63,7 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), GnxError> {
 
     let (node_idx, node) = matching_nodes[0];
     let file_node = &graph.files[node.file_idx.to_native() as usize];
+    let file_path_str = file_node.path.resolve(&graph.string_pool);
 
     let mut incoming: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
     let mut outgoing: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
@@ -102,19 +103,36 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), GnxError> {
         incoming.entry(rel_str).or_default().push(entry);
     }
 
+    // Blind spots are file-level metadata; surface only sites in the same
+    // file as the queried symbol so the LLM sees unresolvable patterns it
+    // should manually inspect when reading this symbol's context.
+    let blind_spots: Vec<serde_json::Value> = graph
+        .blind_spots
+        .iter()
+        .filter(|bs| bs.file_path.resolve(&graph.string_pool) == file_path_str)
+        .map(|bs| {
+            serde_json::json!({
+                "kind": bs.kind.resolve(&graph.string_pool),
+                "line": bs.start_row.to_native(),
+                "hint": bs.hint.resolve(&graph.string_pool),
+            })
+        })
+        .collect();
+
     let result = serde_json::json!({
         "status": "found",
         "symbol": {
             "uid": node.uid.resolve(&graph.string_pool),
             "name": node.name.resolve(&graph.string_pool),
             "kind": kind_to_str(&node.kind),
-            "filePath": file_node.path.resolve(&graph.string_pool),
+            "filePath": file_path_str,
             "startLine": node.span.0.to_native(),
             "endLine": node.span.2.to_native(),
         },
         "incoming": incoming,
         "outgoing": outgoing,
-        "processes": []
+        "processes": [],
+        "blind_spots": blind_spots,
     });
 
     emit(&result, format)
