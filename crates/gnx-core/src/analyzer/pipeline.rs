@@ -108,10 +108,30 @@ impl AnalyzerPipeline {
                 .iter()
                 .find(|p| p.name() == "bash")
                 .map(|p| p.as_ref()),
+            "lua" | "luau" => self
+                .providers
+                .iter()
+                .find(|p| p.name() == "lua")
+                .map(|p| p.as_ref()),
             "dockerfile" => self
                 .providers
                 .iter()
                 .find(|p| p.name() == "dockerfile")
+                .map(|p| p.as_ref()),
+            "cr" => self
+                .providers
+                .iter()
+                .find(|p| p.name() == "crystal")
+                .map(|p| p.as_ref()),
+            "move" => self
+                .providers
+                .iter()
+                .find(|p| p.name() == "move")
+                .map(|p| p.as_ref()),
+            "sol" => self
+                .providers
+                .iter()
+                .find(|p| p.name() == "solidity")
                 .map(|p| p.as_ref()),
             _ => None,
         }
