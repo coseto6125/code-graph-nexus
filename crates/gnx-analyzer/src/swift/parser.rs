@@ -169,6 +169,7 @@ impl LanguageProvider for SwiftProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

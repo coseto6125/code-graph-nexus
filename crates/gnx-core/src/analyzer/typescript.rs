@@ -22,6 +22,7 @@ impl LanguageProvider for TypeScriptProvider {
             imports: vec![],
             routes: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

@@ -269,6 +269,7 @@ impl LanguageProvider for JavaProvider {
             imports,
             documents: vec![],
             framework_refs,
+            fanout_refs: vec![],
         })
     }
 }

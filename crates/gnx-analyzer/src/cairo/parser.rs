@@ -142,6 +142,7 @@ impl LanguageProvider for CairoProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

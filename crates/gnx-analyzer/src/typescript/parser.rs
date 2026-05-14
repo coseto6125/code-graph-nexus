@@ -337,6 +337,7 @@ impl LanguageProvider for TypeScriptProvider {
             imports,
             documents: vec![],
             framework_refs,
+            fanout_refs: vec![],
         })
     }
 }

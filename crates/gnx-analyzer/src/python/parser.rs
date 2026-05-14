@@ -331,6 +331,7 @@ impl LanguageProvider for PythonProvider {
             imports,
             documents: vec![],
             framework_refs,
+            fanout_refs: vec![],
         })
     }
 }

@@ -162,6 +162,7 @@ impl LanguageProvider for LuaProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

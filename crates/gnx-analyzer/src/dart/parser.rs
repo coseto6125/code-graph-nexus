@@ -185,6 +185,7 @@ impl LanguageProvider for DartProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

@@ -241,6 +241,7 @@ impl LanguageProvider for GoProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

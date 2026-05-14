@@ -127,6 +127,7 @@ impl LanguageProvider for MarkdownProvider {
             documents,
             imports: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

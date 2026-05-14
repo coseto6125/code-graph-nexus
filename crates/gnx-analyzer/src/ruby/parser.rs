@@ -175,6 +175,7 @@ impl LanguageProvider for RubyProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }

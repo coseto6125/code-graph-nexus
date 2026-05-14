@@ -130,6 +130,7 @@ impl LanguageProvider for VerilogProvider {
             imports,
             documents: vec![],
             framework_refs: vec![],
+            fanout_refs: vec![],
         })
     }
 }
