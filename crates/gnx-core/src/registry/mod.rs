@@ -15,12 +15,9 @@ pub use audit::{AuditEvent, AuditLog};
 pub use lock::FileLock;
 pub use meta::BranchMeta;
 pub use path::{
-    derive_repo_name, sanitize_branch, sanitize_segment, uid_path,
-    IndexLayout, PathError,
+    derive_repo_name, sanitize_branch, sanitize_segment, uid_path, IndexLayout, PathError,
 };
-pub use store::{
-    strip_credentials, BranchEntry, GroupEntry, RegistryFile, RepoEntry,
-};
+pub use store::{strip_credentials, BranchEntry, GroupEntry, RegistryFile, RepoEntry};
 
 use std::path::{Path, PathBuf};
 

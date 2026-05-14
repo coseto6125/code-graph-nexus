@@ -145,12 +145,14 @@ impl LanguageProvider for ZigProvider {
                         ),
                     };
                     // Keep only the highest-priority match for each declaration site
-                    let existing = node_map.entry(root_start_byte).or_insert_with(|| PendingNode {
-                        priority: MatchPriority::Const,
-                        name: String::new(),
-                        kind: NodeKind::Const,
-                        span: (0, 0, 0, 0),
-                    });
+                    let existing = node_map
+                        .entry(root_start_byte)
+                        .or_insert_with(|| PendingNode {
+                            priority: MatchPriority::Const,
+                            name: String::new(),
+                            kind: NodeKind::Const,
+                            span: (0, 0, 0, 0),
+                        });
                     if candidate.priority >= existing.priority {
                         *existing = candidate;
                     }

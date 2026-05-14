@@ -135,9 +135,7 @@ pub fn detect_communities(nodes: &[Node], edges: &[Edge], config: &LouvainConfig
         }
     }
 
-    let active_nodes: Vec<u32> = (0..n as u32)
-        .filter(|&i| connected[i as usize])
-        .collect();
+    let active_nodes: Vec<u32> = (0..n as u32).filter(|&i| connected[i as usize]).collect();
     if active_nodes.is_empty() {
         return assignments;
     }

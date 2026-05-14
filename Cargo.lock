@@ -4030,7 +4030,6 @@ name = "tree-sitter-swift"
 version = "0.7.2"
 dependencies = [
  "cc",
- "tree-sitter",
  "tree-sitter-language",
 ]
 
@@ -4059,7 +4058,6 @@ name = "tree-sitter-vyper"
 version = "0.1.0"
 dependencies = [
  "cc",
- "tree-sitter",
  "tree-sitter-language",
 ]
 
