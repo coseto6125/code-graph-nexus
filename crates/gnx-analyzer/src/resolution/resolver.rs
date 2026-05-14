@@ -17,6 +17,9 @@ pub type NodeId = u32;
 pub enum DecisionTier {
     SameFile,
     ImportScoped,
+    /// Tier 2.5 — qualifier-scoped lookup succeeded (see
+    /// [`ResolutionTier::QualifierScoped`]).
+    QualifierScoped,
     Global,
     Unresolved,
 }
@@ -141,6 +144,58 @@ impl<'a> Resolver<'a> {
             }
         }
 
+        // Tier 2.5: Qualifier-scoped lookup. Callees that carry a qualifier
+        // (`A::new`, `std::vec::Vec::new`, `Cls.method`) cannot match Tier 1/2
+        // which are keyed by short names; without this tier they fall through
+        // to Tier 3, where the kind+unique filter near-always rejects the
+        // ultra-common member name (`new`, `default`, `from`, ...). Splitting
+        // and scoping to the qualifier's defining file is the proper fix.
+        //
+        // No fall-through to Tier 3 on a short-name retry: a qualified callee
+        // should resolve via its qualifier or not at all — matching the
+        // "refuse to guess" principle that drives the Layer-1 barriers.
+        //
+        // Concretely, allowing a bare-name fallback would re-introduce a class
+        // of pre-existing false edges that this tier was meant to remove:
+        // `std::fs::read` stripping to `read` and resolving to a same-named
+        // local function, `serde_json::json!` macro calls resolving to a
+        // local `json()` helper, etc. Dump verification of B.1 vs B.1+fallback
+        // showed a ~52% false-positive rate on the fallback path, so we keep
+        // the strict policy. Module-qualified free functions like
+        // `registry::sanitize_branch` whose member is uniquely defined will
+        // be recovered by Phase B.3 (config-aware import resolution) once the
+        // workspace crate index can distinguish `gnx_core::...` (internal,
+        // safe to fall back) from `std::...` (external, refuse).
+        if let Some((qualifier, member)) = split_qualifier(symbol_name) {
+            let hit = self
+                .resolve_qualifier_file(source_file, qualifier, raw_imports)
+                .and_then(|qf| self.symbol_table.lookup_in_file(&qf, member));
+            if let Some(node_id) = hit {
+                let conf = ResolutionTier::QualifierScoped.base_confidence();
+                results.push((node_id, conf));
+                self.record(
+                    &source_file_str,
+                    symbol_name,
+                    None,
+                    DecisionTier::QualifierScoped,
+                    Some(node_id),
+                    0,
+                    Some(conf),
+                );
+                return results;
+            }
+            self.record(
+                &source_file_str,
+                symbol_name,
+                None,
+                DecisionTier::Unresolved,
+                None,
+                self.symbol_table.global_match_count(member),
+                None,
+            );
+            return results;
+        }
+
         // Tier 3: Global fallback — emit only when the kind-filtered candidate
         // set is unique. Refusing to guess on ambiguity is the dominant defence
         // against bare-name fan-out (`new`, `format`, `default`, `main`, ...).
@@ -185,6 +240,45 @@ impl<'a> Resolver<'a> {
 
         results
     }
+}
+
+/// Split a qualified callee into `(qualifier, member)` where `qualifier` is
+/// the **immediate** identifier preceding the rightmost separator. Returns
+/// `None` if the name has no `::` / `.` separator or either side is empty.
+///
+/// For multi-segment paths only the last segment is taken as the qualifier
+/// (the only piece the resolver can map back to a registered Type name —
+/// `std::vec::Vec` is registered as just `Vec` keyed by its defining file).
+///
+/// Examples:
+/// * `A::new` → `Some(("A", "new"))`
+/// * `std::vec::Vec::new` → `Some(("Vec", "new"))`
+/// * `obj.method` → `Some(("obj", "method"))`
+/// * `foo` → `None`
+fn split_qualifier(name: &str) -> Option<(&str, &str)> {
+    let colon_idx = name.rfind("::");
+    let dot_idx = name.rfind('.');
+    let (sep_len, split_idx) = match (colon_idx, dot_idx) {
+        (Some(c), Some(d)) if c >= d => (2usize, c),
+        (Some(_), Some(d)) => (1, d),
+        (Some(c), None) => (2, c),
+        (None, Some(d)) => (1, d),
+        (None, None) => return None,
+    };
+    let (before, after) = name.split_at(split_idx);
+    let member = &after[sep_len..];
+    if before.is_empty() || member.is_empty() {
+        return None;
+    }
+    let qualifier = before
+        .rsplit_once("::")
+        .or_else(|| before.rsplit_once('.'))
+        .map(|(_, q)| q)
+        .unwrap_or(before);
+    if qualifier.is_empty() {
+        return None;
+    }
+    Some((qualifier, member))
 }
 
 /// Extensions probed during L0 candidate enumeration (covers every
@@ -303,6 +397,66 @@ where
 }
 
 impl<'a> Resolver<'a> {
+    /// Resolve `qualifier` as a Type (Class / Interface) via Tier 1 → Tier 2 →
+    /// Tier 3 (kind-filtered, unique-only), returning the file_path of the
+    /// resolved target. Used by Tier 2.5 to scope member lookup to the
+    /// qualifier's defining file. Telemetry-silent — internal recursion is
+    /// not surfaced in the decision dump.
+    fn resolve_qualifier_file(
+        &self,
+        source_file: &Path,
+        qualifier: &str,
+        raw_imports: &[RawImport],
+    ) -> Option<String> {
+        let source_file_str = source_file.to_string_lossy();
+
+        // Tier 1: same-file qualifier definition.
+        if let Some(id) = self
+            .symbol_table
+            .lookup_in_file(&source_file_str, qualifier)
+        {
+            return self.symbol_table.file_of(id).map(str::to_string);
+        }
+
+        // Tier 2: imported qualifier (matches alias or imported_name; expands
+        // specifier via the same L0 candidate enumeration used by the bare-
+        // name resolver).
+        for import in raw_imports {
+            let matches_qualifier = match &import.alias {
+                Some(alias) => alias == qualifier,
+                None => import.imported_name == qualifier,
+            };
+            if !matches_qualifier {
+                continue;
+            }
+            let exported = &import.imported_name;
+            let mut hit: Option<String> = None;
+            for_each_specifier_candidate(source_file, &import.source, |candidate| {
+                if self
+                    .symbol_table
+                    .lookup_in_file(candidate, exported)
+                    .is_some()
+                {
+                    hit = Some(candidate.to_string());
+                    false
+                } else {
+                    true
+                }
+            });
+            if hit.is_some() {
+                return hit;
+            }
+        }
+
+        // Tier 3: kind-filtered unique global. Language + vendor barriers
+        // applied via FileMeta — the same defences as bare-name Tier 3.
+        let caller_meta = FileMeta::from_path(&source_file_str);
+        let id =
+            self.symbol_table
+                .lookup_unique_global(qualifier, ResolveTarget::Type, caller_meta)?;
+        self.symbol_table.file_of(id).map(str::to_string)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn record(
         &self,
@@ -591,6 +745,262 @@ mod tests {
             vec![(0, ResolutionTier::Global.base_confidence())],
             "intra-vendor resolution must still emit, got {:?}",
             out
+        );
+    }
+
+    // ── split_qualifier ─────────────────────────────────────────────────────
+
+    #[test]
+    fn split_qualifier_handles_simple_double_colon() {
+        assert_eq!(split_qualifier("A::new"), Some(("A", "new")));
+    }
+
+    #[test]
+    fn split_qualifier_takes_last_segment_for_multi_path() {
+        // `std::vec::Vec::new` — Vec is the immediate qualifier; `std::vec`
+        // is a path prefix that the symbol table can't map back to a single
+        // registered Type name.
+        assert_eq!(split_qualifier("std::vec::Vec::new"), Some(("Vec", "new")));
+    }
+
+    #[test]
+    fn split_qualifier_handles_dot_separator() {
+        assert_eq!(split_qualifier("obj.method"), Some(("obj", "method")));
+    }
+
+    #[test]
+    fn split_qualifier_returns_none_for_bare_name() {
+        assert_eq!(split_qualifier("foo"), None);
+    }
+
+    #[test]
+    fn split_qualifier_rejects_empty_sides() {
+        assert_eq!(split_qualifier("::foo"), None);
+        assert_eq!(split_qualifier("foo::"), None);
+        assert_eq!(split_qualifier(".foo"), None);
+        assert_eq!(split_qualifier("foo."), None);
+    }
+
+    // ── Tier 2.5: qualifier-scoped resolution ───────────────────────────────
+
+    #[test]
+    fn tier2_5_resolves_via_same_file_qualifier() {
+        // `A` defined in caller's file, `new` defined in A's file (`a.rs`).
+        // Caller `c.rs` invokes `A::new` — Tier 2.5 should:
+        //   1. Resolve `A` as Type via Tier 1/2/3 → finds A's file (a.rs)
+        //   2. Lookup `new` in a.rs → finds it
+        //   3. Emit edge at QualifierScoped confidence (0.85)
+        let st = st_with(&[
+            ("a.rs", "A", NodeKind::Class),
+            ("a.rs", "new", NodeKind::Method),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("a.rs"),
+            "A::new",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert_eq!(
+            out,
+            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
+        );
+    }
+
+    #[test]
+    fn tier2_5_resolves_via_global_qualifier() {
+        // `A` defined in `a.rs`, caller in different file. Qualifier resolves
+        // via Tier 3 (kind-filtered, unique Type), member then found in A's
+        // file. This is the dominant Rust pattern (`A::new()` from another
+        // module).
+        let st = st_with(&[
+            ("a.rs", "A", NodeKind::Class),
+            ("a.rs", "new", NodeKind::Method),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "A::new",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert_eq!(
+            out,
+            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
+        );
+    }
+
+    #[test]
+    fn tier2_5_unknown_qualifier_emits_nothing() {
+        // No `A` registered as a Type anywhere. Tier 2.5 must NOT fall back
+        // to bare-name `new` Tier-3: dogfood verification (B.1 dump,
+        // 27.8k decisions) showed a ~52% false-positive rate on that
+        // fallback path — `std::fs::read` resolving to a local `read()`,
+        // `serde_json::json!` macro resolving to a local `json()`, etc.
+        // The proper recovery for legitimate module-qualified free functions
+        // (`registry::sanitize_branch`) is Phase B.3 (workspace-crate-aware
+        // import resolution), not bare-name fallback.
+        let st = st_with(&[("a.rs", "new", NodeKind::Method)]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "A::new",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(out.is_empty(), "unknown qualifier must not emit: {:?}", out);
+    }
+
+    #[test]
+    fn tier2_5_member_missing_in_qualifier_file_emits_nothing() {
+        // Qualifier `A` resolves to `a.rs`, but `a.rs` doesn't define
+        // `nonexistent`. Member missing → no edge (no Tier-3 fallback for
+        // short name even though it might be unique globally elsewhere).
+        let st = st_with(&[
+            ("a.rs", "A", NodeKind::Class),
+            ("b.rs", "nonexistent", NodeKind::Function),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "A::nonexistent",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(
+            out.is_empty(),
+            "member missing in qualifier's file must not emit: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn tier2_5_ambiguous_qualifier_emits_nothing() {
+        // Two Types named `A` in different files. The unique-only constraint
+        // on the qualifier's Tier-3 step rejects ambiguity → no edge. Member
+        // existing globally is irrelevant — qualified callees never degrade
+        // to bare-name Tier 3 (see `tier2_5_unknown_qualifier_emits_nothing`
+        // for the rationale).
+        let st = st_with(&[
+            ("a.rs", "A", NodeKind::Class),
+            ("b.rs", "A", NodeKind::Class),
+            ("a.rs", "new", NodeKind::Method),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "A::new",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(
+            out.is_empty(),
+            "ambiguous qualifier must not emit: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn tier2_5_does_not_fall_back_to_tier3_for_qualified_callee() {
+        // The member `unique_method` is globally unique AND would resolve via
+        // bare-name Tier 3 if reached. But the callee is qualified
+        // `Unknown::unique_method` and `Unknown` doesn't resolve → no edge.
+        // Pins the no-guess policy: a qualified callee resolves via its
+        // qualifier or not at all. Dump verification confirmed that allowing
+        // this fallback restores pre-B.1 false positives (`std::fs::read` →
+        // local `read()`, etc.) at a higher rate than it recovers legitimate
+        // edges — those should come from Phase B.3 instead.
+        let st = st_with(&[("a.rs", "unique_method", NodeKind::Function)]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "Unknown::unique_method",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert!(
+            out.is_empty(),
+            "qualified callee with unresolved qualifier must not fall through to Tier-3: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn tier2_5_handles_multi_segment_qualifier_via_last_segment() {
+        // `std::vec::Vec::new` — qualifier folds to last segment `Vec`,
+        // which resolves uniquely to `vec.rs`, where `new` lives.
+        let st = st_with(&[
+            ("vec.rs", "Vec", NodeKind::Class),
+            ("vec.rs", "new", NodeKind::Method),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "std::vec::Vec::new",
+            &[],
+            ResolveTarget::Callable,
+        );
+        assert_eq!(
+            out,
+            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
+        );
+    }
+
+    #[test]
+    fn tier2_5_resolves_via_import() {
+        // TS-style: `import { MyClass } from "./x"` then `MyClass.foo()`.
+        // Tier 2.5 should resolve the qualifier via the import (Tier 2) →
+        // find foo in x.ts. Confirms the import path works for the qualifier
+        // resolution sub-step, not just same-file / global.
+        use gnx_core::analyzer::types::RawImport;
+        let st = st_with(&[
+            ("src/x.ts", "MyClass", NodeKind::Class),
+            ("src/x.ts", "foo", NodeKind::Method),
+        ]);
+        let r = Resolver::new(&st);
+        let imports = vec![RawImport {
+            source: "./x".to_string(),
+            imported_name: "MyClass".to_string(),
+            alias: None,
+        }];
+        let out = r.resolve_symbol(
+            &PathBuf::from("src/caller.ts"),
+            "MyClass.foo",
+            &imports,
+            ResolveTarget::Callable,
+        );
+        assert_eq!(
+            out,
+            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
+        );
+    }
+
+    #[test]
+    fn tier2_5_member_kind_unconstrained_within_qualifier_file() {
+        // Inside the qualifier's file we lookup by name only — no kind
+        // filter. A class method, a free function, or even a const at the
+        // same name in that file should all be reachable. This mirrors what
+        // a programmer expects: `A::THING` means "whatever `THING` means in
+        // A's file", not "THING constrained to Callable kinds".
+        let st = st_with(&[
+            ("a.rs", "A", NodeKind::Class),
+            ("a.rs", "FLAG", NodeKind::Const),
+        ]);
+        let r = Resolver::new(&st);
+        let out = r.resolve_symbol(
+            &PathBuf::from("caller.rs"),
+            "A::FLAG",
+            &[],
+            ResolveTarget::Callable,
+        );
+        // FLAG is a Const — it's still found because lookup_in_file is kind-
+        // agnostic. The caller chose to ask for Callable; if they want strict
+        // kind enforcement after Tier 2.5 they can filter downstream. For
+        // now: prefer recall here, since the qualifier already scopes the
+        // lookup tightly.
+        assert_eq!(
+            out,
+            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
         );
     }
 }

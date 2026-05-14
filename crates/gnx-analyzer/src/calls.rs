@@ -49,10 +49,26 @@ pub fn callee_name_from(call_node: Node<'_>, source: &[u8]) -> Option<String> {
                         .and_then(|p| p.utf8_text(source).ok().map(|s| s.to_string()))
                 })
         }
-        "scoped_identifier" | "qualified_name" | "scoped_call_expression" => target
-            .child_by_field_name("name")
-            .or_else(|| target.named_child(target.named_child_count().saturating_sub(1)))
-            .and_then(|p| p.utf8_text(source).ok().map(|s| s.to_string())),
+        "scoped_identifier" | "qualified_name" | "scoped_call_expression" => {
+            // Preserve full qualifier path (`A::new`, `std::vec::Vec::new`,
+            // `Outer::Inner::method`) so the resolver's Tier 2.5 can split on
+            // `::` / `.` and scope the lookup to the qualifier's defining
+            // file. Falls back to the bare member name if full-text extraction
+            // fails (defensive — the parent slice is always valid utf-8 in
+            // practice).
+            target
+                .utf8_text(source)
+                .ok()
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    target
+                        .child_by_field_name("name")
+                        .or_else(|| {
+                            target.named_child(target.named_child_count().saturating_sub(1))
+                        })
+                        .and_then(|p| p.utf8_text(source).ok().map(|s| s.to_string()))
+                })
+        }
         _ => target.utf8_text(source).ok().and_then(|s| {
             // last resort: take last segment after `.` or `::`
             let trimmed = s.trim();
