@@ -63,6 +63,8 @@ impl LanguageProvider for RustProvider {
         let idx_decorator = self.query.capture_index_for_name("decorator");
 
         let idx_axum_handler = self.query.capture_index_for_name("axum.route.handler");
+        let idx_actix_method = self.query.capture_index_for_name("actix.route.method");
+        let idx_actix_handler = self.query.capture_index_for_name("actix.route.handler");
 
         // Side-table: top-level free `fn` byte ranges + names, used to resolve
         // the enclosing function for framework-ref captures via byte-range containment.
@@ -70,6 +72,8 @@ impl LanguageProvider for RustProvider {
         // Collected framework-ref captures (handler ident text + capture node span info).
         let mut axum_handler_captures: Vec<(String, usize, usize, (u32, u32, u32, u32))> =
             Vec::new();
+        // Collected Actix attribute-macro captures: (method, handler, span).
+        let mut actix_handler_captures: Vec<(String, String, (u32, u32, u32, u32))> = Vec::new();
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -83,6 +87,10 @@ impl LanguageProvider for RustProvider {
             let mut import_name = None;
             let mut import_src = None;
             let mut import_alias = None;
+
+            // Per-match Actix capture pair (one match = one fn + its attribute).
+            let mut actix_method: Option<tree_sitter::Node> = None;
+            let mut actix_handler: Option<tree_sitter::Node> = None;
 
             for cap in m.captures {
                 let cap_idx = cap.index;
@@ -158,6 +166,32 @@ impl LanguageProvider for RustProvider {
                             ),
                         ));
                     }
+                } else if Some(cap_idx) == idx_actix_method {
+                    actix_method = Some(cap.node);
+                } else if Some(cap_idx) == idx_actix_handler {
+                    actix_handler = Some(cap.node);
+                }
+            }
+
+            if let (Some(method_node), Some(handler_node)) = (actix_method, actix_handler) {
+                if let (Ok(method_str), Ok(handler_str)) = (
+                    std::str::from_utf8(&source[method_node.start_byte()..method_node.end_byte()]),
+                    std::str::from_utf8(
+                        &source[handler_node.start_byte()..handler_node.end_byte()],
+                    ),
+                ) {
+                    let start = handler_node.start_position();
+                    let end = handler_node.end_position();
+                    actix_handler_captures.push((
+                        method_str.to_string(),
+                        handler_str.to_string(),
+                        (
+                            start.row as u32,
+                            start.column as u32,
+                            end.row as u32,
+                            end.column as u32,
+                        ),
+                    ));
                 }
             }
 
@@ -236,6 +270,18 @@ impl LanguageProvider for RustProvider {
                     span,
                 });
             }
+        }
+
+        // Actix attribute-macro routes: emit one ref per #[verb] → fn pair.
+        // No natural source — use "<module>" sentinel; confidence 0.9 (syntactic, unambiguous).
+        for (method, handler, span) in actix_handler_captures {
+            framework_refs.push(RawFrameworkRef {
+                source_name: "<module>".to_string(),
+                target_name: handler,
+                confidence: 0.9,
+                reason: format!("actix-route-{}", method),
+                span,
+            });
         }
 
         Ok(LocalGraph {
