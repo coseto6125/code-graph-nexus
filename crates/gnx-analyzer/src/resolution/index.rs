@@ -10,7 +10,133 @@ pub type NodeId = u32;
 pub enum ResolveTarget {
     Callable,
     Type,
-    Any,
+}
+
+/// Per-parser-provider language tag. One variant per registered analyzer
+/// provider; `from_path` performs the lookup by file extension (multi-ext
+/// providers like JavaScript / TypeScript fold to a single variant).
+///
+/// Used by `lookup_unique_global` as a Tier-3 caller-vs-target barrier:
+/// bare callee names never cross language boundaries (a Rust `result.is_some()`
+/// never resolves to a vendored Move test fixture's `is_some` function).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Language {
+    #[default]
+    Unknown,
+    Rust,
+    Python,
+    TypeScript,
+    JavaScript,
+    Java,
+    Kotlin,
+    Go,
+    Ruby,
+    Php,
+    CSharp,
+    Swift,
+    Dart,
+    Solidity,
+    Sql,
+    C,
+    Cpp,
+    Move,
+    Nim,
+    Cairo,
+    Vyper,
+    Verilog,
+    Hcl,
+    Crystal,
+    Lua,
+    Zig,
+    Bash,
+    Dockerfile,
+    DockerCompose,
+    GitHubActions,
+    Yaml,
+    Markdown,
+}
+
+impl Language {
+    /// Map a repo-relative file path to its provider language. Mirrors the
+    /// extension routing in `commands/analyze.rs` plus path-based overrides
+    /// for `Dockerfile` / `docker-compose.{yml,yaml}` / `.github/workflows/*`.
+    pub fn from_path(path: &str) -> Self {
+        let normalized = path.replace('\\', "/");
+        let basename = normalized.rsplit('/').next().unwrap_or("");
+
+        // Path / basename overrides before extension routing.
+        if matches!(basename, "Dockerfile" | "dockerfile") {
+            return Self::Dockerfile;
+        }
+        if matches!(
+            basename,
+            "docker-compose.yml" | "docker-compose.yaml" | "compose.yml" | "compose.yaml"
+        ) {
+            return Self::DockerCompose;
+        }
+        let ext = basename.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+        if matches!(ext, "yml" | "yaml")
+            && (normalized.contains("/.github/workflows/")
+                || normalized.starts_with(".github/workflows/"))
+        {
+            return Self::GitHubActions;
+        }
+
+        match ext {
+            "rs" => Self::Rust,
+            "py" | "pyi" => Self::Python,
+            "ts" | "tsx" => Self::TypeScript,
+            "js" | "jsx" | "mjs" | "cjs" => Self::JavaScript,
+            "java" => Self::Java,
+            "kt" | "kts" => Self::Kotlin,
+            "go" => Self::Go,
+            "rb" => Self::Ruby,
+            "php" => Self::Php,
+            "cs" => Self::CSharp,
+            "swift" => Self::Swift,
+            "dart" => Self::Dart,
+            "sol" => Self::Solidity,
+            "sql" => Self::Sql,
+            "c" | "h" => Self::C,
+            "cpp" | "hpp" | "cc" | "hh" | "cxx" | "hxx" => Self::Cpp,
+            "move" => Self::Move,
+            "nim" => Self::Nim,
+            "cairo" => Self::Cairo,
+            "vy" => Self::Vyper,
+            "v" | "sv" | "vh" | "svh" => Self::Verilog,
+            "tf" | "tfvars" | "hcl" => Self::Hcl,
+            "cr" => Self::Crystal,
+            "lua" | "luau" => Self::Lua,
+            "zig" => Self::Zig,
+            "sh" | "bash" => Self::Bash,
+            "yml" | "yaml" => Self::Yaml,
+            "md" | "txt" | "rst" => Self::Markdown,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Build-time metadata about a file, cached per node id so `lookup_unique_global`
+/// can apply caller-vs-candidate barriers (language match + vendor isolation)
+/// without re-parsing the path on every Tier-3 probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FileMeta {
+    /// Path contains a `/vendor/` segment. Non-vendor callers must not resolve
+    /// to vendor targets — vendor grammar test corpora share short common names
+    /// (`is_some`, `get`, `new`) with stdlib methods, producing one false edge
+    /// per call site that survives the kind+unique filter.
+    pub is_vendor: bool,
+    pub language: Language,
+}
+
+impl FileMeta {
+    pub fn from_path(path: &str) -> Self {
+        let normalized = path.replace('\\', "/");
+        Self {
+            is_vendor: normalized.contains("/vendor/") || normalized.starts_with("vendor/"),
+            language: Language::from_path(path),
+        }
+    }
 }
 
 /// A high-performance global symbol index mapping node names and file locations
@@ -41,6 +167,10 @@ pub struct SymbolTable {
     /// sets. Lives only during build — the finalized `ZeroCopyGraph.nodes[id].kind`
     /// is the steady-state source of truth.
     node_kinds: Vec<NodeKind>,
+
+    /// File metadata per node (language + vendor flag). Cached so the Tier-3
+    /// barrier check is O(1) per candidate. Parallel-indexed with `node_kinds`.
+    node_file_meta: Vec<FileMeta>,
 }
 
 impl SymbolTable {
@@ -52,8 +182,8 @@ impl SymbolTable {
     /// Registers a node with the given file path, node name, node ID, and kind.
     ///
     /// `node_id` must be the monotonic sequential index assigned by the builder
-    /// (debug-asserted), so `node_kinds[id]` indexing works in
-    /// `lookup_unique_global`.
+    /// (debug-asserted), so `node_kinds[id]` / `node_file_meta[id]` indexing
+    /// works in `lookup_unique_global`.
     pub fn register_node(
         &mut self,
         file_path: &str,
@@ -80,6 +210,7 @@ impl SymbolTable {
         self.id_to_file.insert(node_id, file_path.to_string());
 
         self.node_kinds.push(kind);
+        self.node_file_meta.push(FileMeta::from_path(file_path));
     }
 
     /// Looks up a node ID by its file path and node name.
@@ -93,32 +224,51 @@ impl SymbolTable {
     }
 
     /// Tier-3 global lookup: returns the single node id matching `name` whose
-    /// kind satisfies `target`, or `None` if zero or ≥2 candidates remain.
+    /// kind satisfies `target` AND whose file meta is reachable from the
+    /// caller (same language + non-vendor unless caller is also vendor), or
+    /// `None` if zero or ≥2 such candidates remain.
     ///
-    /// Refusing to guess when ambiguous is the dominant defence against
-    /// bare-name fan-out (`new`, `format`, `default`, `main`, ...).
-    /// Short-circuits on the second match without allocating an intermediate Vec.
-    pub fn lookup_unique_global(&self, node_name: &str, target: ResolveTarget) -> Option<u32> {
+    /// Layered defences against bare-name fan-out:
+    ///   * Kind filter — Callable/Type narrowing.
+    ///   * Language barrier — Rust caller never resolves to a Move target.
+    ///   * Vendor barrier — non-vendor caller never reaches into vendor corpus.
+    ///   * Uniqueness — refuse to guess when ≥2 candidates remain post-filter.
+    ///
+    /// Short-circuits on the second matching candidate without allocating an
+    /// intermediate Vec.
+    pub fn lookup_unique_global(
+        &self,
+        node_name: &str,
+        target: ResolveTarget,
+        caller: FileMeta,
+    ) -> Option<u32> {
         let raw = self.global_scoped.get(node_name)?;
         let predicate: fn(NodeKind) -> bool = match target {
-            ResolveTarget::Any => return (raw.len() == 1).then(|| raw[0]),
             ResolveTarget::Callable => NodeKind::is_callable,
             ResolveTarget::Type => NodeKind::is_type,
         };
         let mut found = None;
         for &id in raw {
-            if predicate(self.node_kinds[id as usize]) {
-                if found.is_some() {
-                    return None;
-                }
-                found = Some(id);
+            let cand = self.node_file_meta[id as usize];
+            if cand.language != caller.language {
+                continue;
             }
+            if cand.is_vendor && !caller.is_vendor {
+                continue;
+            }
+            if !predicate(self.node_kinds[id as usize]) {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some(id);
         }
         found
     }
 
-    /// Total count of same-named candidates (before kind filter). Exposed for
-    /// the resolver decision dump's `alt_count` telemetry.
+    /// Total count of same-named candidates (before kind/locality filters).
+    /// Exposed for the resolver decision dump's `alt_count` telemetry.
     pub fn global_match_count(&self, node_name: &str) -> u32 {
         self.global_scoped
             .get(node_name)
@@ -130,5 +280,47 @@ impl SymbolTable {
     /// the resolver decision dump to materialize `target_file` in JSONL output.
     pub fn file_of(&self, node_id: u32) -> Option<&str> {
         self.id_to_file.get(&node_id).map(|s| s.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn language_from_path_handles_multi_ext_providers() {
+        assert_eq!(Language::from_path("a/b.rs"), Language::Rust);
+        assert_eq!(Language::from_path("a/b.py"), Language::Python);
+        assert_eq!(Language::from_path("a/b.pyi"), Language::Python);
+        assert_eq!(Language::from_path("a/b.ts"), Language::TypeScript);
+        assert_eq!(Language::from_path("a/b.tsx"), Language::TypeScript);
+        assert_eq!(Language::from_path("a/b.js"), Language::JavaScript);
+        assert_eq!(Language::from_path("a/b.mjs"), Language::JavaScript);
+        assert_eq!(Language::from_path("a/b.h"), Language::C);
+        assert_eq!(Language::from_path("a/b.hpp"), Language::Cpp);
+        assert_eq!(Language::from_path("a/b.move"), Language::Move);
+    }
+
+    #[test]
+    fn language_from_path_handles_path_based_routing() {
+        assert_eq!(Language::from_path("any/Dockerfile"), Language::Dockerfile);
+        assert_eq!(
+            Language::from_path("svc/docker-compose.yml"),
+            Language::DockerCompose
+        );
+        assert_eq!(
+            Language::from_path(".github/workflows/ci.yml"),
+            Language::GitHubActions
+        );
+        // Plain yml outside .github/workflows stays as Yaml
+        assert_eq!(Language::from_path("config/app.yml"), Language::Yaml);
+    }
+
+    #[test]
+    fn file_meta_detects_vendor_segment() {
+        assert!(FileMeta::from_path("crates/vendor/tree-sitter-move/x.move").is_vendor);
+        assert!(FileMeta::from_path("vendor/x.move").is_vendor);
+        assert!(!FileMeta::from_path("crates/gnx-analyzer/src/x.rs").is_vendor);
+        assert!(!FileMeta::from_path("src/vendored_helper.rs").is_vendor);
     }
 }
