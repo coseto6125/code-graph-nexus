@@ -14,3 +14,4 @@ pub mod c;
 pub mod cpp;
 pub mod swift;
 pub mod dart;
+pub mod embeddings;

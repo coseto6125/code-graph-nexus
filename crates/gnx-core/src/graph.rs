@@ -12,6 +12,8 @@ pub enum NodeKind {
     Interface,
     Constructor,
     Property,
+    Variable,
+    Const,
     Import,
 }
 
@@ -22,6 +24,8 @@ pub enum RelType {
     Defines,
     Imports,
     Calls,
+    Extends,
+    Implements,
     HasMethod,
     HasProperty,
     Accesses,
@@ -68,6 +72,7 @@ pub struct ZeroCopyGraph {
     pub in_offsets: Vec<u32>,
     pub in_edge_idx: Vec<u32>,
     pub name_index: Vec<u32>,
+    pub embeddings: Option<Vec<Vec<f32>>>,
 }
 
 #[cfg(test)]
@@ -98,8 +103,9 @@ mod tests {
             out_offsets: vec![0, 0],
             in_offsets: vec![0, 0],
             in_edge_idx: vec![],
-            name_index: vec![0],
-        };
+            name_index: vec![],
+            embeddings: None,
+            };
 
         // Serialize
         let bytes = rkyv::to_bytes::<Error>(&graph).unwrap();

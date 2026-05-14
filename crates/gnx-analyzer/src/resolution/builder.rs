@@ -6,6 +6,7 @@ use gnx_core::pool::StringPool;
 
 pub struct GraphBuilder {
     local_graphs: Vec<LocalGraph>,
+    generate_embeddings: bool,
 }
 
 impl Default for GraphBuilder {
@@ -18,7 +19,13 @@ impl GraphBuilder {
     pub fn new() -> Self {
         Self {
             local_graphs: Vec::new(),
+            generate_embeddings: false,
         }
+    }
+
+    pub fn with_embeddings(mut self, generate: bool) -> Self {
+        self.generate_embeddings = generate;
+        self
     }
 
     pub fn add_graph(&mut self, graph: LocalGraph) {
@@ -133,6 +140,31 @@ impl GraphBuilder {
             in_offsets[i + 1] += in_offsets[i];
         }
 
+        let embeddings = if self.generate_embeddings {
+            tracing::info!("Generating embeddings for {} nodes...", nodes.len());
+            let mut texts = Vec::with_capacity(nodes.len());
+            for n in &nodes {
+                let name = std::str::from_utf8(
+                    &string_pool.bytes[n.name.offset as usize..(n.name.offset as usize + n.name.len as usize)]
+                ).unwrap_or("");
+                texts.push(name.to_string());
+            }
+            if let Ok(embedder) = crate::embeddings::Embedder::new() {
+                match embedder.embed(texts) {
+                    Ok(embs) => Some(embs),
+                    Err(e) => {
+                        tracing::warn!("Failed to embed nodes: {}", e);
+                        None
+                    }
+                }
+            } else {
+                tracing::warn!("Failed to initialize embedder");
+                None
+            }
+        } else {
+            None
+        };
+
         ZeroCopyGraph {
             magic: *b"GNX-RS\0\0",
             fingerprint: [0; 32],
@@ -144,6 +176,7 @@ impl GraphBuilder {
             in_offsets,
             in_edge_idx,
             name_index: Vec::new(), // To be implemented if name indexing is needed
+            embeddings,
         }
     }
 }

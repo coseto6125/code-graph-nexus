@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 gnx-core = { path = "../gnx-core" }
-tree-sitter = "0.24"
+tree-sitter = "0.25"
 tree-sitter-typescript = "*"
 rayon = "1.10.0"
 crossbeam-channel = "0.5.12"
@@ -24,5 +24,6 @@ tree-sitter-kotlin = { git = "https://github.com/fwcd/tree-sitter-kotlin" }
 tree-sitter-c-sharp = "*"
 tree-sitter-c = "*"
 tree-sitter-cpp = "*"
-tree-sitter-swift = "*"
+tree-sitter-swift = { path = "../vendor/tree-sitter-swift" }
 tree-sitter-dart = "*"
+fastembed = "5"
