@@ -39,17 +39,17 @@ impl LanguageProvider for MoveProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_class_name    = self.query.capture_index_for_name("class.name");
+        let idx_class_name = self.query.capture_index_for_name("class.name");
         let idx_function_name = self.query.capture_index_for_name("function.name");
-        let idx_struct_name   = self.query.capture_index_for_name("struct.name");
-        let idx_const_name    = self.query.capture_index_for_name("const.name");
+        let idx_struct_name = self.query.capture_index_for_name("struct.name");
+        let idx_const_name = self.query.capture_index_for_name("const.name");
 
-        let idx_class    = self.query.capture_index_for_name("class");
+        let idx_class = self.query.capture_index_for_name("class");
         let idx_function = self.query.capture_index_for_name("function");
-        let idx_struct   = self.query.capture_index_for_name("struct");
-        let idx_const    = self.query.capture_index_for_name("const");
+        let idx_struct = self.query.capture_index_for_name("struct");
+        let idx_const = self.query.capture_index_for_name("const");
 
-        let idx_import_name   = self.query.capture_index_for_name("import.name");
+        let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
         while let Some(m) = matches.next() {
@@ -92,9 +92,7 @@ impl LanguageProvider for MoveProvider {
             }
 
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
-                if let Ok(name_str) =
-                    std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                {
+                if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {

@@ -11,20 +11,26 @@ use gnx_analyzer::{
 #[allow(clippy::type_complexity)]
 fn main() {
     let providers: Vec<(&str, Box<dyn Fn() -> anyhow::Result<()>>)> = vec![
-        ("C", Box::new(|| { CProvider::new().map(|_| ()) })),
-        ("CSharp", Box::new(|| { CSharpProvider::new().map(|_| ()) })),
-        ("Cpp", Box::new(|| { CppProvider::new().map(|_| ()) })),
-        ("Dart", Box::new(|| { DartProvider::new().map(|_| ()) })),
-        ("Go", Box::new(|| { GoProvider::new().map(|_| ()) })),
-        ("Java", Box::new(|| { JavaProvider::new().map(|_| ()) })),
-        ("JavaScript", Box::new(|| { JavaScriptProvider::new().map(|_| ()) })),
-        ("Kotlin", Box::new(|| { KotlinProvider::new().map(|_| ()) })),
-        ("PHP", Box::new(|| { PhpProvider::new().map(|_| ()) })),
-        ("Python", Box::new(|| { PythonProvider::new().map(|_| ()) })),
-        ("Ruby", Box::new(|| { RubyProvider::new().map(|_| ()) })),
-        ("Rust", Box::new(|| { RustProvider::new().map(|_| ()) })),
-        ("Swift", Box::new(|| { SwiftProvider::new().map(|_| ()) })),
-        ("TypeScript", Box::new(|| { TypeScriptProvider::new().map(|_| ()) })),
+        ("C", Box::new(|| CProvider::new().map(|_| ()))),
+        ("CSharp", Box::new(|| CSharpProvider::new().map(|_| ()))),
+        ("Cpp", Box::new(|| CppProvider::new().map(|_| ()))),
+        ("Dart", Box::new(|| DartProvider::new().map(|_| ()))),
+        ("Go", Box::new(|| GoProvider::new().map(|_| ()))),
+        ("Java", Box::new(|| JavaProvider::new().map(|_| ()))),
+        (
+            "JavaScript",
+            Box::new(|| JavaScriptProvider::new().map(|_| ())),
+        ),
+        ("Kotlin", Box::new(|| KotlinProvider::new().map(|_| ()))),
+        ("PHP", Box::new(|| PhpProvider::new().map(|_| ()))),
+        ("Python", Box::new(|| PythonProvider::new().map(|_| ()))),
+        ("Ruby", Box::new(|| RubyProvider::new().map(|_| ()))),
+        ("Rust", Box::new(|| RustProvider::new().map(|_| ()))),
+        ("Swift", Box::new(|| SwiftProvider::new().map(|_| ()))),
+        (
+            "TypeScript",
+            Box::new(|| TypeScriptProvider::new().map(|_| ())),
+        ),
     ];
 
     for (name, factory) in providers {

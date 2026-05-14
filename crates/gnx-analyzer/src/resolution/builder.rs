@@ -1,7 +1,7 @@
 use crate::resolution::index::SymbolTable;
 use crate::resolution::resolver::Resolver;
 use gnx_core::analyzer::types::{LocalGraph, RawNode};
-use gnx_core::graph::{Edge, File, Node, NodeKind, RelType, ZeroCopyGraph, FileCategory};
+use gnx_core::graph::{Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph};
 use gnx_core::pool::StringPool;
 
 fn determine_category(path: &str) -> FileCategory {
@@ -30,7 +30,12 @@ fn determine_category(path: &str) -> FileCategory {
     if lower_path.ends_with(".md") || lower_path.ends_with(".txt") || lower_path.ends_with(".rst") {
         return FileCategory::Document;
     }
-    if lower_path.ends_with(".json") || lower_path.ends_with(".toml") || lower_path.ends_with(".yaml") || lower_path.ends_with(".yml") || lower_path.ends_with("dockerfile") {
+    if lower_path.ends_with(".json")
+        || lower_path.ends_with(".toml")
+        || lower_path.ends_with(".yaml")
+        || lower_path.ends_with(".yml")
+        || lower_path.ends_with("dockerfile")
+    {
         return FileCategory::Config;
     }
     FileCategory::Source
@@ -41,7 +46,10 @@ fn determine_category(path: &str) -> FileCategory {
 /// `embeddings` vector (zero-vec) so that `embeddings[i] ↔ nodes[i]` alignment
 /// is preserved for downstream query code.
 fn should_embed(kind: NodeKind) -> bool {
-    !matches!(kind, NodeKind::Variable | NodeKind::Const | NodeKind::Import)
+    !matches!(
+        kind,
+        NodeKind::Variable | NodeKind::Const | NodeKind::Import
+    )
 }
 
 /// Build the per-node text fed to the embedding model. Combines structural
@@ -80,7 +88,13 @@ fn capitalize(s: &str) -> String {
 
 fn sanitize_id(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
         .take(20)
         .collect()
 }
@@ -113,7 +127,11 @@ impl GraphBuilder {
         self
     }
 
-    pub fn with_cache(mut self, hashes: HashMap<String, [u8; 32]>, embs: HashMap<String, Vec<f32>>) -> Self {
+    pub fn with_cache(
+        mut self,
+        hashes: HashMap<String, [u8; 32]>,
+        embs: HashMap<String, Vec<f32>>,
+    ) -> Self {
         self.old_file_hashes = hashes;
         self.old_embeddings_cache = embs;
         self
@@ -139,8 +157,9 @@ impl GraphBuilder {
             let file_idx = file_idx as u32;
             let path_str = local_graph.file_path.to_string_lossy().to_string();
             let path_ref = string_pool.add(&path_str);
-            
-            let file_unchanged = self.old_file_hashes.get(&path_str) == Some(&local_graph.content_hash);
+
+            let file_unchanged =
+                self.old_file_hashes.get(&path_str) == Some(&local_graph.content_hash);
 
             files.push(File {
                 path: path_ref,
@@ -156,7 +175,7 @@ impl GraphBuilder {
                 let uid_ref = string_pool.add(&uid_str);
                 let name_ref = string_pool.add(&raw_node.name);
 
-                                nodes.push(Node {
+                nodes.push(Node {
                     uid: uid_ref,
                     name: name_ref,
                     file_idx,
@@ -200,40 +219,44 @@ impl GraphBuilder {
         for (file_idx, local_graph) in self.local_graphs.iter().enumerate() {
             let file_idx = file_idx as u32;
             let path_str = local_graph.file_path.to_string_lossy().to_string();
-            
+
             for raw_node in &local_graph.nodes {
                 let handler_idx = current_handler_idx;
-                
+
                 for dec in &raw_node.decorators {
                     if let Some(detected) = crate::route_detector::detect_from_decorator(dec) {
                         let route_name = format!("{} {}", detected.method, detected.path);
                         let uid_str = format!("Route:{}:{}", path_str, route_name);
-                        
-                                                let route_idx = nodes.len() as u32;
-                                                nodes.push(Node {
-                                                    uid: string_pool.add(&uid_str),
-                                                    name: string_pool.add(&route_name),
-                                                    file_idx,
-                                                    kind: gnx_core::graph::NodeKind::Route,
-                                                    span: raw_node.span,
-                                                    community_id: 0,
-                                                });
 
-                                                if self.generate_embeddings {
-                                                    let mut reused = false;
-                                                    let file_unchanged = self.old_file_hashes.get(&path_str) == Some(&local_graph.content_hash);
-                                                    if file_unchanged {
-                                                        if let Some(old_emb) = self.old_embeddings_cache.get(&uid_str) {
-                                                            final_embeddings.push(Some(old_emb.clone()));
-                                                            reused = true;
-                                                        }
-                                                    }
-                                                    if !reused {
-                                                        final_embeddings.push(None);
-                                                        embed_texts.push((route_idx, format!("Route: {}\nPath: {}", route_name, path_str)));
-                                                    }
-                                                }
-                        
+                        let route_idx = nodes.len() as u32;
+                        nodes.push(Node {
+                            uid: string_pool.add(&uid_str),
+                            name: string_pool.add(&route_name),
+                            file_idx,
+                            kind: gnx_core::graph::NodeKind::Route,
+                            span: raw_node.span,
+                            community_id: 0,
+                        });
+
+                        if self.generate_embeddings {
+                            let mut reused = false;
+                            let file_unchanged = self.old_file_hashes.get(&path_str)
+                                == Some(&local_graph.content_hash);
+                            if file_unchanged {
+                                if let Some(old_emb) = self.old_embeddings_cache.get(&uid_str) {
+                                    final_embeddings.push(Some(old_emb.clone()));
+                                    reused = true;
+                                }
+                            }
+                            if !reused {
+                                final_embeddings.push(None);
+                                embed_texts.push((
+                                    route_idx,
+                                    format!("Route: {}\nPath: {}", route_name, path_str),
+                                ));
+                            }
+                        }
+
                         route_edges.push(Edge {
                             source: handler_idx,
                             target: route_idx,
@@ -250,32 +273,36 @@ impl GraphBuilder {
                 if let Some(detected) = crate::route_detector::detect_from_call(raw_route) {
                     let route_name = format!("{} {}", detected.method, detected.path);
                     let uid_str = format!("Route:{}:{}", path_str, route_name);
-                    
-                                        let route_idx = nodes.len() as u32;
-                                        nodes.push(Node {
-                                            uid: string_pool.add(&uid_str),
-                                            name: string_pool.add(&route_name),
-                                            file_idx,
-                                            kind: gnx_core::graph::NodeKind::Route,
-                                            span: raw_route.span,
-                                            community_id: 0,
-                                        });
 
-                                        if self.generate_embeddings {
-                                            let mut reused = false;
-                                            let file_unchanged = self.old_file_hashes.get(&path_str) == Some(&local_graph.content_hash);
-                                            if file_unchanged {
-                                                if let Some(old_emb) = self.old_embeddings_cache.get(&uid_str) {
-                                                    final_embeddings.push(Some(old_emb.clone()));
-                                                    reused = true;
-                                                }
-                                            }
-                                            if !reused {
-                                                final_embeddings.push(None);
-                                                embed_texts.push((route_idx, format!("Route: {}\nPath: {}", route_name, path_str)));
-                                            }
-                                        }
-                    
+                    let route_idx = nodes.len() as u32;
+                    nodes.push(Node {
+                        uid: string_pool.add(&uid_str),
+                        name: string_pool.add(&route_name),
+                        file_idx,
+                        kind: gnx_core::graph::NodeKind::Route,
+                        span: raw_route.span,
+                        community_id: 0,
+                    });
+
+                    if self.generate_embeddings {
+                        let mut reused = false;
+                        let file_unchanged =
+                            self.old_file_hashes.get(&path_str) == Some(&local_graph.content_hash);
+                        if file_unchanged {
+                            if let Some(old_emb) = self.old_embeddings_cache.get(&uid_str) {
+                                final_embeddings.push(Some(old_emb.clone()));
+                                reused = true;
+                            }
+                        }
+                        if !reused {
+                            final_embeddings.push(None);
+                            embed_texts.push((
+                                route_idx,
+                                format!("Route: {}\nPath: {}", route_name, path_str),
+                            ));
+                        }
+                    }
+
                     // Imperative routes might not easily map to a specific handler.
                     // We just register the Route node here.
                 }
@@ -295,7 +322,8 @@ impl GraphBuilder {
             for raw_node in &local_graph.nodes {
                 // Resolve heritage (base classes, traits) — emit Extends edge.
                 for base in &raw_node.heritage {
-                    let targets = resolver.resolve_symbol(&local_graph.file_path, base, &local_graph.imports);
+                    let targets =
+                        resolver.resolve_symbol(&local_graph.file_path, base, &local_graph.imports);
                     for (target_id, confidence) in targets {
                         edges.push(Edge {
                             source: current_node_idx,
@@ -309,7 +337,11 @@ impl GraphBuilder {
 
                 // Resolve calls (function invocations from this node's body).
                 for callee in &raw_node.calls {
-                    let targets = resolver.resolve_symbol(&local_graph.file_path, callee, &local_graph.imports);
+                    let targets = resolver.resolve_symbol(
+                        &local_graph.file_path,
+                        callee,
+                        &local_graph.imports,
+                    );
                     for (target_id, confidence) in targets {
                         if target_id == current_node_idx {
                             continue; // skip self-recursion edges (Louvain/process noise)
@@ -326,7 +358,11 @@ impl GraphBuilder {
 
                 // Resolve type annotation
                 if let Some(type_ann) = &raw_node.type_annotation {
-                    let targets = resolver.resolve_symbol(&local_graph.file_path, type_ann, &local_graph.imports);
+                    let targets = resolver.resolve_symbol(
+                        &local_graph.file_path,
+                        type_ann,
+                        &local_graph.imports,
+                    );
                     for (target_id, confidence) in targets {
                         edges.push(Edge {
                             source: current_node_idx,
@@ -391,8 +427,8 @@ impl GraphBuilder {
                 .get(entry_idx as usize)
                 .map(|n| {
                     std::str::from_utf8(
-                        &string_pool.bytes[n.name.offset as usize
-                            ..n.name.offset as usize + n.name.len as usize],
+                        &string_pool.bytes
+                            [n.name.offset as usize..n.name.offset as usize + n.name.len as usize],
                     )
                     .unwrap_or("")
                     .to_string()
@@ -402,16 +438,25 @@ impl GraphBuilder {
                 .get(terminal_idx as usize)
                 .map(|n| {
                     std::str::from_utf8(
-                        &string_pool.bytes[n.name.offset as usize
-                            ..n.name.offset as usize + n.name.len as usize],
+                        &string_pool.bytes
+                            [n.name.offset as usize..n.name.offset as usize + n.name.len as usize],
                     )
                     .unwrap_or("")
                     .to_string()
                 })
                 .unwrap_or_default();
 
-            let label = format!("{} → {}", capitalize(&entry_name), capitalize(&terminal_name));
-            let uid_str = format!("proc_{}_{}_{}", k, sanitize_id(&entry_name), sanitize_id(&terminal_name));
+            let label = format!(
+                "{} → {}",
+                capitalize(&entry_name),
+                capitalize(&terminal_name)
+            );
+            let uid_str = format!(
+                "proc_{}_{}_{}",
+                k,
+                sanitize_id(&entry_name),
+                sanitize_id(&terminal_name)
+            );
 
             let process_node_idx = nodes.len() as u32;
             let process_node_community = nodes
@@ -422,9 +467,15 @@ impl GraphBuilder {
             nodes.push(Node {
                 uid: string_pool.add(&uid_str),
                 name: string_pool.add(&label),
-                file_idx: nodes.get(entry_idx as usize).map(|n| n.file_idx).unwrap_or(0),
+                file_idx: nodes
+                    .get(entry_idx as usize)
+                    .map(|n| n.file_idx)
+                    .unwrap_or(0),
                 kind: NodeKind::Process,
-                span: nodes.get(entry_idx as usize).map(|n| n.span).unwrap_or((0, 0, 0, 0)),
+                span: nodes
+                    .get(entry_idx as usize)
+                    .map(|n| n.span)
+                    .unwrap_or((0, 0, 0, 0)),
                 community_id: process_node_community,
             });
 
@@ -470,7 +521,11 @@ impl GraphBuilder {
 
         let embeddings = if self.generate_embeddings {
             if !embed_texts.is_empty() {
-                tracing::info!("Generating embeddings for {} nodes ({} reused)...", embed_texts.len(), final_embeddings.len() - embed_texts.len());
+                tracing::info!(
+                    "Generating embeddings for {} nodes ({} reused)...",
+                    embed_texts.len(),
+                    final_embeddings.len() - embed_texts.len()
+                );
                 match crate::embeddings::Embedder::new() {
                     Ok(embedder) => {
                         let texts: Vec<String> = embed_texts.into_iter().map(|(_, t)| t).collect();
@@ -485,11 +540,14 @@ impl GraphBuilder {
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => tracing::warn!("Failed to initialize embedder: {}", e),
                 }
             } else {
-                tracing::info!("Reused all {} embeddings from cache.", final_embeddings.len());
+                tracing::info!(
+                    "Reused all {} embeddings from cache.",
+                    final_embeddings.len()
+                );
             }
 
             let mut final_embs_unwrapped = Vec::with_capacity(final_embeddings.len());

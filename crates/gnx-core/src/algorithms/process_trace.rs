@@ -378,7 +378,12 @@ mod tests {
         nodes[1].community_id = 2; // different community
         nodes[2].community_id = 1;
         let edges = vec![e(0, 1), e(1, 2)];
-        let result = detect_processes(&nodes, &edges, &["src/x.rs".into()], &ProcessConfig::default());
+        let result = detect_processes(
+            &nodes,
+            &edges,
+            &["src/x.rs".into()],
+            &ProcessConfig::default(),
+        );
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].process_type, ProcessType::CrossCommunity);
     }
@@ -401,7 +406,12 @@ mod tests {
             },
             e(1, 2),
         ];
-        let result = detect_processes(&nodes, &edges, &["src/x.rs".into()], &ProcessConfig::default());
+        let result = detect_processes(
+            &nodes,
+            &edges,
+            &["src/x.rs".into()],
+            &ProcessConfig::default(),
+        );
         // 0→1 dropped, so only 1→2 (2 steps, below min 3) → no traces.
         assert!(result.is_empty());
     }
