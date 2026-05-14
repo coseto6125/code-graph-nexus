@@ -31,9 +31,13 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
 
     if matching_nodes.is_empty() {
         let json = serde_json::json!({
-            "error": format!("Symbol '{}' not found", args.name)
+            "status": "error",
+            "message": format!("Symbol '{}' not found.", args.name)
         });
-        println!("{}", json);
+        match args.format.as_deref() {
+            Some("json") => println!("{}", serde_json::to_string_pretty(&json).unwrap()),
+            _ => println!("{}", serde_json::to_string(&json).unwrap()),
+        }
         return Ok(());
     }
 
@@ -46,20 +50,26 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
             ArchivedNodeKind::Interface => "Interface",
             ArchivedNodeKind::Constructor => "Constructor",
             ArchivedNodeKind::Property => "Property",
+            ArchivedNodeKind::Variable => "Variable",
+            ArchivedNodeKind::Const => "Const",
             ArchivedNodeKind::Import => "Import",
-        }
+            ArchivedNodeKind::Route => "Route",
     }
+}
 
-    fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
-        match rel {
-            ArchivedRelType::Defines => "defines",
-            ArchivedRelType::Imports => "imports",
-            ArchivedRelType::Calls => "calls",
-            ArchivedRelType::HasMethod => "has_method",
-            ArchivedRelType::HasProperty => "has_property",
-            ArchivedRelType::Accesses => "accesses",
-        }
+fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
+    match rel {
+        ArchivedRelType::Defines => "defines",
+        ArchivedRelType::Imports => "imports",
+        ArchivedRelType::Calls => "calls",
+        ArchivedRelType::Extends => "extends",
+        ArchivedRelType::Implements => "implements",
+        ArchivedRelType::HasMethod => "has_method",
+        ArchivedRelType::HasProperty => "has_property",
+        ArchivedRelType::Accesses => "accesses",
+        ArchivedRelType::HandlesRoute => "handles_route",
     }
+}
 
     if matching_nodes.len() > 1 {
         let mut candidates = Vec::new();
@@ -134,8 +144,8 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), String> {
             "name": node.name.resolve(&graph.string_pool),
             "kind": kind_to_str(&node.kind),
             "filePath": file_node.path.resolve(&graph.string_pool),
-            "startLine": node.span.0.to_native() - 1,
-            "endLine": node.span.2.to_native() - 1,
+            "startLine": node.span.0.to_native(),
+            "endLine": node.span.2.to_native(),
         },
         "incoming": incoming,
         "outgoing": outgoing,

@@ -36,7 +36,7 @@
 ;; Methods
 (method_declaration
   (modifier)* @export
-  type: (_) @type
+  returns: (_) @type
   name: (identifier) @name.method
 ) @method
 
@@ -49,15 +49,16 @@
 ;; Local Functions
 (local_function_statement
   (modifier)* @export
-  type: (_) @type
+  returns: (_) @type
   name: (identifier) @name.function
 ) @function
 
 ;; Using directives (Imports)
 (using_directive
-  alias: (identifier)? @import.alias
-  name: [
-    (identifier)
-    (qualified_name)
-  ] @import.name @import.source
+  name: (_) @import.name @import.source
+) @import
+
+(using_directive
+  name: (identifier) @import.alias
+  (_) @import.name @import.source
 ) @import

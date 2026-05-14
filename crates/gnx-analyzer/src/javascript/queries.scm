@@ -20,14 +20,12 @@
 ;; Classes
 (class_declaration
   name: (identifier) @name.class
-  (extends_clause
-    value: (identifier) @heritage)?) @class
+  (class_heritage (identifier) @heritage)?) @class
 
 (export_statement
   declaration: (class_declaration
     name: (identifier) @name.class
-    (extends_clause
-      value: (identifier) @heritage)?) @class) @export
+    (class_heritage (identifier) @heritage)?) @class) @export
 
 ;; Methods
 (method_definition
@@ -35,7 +33,7 @@
 
 ;; Imports (Named)
 (import_statement
-  import: (import_clause
+  (import_clause
     (named_imports
       (import_specifier
         name: (identifier) @import.name
@@ -44,6 +42,6 @@
 
 ;; Imports (Default)
 (import_statement
-  import: (import_clause
+  (import_clause
     (identifier) @import.name)
   source: (string (string_fragment) @import.source)) @import

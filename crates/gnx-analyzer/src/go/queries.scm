@@ -19,13 +19,11 @@
 (type_spec
   name: (type_identifier) @interface.name
   type: (interface_type
-    (method_spec_list
-      [
-        (method_spec name: (field_identifier))
-        (type_identifier) @heritage
-        (qualified_type) @heritage
-      ]*
-    )?
+    [
+      (method_elem name: (field_identifier))
+      (type_identifier) @heritage
+      (qualified_type) @heritage
+    ]*
   )
 ) @interface
 
@@ -63,7 +61,7 @@
 ;; Imports
 (import_spec
   name: (package_identifier) @import.alias
-  path: (string_literal) @import.source) @import
+  path: [ (interpreted_string_literal) (raw_string_literal) ] @import.source) @import
 
 (import_spec
-  path: (string_literal) @import.source) @import
+  path: [ (interpreted_string_literal) (raw_string_literal) ] @import.source) @import

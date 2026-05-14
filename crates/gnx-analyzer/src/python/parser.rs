@@ -115,6 +115,7 @@ impl LanguageProvider for PythonProvider {
                         }
                     } else {
                         nodes.push(RawNode {
+            decorators: vec![],
                             is_exported: is_exported_explicit || !name_str.starts_with('_'),
                             heritage,
                             type_annotation: type_str,
@@ -148,6 +149,7 @@ impl LanguageProvider for PythonProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

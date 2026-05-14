@@ -18,6 +18,7 @@ impl LanguageProvider for TypeScriptProvider {
             file_path: path.to_path_buf(),
             nodes: vec![],
             imports: vec![],
+            routes: vec![],
         })
     }
 }

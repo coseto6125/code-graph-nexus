@@ -116,6 +116,7 @@ impl LanguageProvider for PhpProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage,
                         type_annotation,
@@ -165,6 +166,7 @@ impl LanguageProvider for PhpProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

@@ -118,6 +118,7 @@ impl LanguageProvider for CSharpProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage: heritage_list,
                         type_annotation,
@@ -147,6 +148,7 @@ impl LanguageProvider for CSharpProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

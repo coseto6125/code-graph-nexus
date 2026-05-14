@@ -148,6 +148,7 @@ impl LanguageProvider for TypeScriptProvider {
 
                     if !existing_found {
                         nodes.push(RawNode {
+            decorators: vec![],
                             name: name_str.to_string(),
                             kind: k,
                             span: node_span,
@@ -183,6 +184,7 @@ impl LanguageProvider for TypeScriptProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

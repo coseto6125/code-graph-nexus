@@ -99,6 +99,7 @@ impl LanguageProvider for JavaScriptProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage,
                         type_annotation: None,
@@ -132,6 +133,7 @@ impl LanguageProvider for JavaScriptProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

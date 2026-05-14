@@ -96,6 +96,7 @@ impl LanguageProvider for KotlinProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage,
                         type_annotation,
@@ -129,6 +130,7 @@ impl LanguageProvider for KotlinProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

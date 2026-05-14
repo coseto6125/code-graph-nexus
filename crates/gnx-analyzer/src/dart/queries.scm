@@ -1,59 +1,38 @@
 ;; Classes
-(class_definition
+(class_declaration
   name: (identifier) @class.name
-  (extends_clause (type_not_void (type_identifier) @heritage))?
-  (implements_clause (type_list (type_not_void (type_identifier) @heritage)))?
-  (with_clause (type_list (type_not_void (type_identifier) @heritage)))?
-) @class
+  superclass: (superclass type: (type (_) @heritage))?
+  (mixins (type (_) @heritage))?
+  interfaces: (interfaces (type (_) @heritage))?) @class
 
 ;; Enums
 (enum_declaration
-  name: (identifier) @interface.name
-  (implements_clause (type_list (type_not_void (type_identifier) @heritage)))?
-) @interface
+  name: (identifier) @interface.name) @interface
 
 ;; Mixins
 (mixin_declaration
   name: (identifier) @interface.name
-  (on_clause (type_list (type_not_void (type_identifier) @heritage)))?
-  (implements_clause (type_list (type_not_void (type_identifier) @heritage)))?
-) @interface
-
-;; Extensions
-(extension_declaration
-  name: (identifier) @interface.name
-) @interface
+  interfaces: (interfaces (type (_) @heritage))?) @interface
 
 ;; Methods
-(method_signature
-  return_type: (type_annotation)? @type
-  name: (identifier) @method.name) @method
-
-(method_signature
-  return_type: (type_annotation)? @type
-  (function_signature
-    name: (identifier) @method.name)) @method
-
-(method_signature
-  (getter_signature
-    return_type: (type_annotation)? @type
-    name: (identifier) @method.name)) @method
-
-(method_signature
-  (setter_signature
-    name: (identifier) @method.name)) @method
-
-(method_signature
-  (constructor_signature
-    name: (identifier) @method.name)) @method
+(method_declaration
+  signature: (method_signature
+    (function_signature
+      return_type: (type)? @type
+      name: (identifier) @method.name))) @method
 
 ;; Functions
 (function_signature
-  return_type: (type_annotation)? @type
+  return_type: (type)? @type
   name: (identifier) @function.name) @function
+
+;; Properties
+(declaration
+  (initialized_identifier_list
+    (initialized_identifier name: (identifier) @property.name))) @property
 
 ;; Imports
 (library_import
-  uri: (string_literal) @import.source
-  (import_prefix (identifier) @import.alias)?
-) @import
+  (_)
+  (_) @import.source
+  (_) @import.alias ?) @import

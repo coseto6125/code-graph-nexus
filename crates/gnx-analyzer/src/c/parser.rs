@@ -82,6 +82,7 @@ impl LanguageProvider for CProvider {
                     });
 
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported: true,
                         heritage: vec![],
                         type_annotation,
@@ -109,6 +110,7 @@ impl LanguageProvider for CProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

@@ -17,20 +17,19 @@
 (function_item
   (visibility_modifier)? @export
   name: (identifier) @function_item.name
-  return_type: (return_type type: (_) @type)?) @function
+  return_type: (_) @type) @function
 
 ;; Methods in impl
 (impl_item
   trait: [
     (type_identifier)
-    (scoped_identifier)
     (generic_type)
   ] @heritage
   body: (declaration_list
     (function_item
       (visibility_modifier)? @export
       name: (identifier) @function_item.name
-      return_type: (return_type type: (_) @type)?) @method))
+      return_type: (_) @type) @method))
 
 ;; Methods in trait
 (trait_item
@@ -38,7 +37,7 @@
     (function_signature_item
       (visibility_modifier)? @export
       name: (identifier) @function_item.name
-      return_type: (return_type type: (_) @type)?) @method))
+      return_type: (_) @type) @method))
 
 ;; Imports (use std::collections::HashMap)
 (use_declaration

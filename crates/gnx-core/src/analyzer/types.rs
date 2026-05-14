@@ -9,6 +9,7 @@ pub struct RawNode {
     pub is_exported: bool,
     pub heritage: Vec<String>, // Base classes, interfaces, traits
     pub type_annotation: Option<String>,
+    pub decorators: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -19,8 +20,17 @@ pub struct RawImport {
 }
 
 #[derive(Debug, Clone)]
+pub struct RawRoute {
+    pub method: String,
+    pub path: String,
+    pub handler: Option<String>,
+    pub span: (u32, u32, u32, u32),
+}
+
+#[derive(Debug, Clone)]
 pub struct LocalGraph {
     pub file_path: PathBuf,
     pub nodes: Vec<RawNode>,
     pub imports: Vec<RawImport>,
+    pub routes: Vec<RawRoute>,
 }

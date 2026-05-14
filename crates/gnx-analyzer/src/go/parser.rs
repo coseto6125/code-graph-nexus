@@ -112,6 +112,7 @@ impl LanguageProvider for GoProvider {
                     let end = root.end_position();
 
                     nodes.push(RawNode {
+            decorators: vec![],
                         name,
                         kind: k,
                         is_exported,
@@ -161,6 +162,7 @@ impl LanguageProvider for GoProvider {
         imports.dedup_by(|a, b| a.source == b.source && a.imported_name == b.imported_name);
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

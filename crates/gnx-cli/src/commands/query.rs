@@ -121,5 +121,6 @@ fn kind_to_str(kind: &ArchivedNodeKind) -> &'static str {
         ArchivedNodeKind::Variable => "Variable",
         ArchivedNodeKind::Const => "Const",
         ArchivedNodeKind::Import => "Import",
+        ArchivedNodeKind::Route => "Route",
     }
 }

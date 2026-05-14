@@ -37,28 +37,17 @@
       (field_identifier) @name.method
       (reference_declarator (field_identifier) @name.method)
       (pointer_declarator (field_identifier) @name.method)
-      (scoped_identifier
+      (qualified_identifier
         name: [
           (identifier)
           (field_identifier)
         ] @name.method
       )
-      (reference_declarator (scoped_identifier name: (_) @name.method))
-      (pointer_declarator (scoped_identifier name: (_) @name.method))
+      (reference_declarator (qualified_identifier name: (_) @name.method))
+      (pointer_declarator (qualified_identifier name: (_) @name.method))
     ]
   )
 ) @method
-
-;; C++20 Modules & Exports
-(export_declaration
-  [
-    (class_specifier)
-    (struct_specifier)
-    (function_definition)
-    (declaration)
-    (namespace_definition)
-  ] @export
-)
 
 ;; Preprocessor Includes
 (preproc_include
@@ -70,9 +59,6 @@
 
 ;; Namespace Aliases
 (namespace_alias_definition
-  name: (identifier) @alias
-  value: [
-    (identifier)
-    (scoped_identifier)
-  ] @import.source
+  name: (namespace_identifier) @alias
+  (namespace_identifier) @import.source
 ) @import

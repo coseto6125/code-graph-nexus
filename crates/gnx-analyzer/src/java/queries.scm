@@ -1,8 +1,8 @@
 ;; Classes
 (class_declaration
   (modifiers [
-    (public)
-    (protected)
+    "public"
+    "protected"
   ])? @export
   name: (identifier) @class.name
   interfaces: (super_interfaces (type_list (_) @heritage))?
@@ -12,8 +12,8 @@
 ;; Interfaces
 (interface_declaration
   (modifiers [
-    (public)
-    (protected)
+    "public"
+    "protected"
   ])? @export
   name: (identifier) @interface.name
   interfaces: (extends_interfaces (type_list (_) @heritage))?
@@ -22,8 +22,8 @@
 ;; Methods
 (method_declaration
   (modifiers [
-    (public)
-    (protected)
+    "public"
+    "protected"
   ])? @export
   type: (_) @type
   name: (identifier) @method.name
@@ -32,8 +32,8 @@
 ;; Constructors
 (constructor_declaration
   (modifiers [
-    (public)
-    (protected)
+    "public"
+    "protected"
   ])? @export
   name: (identifier) @method.name
 ) @method

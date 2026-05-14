@@ -15,6 +15,7 @@ pub enum NodeKind {
     Variable,
     Const,
     Import,
+    Route,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub enum RelType {
     HasMethod,
     HasProperty,
     Accesses,
+    HandlesRoute,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]

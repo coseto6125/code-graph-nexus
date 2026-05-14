@@ -79,6 +79,7 @@ impl LanguageProvider for RubyProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported: true,
                         heritage,
                         type_annotation: None,
@@ -106,6 +107,7 @@ impl LanguageProvider for RubyProvider {
         }
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

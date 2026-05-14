@@ -12,17 +12,65 @@
 ) @export
 
 ;; Arrow Functions assigned to variables
-(variable_declarator
-  name: (identifier) @function.name
-  value: (arrow_function)
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @function.name
+    value: (arrow_function)
+  )
 ) @function
 
 (export_statement
-  (variable_declaration
+  declaration: (lexical_declaration
     (variable_declarator
       name: (identifier) @function.name
       value: (arrow_function)
     ) @function
+  )
+) @export
+
+(variable_declaration
+  (variable_declarator
+    name: (identifier) @function.name
+    value: (arrow_function)
+  )
+) @function
+
+(export_statement
+  declaration: (variable_declaration
+    (variable_declarator
+      name: (identifier) @function.name
+      value: (arrow_function)
+    ) @function
+  )
+) @export
+
+;; Constants
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @const.name
+  )
+) @const
+
+(export_statement
+  declaration: (lexical_declaration
+    (variable_declarator
+      name: (identifier) @const.name
+    ) @const
+  )
+) @export
+
+;; Variables
+(variable_declaration
+  (variable_declarator
+    name: (identifier) @variable.name
+  )
+) @variable
+
+(export_statement
+  declaration: (variable_declaration
+    (variable_declarator
+      name: (identifier) @variable.name
+    ) @variable
   )
 ) @export
 

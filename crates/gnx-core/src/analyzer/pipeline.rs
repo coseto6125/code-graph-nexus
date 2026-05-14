@@ -98,16 +98,16 @@ impl AnalyzerPipeline {
     }
 
     /// Analyze files concurrently using a Multi-Producer Single-Consumer architecture
-    pub fn analyze(&self, files: Vec<PathBuf>) -> Vec<LocalGraph> {
-        let (tx, rx) = bounded::<LocalGraph>(100);
+    pub fn analyze(&self, files: Vec<(PathBuf, PathBuf)>) -> Vec<LocalGraph> {
+        let (tx, rx) = crossbeam_channel::unbounded::<LocalGraph>();
 
         // Producer (A): parse files concurrently
         rayon::scope(|s| {
             s.spawn(|_| {
-                files.into_par_iter().for_each_with(tx, |sender, path| {
-                    if let Some(provider) = self.find_provider(&path) {
-                        if let Ok(source) = std::fs::read(&path) {
-                            if let Ok(local_graph) = provider.parse_file(&path, &source) {
+                files.into_par_iter().for_each_with(tx, |sender, (abs_path, rel_path)| {
+                    if let Some(provider) = self.find_provider(&rel_path) {
+                        if let Ok(source) = std::fs::read(&abs_path) {
+                            if let Ok(local_graph) = provider.parse_file(&rel_path, &source) {
                                 let _ = sender.send(local_graph);
                             }
                         }
@@ -120,7 +120,6 @@ impl AnalyzerPipeline {
         let mut all_graphs = Vec::new();
         while let Ok(graph) = rx.recv() {
             all_graphs.push(graph);
-            // In the future: global_graph.merge(graph);
         }
 
         all_graphs
@@ -138,9 +137,9 @@ mod tests {
         pipeline.register_provider(Box::new(TypeScriptProvider));
 
         let files = vec![
-            PathBuf::from("a.ts"),
-            PathBuf::from("b.ts"),
-            PathBuf::from("c.txt"), // Should be ignored based on extension
+            (PathBuf::from("a.ts"), PathBuf::from("a.ts")),
+            (PathBuf::from("b.ts"), PathBuf::from("b.ts")),
+            (PathBuf::from("c.txt"), PathBuf::from("c.txt")), // Should be ignored based on extension
         ];
 
         let results = pipeline.analyze(files);

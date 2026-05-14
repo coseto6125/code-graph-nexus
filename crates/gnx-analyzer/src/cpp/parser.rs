@@ -110,6 +110,7 @@ impl LanguageProvider for CppProvider {
                     }).collect();
 
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported: is_header || is_exported_by_query,
                         heritage,
                         type_annotation,
@@ -158,6 +159,7 @@ impl LanguageProvider for CppProvider {
         imports.dedup_by(|a, b| a.imported_name == b.imported_name && a.source == b.source && a.alias == b.alias);
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

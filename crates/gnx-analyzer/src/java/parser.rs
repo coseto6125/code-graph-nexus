@@ -102,6 +102,7 @@ impl LanguageProvider for JavaProvider {
                     let node_id = root.id();
                     
                     let entry = node_map.entry(node_id).or_insert_with(|| RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage: Vec::new(),
                         type_annotation: type_annotation.clone(),
@@ -151,6 +152,7 @@ impl LanguageProvider for JavaProvider {
         let nodes = node_map.into_values().collect();
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,

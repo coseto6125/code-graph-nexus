@@ -33,6 +33,7 @@ fn test_mmap_graph_access() {
         in_offsets: vec![0, 0],
         in_edge_idx: vec![],
         name_index: vec![0],
+        embeddings: None,
     };
 
     // Use rkyv::to_bytes for rkyv 0.8.x

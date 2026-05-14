@@ -109,6 +109,7 @@ impl LanguageProvider for DartProvider {
                     let end = root.end_position();
                     
                     nodes.push(RawNode {
+            decorators: vec![],
                         is_exported,
                         heritage: heritage.clone(),
                         type_annotation: type_annotation.clone(),
@@ -149,6 +150,7 @@ impl LanguageProvider for DartProvider {
         nodes.dedup_by(|a, b| a.name == b.name && a.span == b.span && a.kind == b.kind);
 
         Ok(LocalGraph {
+            routes: vec![],
             file_path: path.to_path_buf(),
             nodes,
             imports,
