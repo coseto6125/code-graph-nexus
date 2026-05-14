@@ -41,23 +41,31 @@ impl LanguageProvider for CppProvider {
         let idx_name_function = self.query.capture_index_for_name("name.function");
         let idx_name_class = self.query.capture_index_for_name("name.class");
         let idx_name_method = self.query.capture_index_for_name("name.method");
-        let idx_name_interface = self.query.capture_index_for_name("name.interface");
-        let idx_import_name = self.query.capture_index_for_name("import.name");
+        let idx_heritage = self.query.capture_index_for_name("heritage");
+        let idx_type = self.query.capture_index_for_name("type");
+        let idx_export = self.query.capture_index_for_name("export");
+        let idx_alias = self.query.capture_index_for_name("alias");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
         let idx_function = self.query.capture_index_for_name("function");
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
-        let idx_interface = self.query.capture_index_for_name("interface");
         let idx_import = self.query.capture_index_for_name("import");
+
+        let is_header = path.extension()
+            .map(|ext| ext == "h" || ext == "hpp" || ext == "hxx" || ext == "hh")
+            .unwrap_or(false);
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
             let mut root_span_node = None;
+            let mut type_node = None;
+            let mut heritage_nodes = Vec::new();
+            let mut is_exported_by_query = false;
 
-            let mut import_name = None;
-            let mut import_src = None;
+            let mut import_src_node = None;
+            let mut import_alias_node = None;
             let mut is_import = false;
 
             for cap in m.captures {
@@ -71,18 +79,17 @@ impl LanguageProvider for CppProvider {
                 } else if cap_idx == idx_name_method {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
-                } else if cap_idx == idx_name_interface {
-                    name_node = Some(cap.node);
-                    kind = Some(NodeKind::Interface);
-                } else if cap_idx == idx_import_name {
-                    import_name = Some(cap.node);
+                } else if cap_idx == idx_heritage {
+                    heritage_nodes.push(cap.node);
+                } else if cap_idx == idx_type {
+                    type_node = Some(cap.node);
+                } else if cap_idx == idx_export {
+                    is_exported_by_query = true;
+                } else if cap_idx == idx_alias {
+                    import_alias_node = Some(cap.node);
                 } else if cap_idx == idx_import_source {
-                    import_src = Some(cap.node);
-                } else if cap_idx == idx_function
-                    || cap_idx == idx_class
-                    || cap_idx == idx_method
-                    || cap_idx == idx_interface
-                {
+                    import_src_node = Some(cap.node);
+                } else if cap_idx == idx_function || cap_idx == idx_class || cap_idx == idx_method {
                     root_span_node = Some(cap.node);
                 } else if cap_idx == idx_import {
                     is_import = true;
@@ -93,10 +100,19 @@ impl LanguageProvider for CppProvider {
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let start = root.start_position();
                     let end = root.end_position();
+                    
+                    let type_annotation = type_node.and_then(|t| {
+                        std::str::from_utf8(&source[t.start_byte()..t.end_byte()]).ok().map(|s| s.trim().to_string())
+                    });
+
+                    let heritage = heritage_nodes.iter().filter_map(|h| {
+                        std::str::from_utf8(&source[h.start_byte()..h.end_byte()]).ok().map(|s| s.to_string())
+                    }).collect();
+
                     nodes.push(RawNode {
-                        is_exported: false,
-                        heritage: vec![],
-                        type_annotation: None,
+                        is_exported: is_header || is_exported_by_query,
+                        heritage,
+                        type_annotation,
                         name: name_str.to_string(),
                         kind: k,
                         span: (
@@ -109,29 +125,23 @@ impl LanguageProvider for CppProvider {
                 }
             }
 
-            if import_src.is_some() || is_import {
-                let final_import_name = import_name.or(import_src);
-                if let (Some(i_name), Some(i_src)) = (final_import_name, import_src) {
-                    if let (Ok(name_str), Ok(src_str)) =
-                        (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
-                    {
-                        let mut name_s = name_str.to_string();
-                        if name_s.starts_with('<') && name_s.ends_with('>') {
-                            name_s = name_s[1..name_s.len() - 1].to_string();
-                        } else if name_s.starts_with('"') && name_s.ends_with('"') {
-                            name_s = name_s[1..name_s.len() - 1].to_string();
+            if is_import {
+                if let Some(src_node) = import_src_node {
+                    if let Ok(src_str) = std::str::from_utf8(&source[src_node.start_byte()..src_node.end_byte()]) {
+                        let mut src_s = src_str.to_string();
+                        if (src_s.starts_with('"') && src_s.ends_with('"')) || (src_s.starts_with('<') && src_s.ends_with('>')) {
+                            src_s = src_s[1..src_s.len() - 1].to_string();
                         }
 
-                        let mut src_s = src_str.to_string();
-                        if src_s.starts_with('<') && src_s.ends_with('>') {
-                            src_s = src_s[1..src_s.len() - 1].to_string();
-                        } else if src_s.starts_with('"') && src_s.ends_with('"') {
-                            src_s = src_s[1..src_s.len() - 1].to_string();
-                        }
+                        let alias = import_alias_node.and_then(|a| {
+                            std::str::from_utf8(&source[a.start_byte()..a.end_byte()]).ok().map(|s| s.to_string())
+                        });
+
+                        let imported_name = src_s.clone();
 
                         imports.push(RawImport {
-                        alias: None,
-                            imported_name: name_s,
+                            alias,
+                            imported_name,
                             source: src_s,
                         });
                     }
@@ -139,14 +149,13 @@ impl LanguageProvider for CppProvider {
             }
         }
 
-        // Deduplicate imports natively using dict to keep uniqueness but keep order (if necessary),
-        // or just sort and dedup.
         imports.sort_by(|a, b| {
             a.imported_name
                 .cmp(&b.imported_name)
                 .then(a.source.cmp(&b.source))
+                .then(a.alias.cmp(&b.alias))
         });
-        imports.dedup_by(|a, b| a.imported_name == b.imported_name && a.source == b.source);
+        imports.dedup_by(|a, b| a.imported_name == b.imported_name && a.source == b.source && a.alias == b.alias);
 
         Ok(LocalGraph {
             file_path: path.to_path_buf(),

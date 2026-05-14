@@ -50,6 +50,10 @@ impl LanguageProvider for SwiftProvider {
         let idx_method = self.query.capture_index_for_name("method");
         let idx_interface = self.query.capture_index_for_name("interface");
 
+        let idx_export = self.query.capture_index_for_name("export");
+        let idx_heritage = self.query.capture_index_for_name("heritage");
+        let idx_type = self.query.capture_index_for_name("type");
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
@@ -57,6 +61,10 @@ impl LanguageProvider for SwiftProvider {
 
             let mut import_name = None;
             let mut import_src = None;
+
+            let mut is_exported = false;
+            let mut heritage = Vec::new();
+            let mut type_annotation = None;
 
             for cap in m.captures {
                 let cap_idx = cap.index;
@@ -82,6 +90,20 @@ impl LanguageProvider for SwiftProvider {
                     || Some(cap_idx) == idx_interface
                 {
                     root_span_node = Some(cap.node);
+                } else if Some(cap_idx) == idx_export {
+                    if let Ok(export_str) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        if export_str == "public" || export_str == "open" {
+                            is_exported = true;
+                        }
+                    }
+                } else if Some(cap_idx) == idx_heritage {
+                    if let Ok(heritage_str) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        heritage.push(heritage_str.to_string());
+                    }
+                } else if Some(cap_idx) == idx_type {
+                    if let Ok(type_str) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        type_annotation = Some(type_str.to_string());
+                    }
                 }
             }
 
@@ -90,9 +112,9 @@ impl LanguageProvider for SwiftProvider {
                     let start = root.start_position();
                     let end = root.end_position();
                     nodes.push(RawNode {
-                        is_exported: false,
-                        heritage: vec![],
-                        type_annotation: None,
+                        is_exported,
+                        heritage,
+                        type_annotation,
                         name: name_str.to_string(),
                         kind: k,
                         span: (

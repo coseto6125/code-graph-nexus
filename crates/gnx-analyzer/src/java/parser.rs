@@ -1,6 +1,7 @@
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
+use std::collections::HashMap;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
@@ -35,12 +36,12 @@ impl LanguageProvider for JavaProvider {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
 
-        let mut nodes = Vec::new();
+        let mut node_map: HashMap<usize, RawNode> = HashMap::new();
         let mut imports = Vec::new();
 
-        let idx_name_class = self.query.capture_index_for_name("name.class");
-        let idx_name_interface = self.query.capture_index_for_name("name.interface");
-        let idx_name_method = self.query.capture_index_for_name("name.method");
+        let idx_name_class = self.query.capture_index_for_name("class.name");
+        let idx_name_interface = self.query.capture_index_for_name("interface.name");
+        let idx_name_method = self.query.capture_index_for_name("method.name");
         let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
@@ -48,34 +49,48 @@ impl LanguageProvider for JavaProvider {
         let idx_interface = self.query.capture_index_for_name("interface");
         let idx_method = self.query.capture_index_for_name("method");
 
+        let idx_export = self.query.capture_index_for_name("export");
+        let idx_heritage = self.query.capture_index_for_name("heritage");
+        let idx_type = self.query.capture_index_for_name("type");
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
             let mut root_span_node = None;
+            let mut is_exported = false;
+            let mut heritage = Vec::new();
+            let mut type_annotation = None;
 
             let mut import_name = None;
             let mut import_src = None;
 
             for cap in m.captures {
-                let cap_idx = cap.index;
-                if Some(cap_idx) == idx_name_class {
+                let cap_idx = Some(cap.index);
+                if cap_idx == idx_name_class {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Class);
-                } else if Some(cap_idx) == idx_name_interface {
+                } else if cap_idx == idx_name_interface {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Interface);
-                } else if Some(cap_idx) == idx_name_method {
+                } else if cap_idx == idx_name_method {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
-                } else if Some(cap_idx) == idx_import_name {
+                } else if cap_idx == idx_import_name {
                     import_name = Some(cap.node);
-                } else if Some(cap_idx) == idx_import_source {
+                } else if cap_idx == idx_import_source {
                     import_src = Some(cap.node);
-                } else if Some(cap_idx) == idx_class
-                    || Some(cap_idx) == idx_interface
-                    || Some(cap_idx) == idx_method
-                {
+                } else if cap_idx == idx_class || cap_idx == idx_interface || cap_idx == idx_method {
                     root_span_node = Some(cap.node);
+                } else if cap_idx == idx_export {
+                    is_exported = true;
+                } else if cap_idx == idx_heritage {
+                    if let Ok(h_str) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        heritage.push(h_str.to_string());
+                    }
+                } else if cap_idx == idx_type {
+                    if let Ok(t_str) = std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()]) {
+                        type_annotation = Some(t_str.to_string());
+                    }
                 }
             }
 
@@ -83,10 +98,13 @@ impl LanguageProvider for JavaProvider {
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let start = root.start_position();
                     let end = root.end_position();
-                    nodes.push(RawNode {
-                        is_exported: false,
-                        heritage: vec![],
-                        type_annotation: None,
+                    
+                    let node_id = root.id();
+                    
+                    let entry = node_map.entry(node_id).or_insert_with(|| RawNode {
+                        is_exported,
+                        heritage: Vec::new(),
+                        type_annotation: type_annotation.clone(),
                         name: name_str.to_string(),
                         kind: k,
                         span: (
@@ -96,21 +114,41 @@ impl LanguageProvider for JavaProvider {
                             end.column as u32,
                         ),
                     });
+                    
+                    for h in heritage {
+                        if !entry.heritage.contains(&h) {
+                            entry.heritage.push(h);
+                        }
+                    }
+                    if is_exported {
+                        entry.is_exported = true;
+                    }
+                    if type_annotation.is_some() {
+                        entry.type_annotation = type_annotation.clone();
+                    }
                 }
             }
 
             if let (Some(i_name), Some(i_src)) = (import_name, import_src) {
-                if let (Ok(name_str), Ok(src_str)) =
-                    (std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]), std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]))
-                {
-                    imports.push(RawImport {
-                        alias: None,
-                        imported_name: name_str.to_string(),
-                        source: src_str.to_string(),
+                if let (Ok(name_str), Ok(src_str)) = (
+                    std::str::from_utf8(&source[i_name.start_byte()..i_name.end_byte()]),
+                    std::str::from_utf8(&source[i_src.start_byte()..i_src.end_byte()]),
+                ) {
+                    let exists = imports.iter().any(|i: &RawImport| {
+                        i.imported_name == name_str && i.source == src_str
                     });
+                    if !exists {
+                        imports.push(RawImport {
+                            alias: None,
+                            imported_name: name_str.to_string(),
+                            source: src_str.to_string(),
+                        });
+                    }
                 }
             }
         }
+
+        let nodes = node_map.into_values().collect();
 
         Ok(LocalGraph {
             file_path: path.to_path_buf(),

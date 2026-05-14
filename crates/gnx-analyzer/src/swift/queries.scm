@@ -1,39 +1,46 @@
 ;; Classes
 (class_declaration
-  name: (type_identifier) @name.class) @class
+  (modifiers (visibility_modifier) @export)?
+  name: (type_identifier) @name.class
+  (type_inheritance_clause (type_identifier) @heritage)?
+) @class
 
 ;; Structs
 (struct_declaration
-  name: (type_identifier) @name.interface) @interface
+  (modifiers (visibility_modifier) @export)?
+  name: (type_identifier) @name.interface
+  (type_inheritance_clause (type_identifier) @heritage)?
+) @interface
 
 ;; Protocols
 (protocol_declaration
-  name: (type_identifier) @name.interface) @interface
+  (modifiers (visibility_modifier) @export)?
+  name: (type_identifier) @name.interface
+  (type_inheritance_clause (type_identifier) @heritage)?
+) @interface
 
 ;; Enums
 (enum_declaration
-  name: (type_identifier) @name.interface) @interface
+  (modifiers (visibility_modifier) @export)?
+  name: (type_identifier) @name.interface
+  (type_inheritance_clause (type_identifier) @heritage)?
+) @interface
 
 ;; Functions
 (function_declaration
-  name: (simple_identifier) @name.function) @function
+  (modifiers (visibility_modifier) @export)?
+  name: (simple_identifier) @name.function
+  (function_signature result: (type_identifier) @type)?
+) @function
 
-;; Methods in class/struct/protocol/enum body
-(class_body
-  (function_declaration
-    name: (simple_identifier) @name.method) @method)
-
-(struct_body
-  (function_declaration
-    name: (simple_identifier) @name.method) @method)
-
-(protocol_body
-  (function_declaration
-    name: (simple_identifier) @name.method) @method)
-
-(extension_body
-  (function_declaration
-    name: (simple_identifier) @name.method) @method)
+;; Methods
+(function_declaration
+  (modifiers (visibility_modifier) @export)?
+  name: (simple_identifier) @name.method
+  (function_signature result: (type_identifier) @type)?
+) @method
 
 ;; Imports
-(import_declaration) @import.source @import.name
+(import_declaration
+  path: (import_path) @import.name @import.source
+)
