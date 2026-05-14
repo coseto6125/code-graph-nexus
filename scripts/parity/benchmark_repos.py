@@ -42,11 +42,11 @@ def benchmark_analyze(repo_path: Path):
     subprocess.run(["gnx", "analyze", "--repo", str(repo_path)], cwd=workspace, capture_output=True)
     gnx_time = time.time() - start_time
 
-    # Run new gnx-rs
-    print("  \u2514\u2500 Running gnx-rs analyze...")
+    # Run new graph-nexus
+    print("  \u2514\u2500 Running graph-nexus analyze...")
     start_time = time.time()
     subprocess.run(
-        ["cargo", "run", "--release", "--bin", "gnx-rs", "--", "analyze", "--repo", str(repo_path)],
+        ["cargo", "run", "--release", "--bin", "graph-nexus", "--", "analyze", "--repo", str(repo_path)],
         cwd=workspace,
         capture_output=True,
     )
@@ -63,9 +63,9 @@ def main():
     print("==================================================\n")
 
     # Compile in release mode once before benchmarking
-    print("[*] Pre-compiling gnx-rs in release mode...")
+    print("[*] Pre-compiling graph-nexus in release mode...")
     subprocess.run(
-        ["cargo", "build", "--release", "-p", "gnx-cli"], capture_output=True, check=True
+        ["cargo", "build", "--release", "-p", "graph-nexus-cli"], capture_output=True, check=True
     )
 
     results = []
@@ -84,7 +84,7 @@ def main():
 
             speedup = gnx_time / gnx_rs_time if gnx_rs_time > 0 else float("inf")
             print(
-                f"    \u2714 gnx: {gnx_time:.2f}s | gnx-rs: {gnx_rs_time:.2f}s | Speedup: {speedup:.1f}x\n"
+                f"    \u2714 gnx: {gnx_time:.2f}s | graph-nexus: {gnx_rs_time:.2f}s | Speedup: {speedup:.1f}x\n"
             )
 
             results.append((lang, gnx_time, gnx_rs_time, speedup))

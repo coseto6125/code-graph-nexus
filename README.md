@@ -1,14 +1,12 @@
-# gnx-rs
+# Graph Nexus for LLM
 
-> **Unofficial Rust reimplementation of [GitNexus](https://github.com/abhigyanpatwari/GitNexus)**  
-> by [Abhigyan Patwari](https://github.com/abhigyanpatwari), licensed under
-> [PolyForm Noncommercial 1.0.0](./LICENSE).
->
-> Required Notice: Copyright Abhigyan Patwari (https://github.com/abhigyanpatwari/GitNexus)
->
-> Not affiliated with or endorsed by the upstream GitNexus project. Noncommercial use only.
+A code intelligence graph I built for working with LLMs and AI agents. Indexes any codebase across 14 languages in milliseconds, then answers structural questions like *who calls this*, *what's the blast radius if I change this function*, or *what's related to the auth flow*.
 
-A blazing-fast, Rust-native Code Intelligence Engine. `gnx-rs` builds a structural knowledge graph of your entire codebase across 14 programming languages in milliseconds. Designed specifically for **LLM Agents (Claude, GPT-4, Cursor)**, it features zero-copy on-disk storage, advanced Hybrid Search (Vector + BM25), and zero-maintenance Framework Route Extraction.
+Built on top of [GitNexus](https://github.com/abhigyanpatwari/GitNexus) by [Abhigyan Patwari](https://github.com/abhigyanpatwari) — same core idea (structural knowledge graph of a repo), rewritten in Rust for speed and reshaped around how I actually use this with Claude / Cursor every day. Licensed under [PolyForm Noncommercial 1.0.0](./LICENSE).
+
+> Required Notice: Copyright Abhigyan Patwari (https://github.com/abhigyanpatwari/GitNexus). Not affiliated with or endorsed by the upstream GitNexus project. Noncommercial use only.
+
+Under the hood: zero-copy on-disk storage (rkyv + mmap), hybrid search (BM25 via Tantivy + BGE-M3 dense vectors), framework-aware route extraction. The CLI is `gnx`.
 
 [繁體中文說明 (Traditional Chinese)](./README_zh-TW.md)
 
@@ -27,10 +25,10 @@ A blazing-fast, Rust-native Code Intelligence Engine. `gnx-rs` builds a structur
 ## 📦 Installation
 
 ```bash
-cargo install --git https://github.com/coseto6125/gnx-rs --bin gnx
+cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx
 ```
 
-After install, the binary is named `gnx` (the package on crates.io is `gnx-rs`).
+After install, the binary is named `gnx` (the package on crates.io is `graph-nexus`).
 
 ## ⚡ Usage
 
@@ -63,9 +61,9 @@ All commands accept `--format text|json|toon`. The default for query is a highly
 
 ```
 crates/
-├── gnx-core        # Zero-copy graph (rkyv), Incremental Caching, Graph Queries
-├── gnx-analyzer    # Tree-sitter parsers, BGE-M3 Embedder, HTTP Route Detector
-└── gnx-cli         # `gnx` binary, Tantivy BM25 Engine, Token-optimized Output
+├── graph-nexus-core        # Zero-copy graph (rkyv), Incremental Caching, Graph Queries
+├── graph-nexus-analyzer    # Tree-sitter parsers, BGE-M3 Embedder, HTTP Route Detector
+└── graph-nexus-cli         # `gnx` binary, Tantivy BM25 Engine, Token-optimized Output
 ```
 
 The analyzer streams parsed nodes through an MPSC channel into a single builder thread that assembles the graph, applies Route & Document extraction rules, and writes a zero-copy `.gitnexus-rs/graph.bin`. Read operations (like `context` and `query`) memory-map this file directly for zero-latency lookups.

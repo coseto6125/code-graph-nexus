@@ -1,6 +1,6 @@
 # Vyper Sample Project
 
-Minimal ERC20-like Vyper contract for gnx-analyzer fixture testing.
+Minimal ERC20-like Vyper contract for graph-nexus-analyzer fixture testing.
 
 ## Expected symbols
 

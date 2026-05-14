@@ -97,7 +97,7 @@ def print_diff(dict1: Any, dict2: Any, name1: str, name2: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run shadow parity validation between gnx and gnx-rs"
+        description="Run shadow parity validation between gnx and graph-nexus"
     )
     parser.add_argument(
         "fixture_path", type=Path, help="Path to the TypeScript fixture file or directory"
@@ -122,7 +122,7 @@ def main() -> None:
         "cargo",
         "run",
         "--bin",
-        "gnx-rs",
+        "graph-nexus",
         "--",
         "analyze",
         "--repo",
@@ -132,7 +132,7 @@ def main() -> None:
     print("Running original gnx analyze...")
     subprocess.run(gnx_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
 
-    print("Running new gnx-rs analyze...")
+    print("Running new graph-nexus analyze...")
     subprocess.run(gnx_rs_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
 
     print(f"\n[Context Phase: {symbol}]")
@@ -150,7 +150,7 @@ def main() -> None:
         "cargo",
         "run",
         "--bin",
-        "gnx-rs",
+        "graph-nexus",
         "--",
         "context",
         "--name",
@@ -164,7 +164,7 @@ def main() -> None:
     print("Running original gnx context...")
     gnx_output = run_command(gnx_context_cmd, cwd=workspace_root)
 
-    print("Running new gnx-rs context...")
+    print("Running new graph-nexus context...")
     gnx_rs_output = run_command(gnx_rs_context_cmd, cwd=workspace_root)
 
     normalized_gnx = normalize_json(gnx_output)
@@ -173,15 +173,15 @@ def main() -> None:
     errors = is_subset(normalized_gnx, normalized_gnx_rs)
 
     if not errors:
-        print("\n✅ SUCCESS: 100% Parity Achieved! (gnx-rs is a superset of gnx)")
+        print("\n✅ SUCCESS: 100% Parity Achieved! (graph-nexus is a superset of gnx)")
     else:
-        print("\n❌ FAILURE: Mismatch detected. gnx-rs is missing expected fields or values.")
+        print("\n❌ FAILURE: Mismatch detected. graph-nexus is missing expected fields or values.")
         for error in errors:
             print(f"  - {error}")
         print(
-            "\n--- Diff (Note: Extra fields in gnx-rs are ACCEPTABLE, look for missing/changed fields) ---"
+            "\n--- Diff (Note: Extra fields in graph-nexus are ACCEPTABLE, look for missing/changed fields) ---"
         )
-        print_diff(normalized_gnx, normalized_gnx_rs, "gnx (original)", "gnx-rs (new)")
+        print_diff(normalized_gnx, normalized_gnx_rs, "gnx (original)", "graph-nexus (new)")
         sys.exit(1)
 
 

@@ -1,6 +1,6 @@
 # Cairo Sample Project
 
-Minimal Cairo 1.0 fixture for gnx-analyzer parser verification.
+Minimal Cairo 1.0 fixture for graph-nexus-analyzer parser verification.
 
 ## Symbols expected
 
@@ -15,5 +15,5 @@ Minimal Cairo 1.0 fixture for gnx-analyzer parser verification.
 ## Query to verify
 
 ```
-gnx-cli context --repo tests/parity/fixtures/cairo/sample_project --name create_token
+graph-nexus-cli context --repo tests/parity/fixtures/cairo/sample_project --name create_token
 ```

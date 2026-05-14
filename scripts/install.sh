@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# gnx-rs 一鍵安裝（Linux / macOS）
+# graph-nexus 一鍵安裝（Linux / macOS）
 #
 #   curl -sSfL https://github.com/e-nor/gitnexus-rs/releases/latest/download/install.sh | sh
 #   curl -sSfL https://github.com/e-nor/gitnexus-rs/releases/download/v0.1.0/install.sh | sh

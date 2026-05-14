@@ -1280,13 +1280,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "gnx-analyzer"
+name = "graph-nexus"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "etoon",
+ "fastembed",
+ "graph-nexus-analyzer",
+ "graph-nexus-core",
+ "ignore",
+ "memmap2",
+ "rayon",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
+]
+
+[[package]]
+name = "graph-nexus-analyzer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
  "fastembed",
- "gnx-core",
+ "graph-nexus-core",
  "hf-hub",
  "ignore",
  "rayon",
@@ -1327,7 +1351,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gnx-core"
+name = "graph-nexus-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1354,30 +1378,6 @@ dependencies = [
  "tree-sitter-typescript",
  "unicode-normalization",
  "url",
-]
-
-[[package]]
-name = "gnx-rs"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "etoon",
- "fastembed",
- "gnx-analyzer",
- "gnx-core",
- "ignore",
- "memmap2",
- "rayon",
- "rkyv",
- "serde",
- "serde_json",
- "tantivy",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
- "tracing-subscriber",
- "unicode-width",
 ]
 
 [[package]]
