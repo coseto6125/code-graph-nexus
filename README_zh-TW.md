@@ -1,4 +1,4 @@
-# gnx-rs
+# Graph Nexus
 
 > **非官方的 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) Rust 重製版**  
 >
@@ -15,13 +15,13 @@
 
 ---
 
-## 操作體驗進化：`gnx-rs` 與上游原版的比較
+## 操作體驗進化：**Graph Nexus** 與上游原版的比較
 
-`gnx-rs` 繼承了 GitNexus 卓越的概念模型，但在底層執行架構上進行了徹底的顛覆。我們拔除了背景 Daemon，轉向基於 Rust 的零拷貝記憶體映射 (mmap) 架構。這不僅為了追求極致效能，更為了解決開發者與 LLM Agent (如 Claude, Cursor) 在日常工作流中所遭遇的痛點。
+**Graph Nexus** 繼承了 GitNexus 卓越的概念模型，但在底層執行架構上進行了徹底的顛覆。我們拔除了背景 Daemon，轉向基於 Rust 的零拷貝記憶體映射 (mmap) 架構。這不僅為了追求極致效能，更為了解決開發者與 LLM Agent (如 Claude, Cursor) 在日常工作流中所遭遇的痛點。
 
 當您敲下 `gnx` 指令時，您將感受到以下巨大差異：
 
-| 實際操作場景 (Workflow) | 原版 GitNexus (Node.js) | gnx-rs (Rust 版) |
+| 實際操作場景 (Workflow) | 原版 GitNexus (Node.js) | Graph Nexus (Rust) |
 | :--- | :--- | :--- |
 | **啟動門檻 (Startup)** | 需要先啟動並維護背景 Daemon 伺服器 | **零阻力**。純 CLI 無狀態工具，隨用隨棄，不佔系統資源 |
 | **圖譜更新 (`analyze`)** | 每次變更皆需全盤重建程式碼樹，耗時長 | **SHA-256 增量更新**。修改單一檔案只需 `< 0.25秒` 即可刷新圖譜 |
@@ -35,7 +35,7 @@
 
 ```bash
 # 從 GitHub 安裝
-cargo install --git https://github.com/coseto6125/gnx-rs --bin gnx
+cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx
 
 # 1. 為當前專案建立程式碼圖譜 (極速，低於 1 秒)
 gnx analyze --repo .
@@ -51,9 +51,9 @@ C, C#, C++, Dart, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Swift, 
 
 ```
 crates/
-├── gnx-core        # 零拷貝圖譜定義 (rkyv)、增量快取演算法、圖譜檢索 helper
-├── gnx-analyzer    # Tree-sitter 解析器、BGE-M3 向量生成、HTTP 路由偵測器
-└── gnx-cli         # `gnx` 命令列、Tantivy BM25 全文引擎、Token 最佳化輸出
+├── graph-nexus-core        # 零拷貝圖譜定義 (rkyv)、增量快取演算法、圖譜檢索 helper
+├── graph-nexus-analyzer    # Tree-sitter 解析器、BGE-M3 向量生成、HTTP 路由偵測器
+└── graph-nexus-cli         # `gnx` 命令列、Tantivy BM25 全文引擎、Token 最佳化輸出
 ```
 
 解析器 (Analyzer) 透過 MPSC 通道將 AST 節點傳遞給單一的 Builder 執行緒。Builder 負責組裝圖譜、推導 API 路由與文件分類，最後將其序列化為零拷貝的 `.gitnexus-rs/graph.bin`。讀取端（如 `context` 或 `query`）透過 mmap 直接映射硬碟檔案，達成零延遲查詢。

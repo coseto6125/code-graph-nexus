@@ -1,4 +1,4 @@
-# gnx-rs
+# Graph Nexus
 
 > **Unofficial Rust reimplementation of [GitNexus](https://github.com/abhigyanpatwari/GitNexus)**
 > 
@@ -15,9 +15,9 @@
 
 ---
 
-## The Workflow Upgrade: `gnx-rs` vs Upstream
+## The Workflow Upgrade: **Graph Nexus** vs Upstream
 
-`gnx-rs` takes the phenomenal conceptual model of GitNexus and completely reimagines the execution architecture. By stripping out the background daemon and shifting to a zero-copy memory-mapped structure in Rust, it delivers a drastically better day-to-day experience for both human developers and LLM Agents (Claude, Cursor, etc.).
+**Graph Nexus** takes the phenomenal conceptual model of GitNexus and completely reimagines the execution architecture. By stripping out the background daemon and shifting to a zero-copy memory-mapped structure in Rust, it delivers a drastically better day-to-day experience for both human developers and LLM Agents (Claude, Cursor, etc.).
 
 Here is what changes when you type `gnx` instead of `gitnexus`:
 
@@ -34,7 +34,7 @@ Here is what changes when you type `gnx` instead of `gitnexus`:
 ## Quick Start
 
 ```bash
-cargo install --git https://github.com/coseto6125/gnx-rs --bin gnx
+cargo install --git https://github.com/coseto6125/graph-nexus --bin gnx
 
 # 1. Build a code graph for the current repo (Extremely fast, < 1s)
 gnx analyze --repo .
@@ -50,9 +50,9 @@ C, C#, C++, Dart, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Swift, 
 
 ```
 crates/
-├── gnx-core        # Zero-copy graph (rkyv), Incremental Caching, Graph Queries
-├── gnx-analyzer    # Tree-sitter parsers, BGE-M3 Embedder, HTTP Route Detector
-└── gnx-cli         # `gnx` binary, Tantivy BM25 Engine, Token-optimized Output
+├── graph-nexus-core        # Zero-copy graph (rkyv), Incremental Caching, Graph Queries
+├── graph-nexus-analyzer    # Tree-sitter parsers, BGE-M3 Embedder, HTTP Route Detector
+└── graph-nexus-cli         # `gnx` binary, Tantivy BM25 Engine, Token-optimized Output
 ```
 
 The analyzer streams parsed nodes through an MPSC channel into a single builder thread that assembles the graph, applies Route & Document extraction rules, and writes a zero-copy `.gitnexus-rs/graph.bin`. Read operations (like `context` and `query`) memory-map this file directly for zero-latency lookups.
