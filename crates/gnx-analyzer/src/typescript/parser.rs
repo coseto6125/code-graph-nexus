@@ -46,6 +46,8 @@ impl LanguageProvider for TypeScriptProvider {
         // Pending framework-handler captures: (handler_name, capture_span).
         // Enclosing function is resolved after all nodes are collected.
         let mut pending_express_handlers: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
+        // NestJS @Controller method decorators: (class_name, method_name, method_span).
+        let mut pending_nestjs_handlers: Vec<(String, String, (u32, u32, u32, u32))> = Vec::new();
 
         // Capture indices
         let idx_function_name = self.query.capture_index_for_name("function.name");
@@ -74,6 +76,9 @@ impl LanguageProvider for TypeScriptProvider {
 
         let idx_express_handler = self.query.capture_index_for_name("express.route.handler");
 
+        let idx_nestjs_class = self.query.capture_index_for_name("nestjs.controller.class");
+        let idx_nestjs_method = self.query.capture_index_for_name("nestjs.method.name");
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
@@ -91,6 +96,9 @@ impl LanguageProvider for TypeScriptProvider {
             let mut route_method = None;
             let mut route_path = None;
             let mut is_route = false;
+
+            let mut nestjs_class_node: Option<tree_sitter::Node> = None;
+            let mut nestjs_method_node: Option<tree_sitter::Node> = None;
 
             for cap in m.captures {
                 let cap_idx = Some(cap.index);
@@ -158,6 +166,10 @@ impl LanguageProvider for TypeScriptProvider {
                             ),
                         ));
                     }
+                } else if cap_idx == idx_nestjs_class {
+                    nestjs_class_node = Some(cap.node);
+                } else if cap_idx == idx_nestjs_method {
+                    nestjs_method_node = Some(cap.node);
                 } else if cap_idx == idx_function
                     || cap_idx == idx_class
                     || cap_idx == idx_method
@@ -244,6 +256,27 @@ impl LanguageProvider for TypeScriptProvider {
                 }
             }
 
+            // Process NestJS @Controller method handler pairs.
+            if let (Some(cls), Some(mth)) = (nestjs_class_node, nestjs_method_node) {
+                if let (Ok(class_name), Ok(method_name)) = (
+                    std::str::from_utf8(&source[cls.start_byte()..cls.end_byte()]),
+                    std::str::from_utf8(&source[mth.start_byte()..mth.end_byte()]),
+                ) {
+                    let start = mth.start_position();
+                    let end = mth.end_position();
+                    pending_nestjs_handlers.push((
+                        class_name.to_string(),
+                        method_name.to_string(),
+                        (
+                            start.row as u32,
+                            start.column as u32,
+                            end.row as u32,
+                            end.column as u32,
+                        ),
+                    ));
+                }
+            }
+
             // Process routes
             if is_route {
                 if let (Some(r_method), Some(r_path), Some(root)) =
@@ -276,7 +309,7 @@ impl LanguageProvider for TypeScriptProvider {
 
         // Resolve framework-ref enclosing functions via span containment.
         // If the capture is at module-level, source_name is left empty.
-        let framework_refs: Vec<RawFrameworkRef> = pending_express_handlers
+        let mut framework_refs: Vec<RawFrameworkRef> = pending_express_handlers
             .into_iter()
             .map(|(target, cap_span)| {
                 let source_name = enclosing_function_name(&nodes, cap_span)
@@ -291,6 +324,17 @@ impl LanguageProvider for TypeScriptProvider {
                 }
             })
             .collect();
+
+        // NestJS @Controller → @Get/@Post/... method bindings.
+        for (class_name, method_name, span) in pending_nestjs_handlers {
+            framework_refs.push(RawFrameworkRef {
+                source_name: class_name,
+                target_name: method_name,
+                confidence: 0.9,
+                reason: "nestjs-route-handler".to_string(),
+                span,
+            });
+        }
 
         Ok(LocalGraph {
             content_hash: [0; 32],
