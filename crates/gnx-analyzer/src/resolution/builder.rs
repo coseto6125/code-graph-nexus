@@ -376,6 +376,33 @@ impl GraphBuilder {
 
                 current_node_idx += 1;
             }
+
+            // Resolve framework refs (confidence-weighted edges with custom reasons)
+            for fw_ref in &local_graph.framework_refs {
+                // Resolve source node in current file
+                let source_id = symbol_table
+                    .lookup_in_file(&local_graph.file_path.to_string_lossy(), &fw_ref.source_name);
+
+                if let Some(source_id) = source_id {
+                    // Resolve target: same-file → import-scoped → global
+                    let targets = resolver.resolve_symbol(
+                        &local_graph.file_path,
+                        &fw_ref.target_name,
+                        &local_graph.imports,
+                    );
+
+                    for (target_id, _) in targets {
+                        let reason_ref = string_pool.add(&fw_ref.reason);
+                        edges.push(Edge {
+                            source: source_id,
+                            target: target_id,
+                            rel_type: RelType::References,
+                            confidence: fw_ref.confidence,
+                            reason: reason_ref,
+                        });
+                    }
+                }
+            }
         }
 
         edges.extend(route_edges);
@@ -584,5 +611,64 @@ impl GraphBuilder {
             traces_data,
             files,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawNode};
+    use gnx_core::graph::NodeKind;
+
+    #[test]
+    fn framework_ref_produces_edge_with_confidence_and_reason() {
+        let g = LocalGraph {
+            file_path: "test.py".into(),
+            content_hash: [0; 32],
+            nodes: vec![
+                RawNode {
+                    name: "handler".into(),
+                    kind: NodeKind::Function,
+                    span: (0, 0, 0, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+                RawNode {
+                    name: "get_db".into(),
+                    kind: NodeKind::Function,
+                    span: (0, 0, 0, 0),
+                    is_exported: false,
+                    heritage: vec![],
+                    type_annotation: None,
+                    decorators: vec![],
+                    calls: vec![],
+                },
+            ],
+            documents: vec![],
+            imports: vec![],
+            routes: vec![],
+            framework_refs: vec![RawFrameworkRef {
+                source_name: "handler".into(),
+                target_name: "get_db".into(),
+                confidence: 0.6,
+                reason: "fastapi-depends".into(),
+                span: (0, 0, 0, 0),
+            }],
+        };
+
+        let mut builder = GraphBuilder::new();
+        builder.add_graph(g);
+        let graph = builder.build();
+
+        let fw_edges: Vec<_> = graph
+            .edges
+            .iter()
+            .filter(|e| e.rel_type == RelType::References)
+            .collect();
+        assert_eq!(fw_edges.len(), 1, "expected 1 References edge, got {}", fw_edges.len());
+        assert!((fw_edges[0].confidence - 0.6).abs() < 1e-6);
     }
 }

@@ -256,6 +256,7 @@ impl LanguageProvider for TypeScriptProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

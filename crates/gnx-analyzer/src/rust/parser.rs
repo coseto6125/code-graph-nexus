@@ -189,6 +189,7 @@ impl LanguageProvider for RustProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

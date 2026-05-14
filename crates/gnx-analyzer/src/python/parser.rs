@@ -226,6 +226,7 @@ impl LanguageProvider for PythonProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

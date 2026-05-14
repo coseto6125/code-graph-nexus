@@ -126,6 +126,7 @@ impl LanguageProvider for MarkdownProvider {
             nodes: vec![],
             documents,
             imports: vec![],
+            framework_refs: vec![],
         })
     }
 }

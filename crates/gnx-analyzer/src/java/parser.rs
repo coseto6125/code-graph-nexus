@@ -188,6 +188,7 @@ impl LanguageProvider for JavaProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

@@ -178,6 +178,7 @@ impl LanguageProvider for CrystalProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

@@ -204,6 +204,7 @@ impl LanguageProvider for CSharpProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

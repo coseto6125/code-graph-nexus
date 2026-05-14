@@ -123,6 +123,7 @@ impl LanguageProvider for CProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

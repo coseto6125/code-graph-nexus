@@ -241,6 +241,7 @@ impl LanguageProvider for DockerfileProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

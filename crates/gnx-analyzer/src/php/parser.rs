@@ -290,6 +290,7 @@ impl LanguageProvider for PhpProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }

@@ -153,6 +153,7 @@ impl LanguageProvider for NimProvider {
             nodes,
             imports,
             documents: vec![],
+            framework_refs: vec![],
         })
     }
 }
