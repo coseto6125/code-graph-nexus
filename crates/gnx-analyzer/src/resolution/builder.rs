@@ -5,10 +5,28 @@ use gnx_core::graph::{Edge, File, Node, NodeKind, RelType, ZeroCopyGraph, FileCa
 use gnx_core::pool::StringPool;
 
 fn determine_category(path: &str) -> FileCategory {
-    let lower_path = path.to_lowercase();
-    if lower_path.contains("test") || lower_path.contains("spec") || lower_path.contains("__tests__") || lower_path.contains("__mocks__") {
+    let lower_path = path.to_lowercase().replace('\\', "/");
+
+    let is_test = lower_path.contains(".test.")
+        || lower_path.contains(".spec.")
+        || lower_path.contains("__tests__/")
+        || lower_path.contains("__mocks__/")
+        || lower_path.contains("/test/")
+        || lower_path.contains("/tests/")
+        || lower_path.contains("/testing/")
+        || lower_path.contains("/fixtures/")
+        || lower_path.ends_with("_test.go")
+        || lower_path.ends_with("_test.py")
+        || lower_path.ends_with("_spec.rb")
+        || lower_path.ends_with("_test.rb")
+        || lower_path.contains("/spec/")
+        || lower_path.contains("/test_")
+        || lower_path.contains("/conftest.");
+
+    if is_test {
         return FileCategory::Test;
     }
+
     if lower_path.ends_with(".md") || lower_path.ends_with(".txt") || lower_path.ends_with(".rst") {
         return FileCategory::Document;
     }
