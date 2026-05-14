@@ -8,7 +8,7 @@
 //! This module consolidates those helpers so each parser stays focused on its own
 //! grammar quirks, not span arithmetic.
 
-use gnx_core::analyzer::types::RawNode;
+use gnx_core::analyzer::types::{RawImport, RawNode};
 use gnx_core::graph::NodeKind;
 
 pub type Span = (u32, u32, u32, u32);
@@ -86,4 +86,80 @@ pub fn enumerate_class_methods(
         .filter(|n| n.name != exclude_name)
         .map(|n| n.name.clone())
         .collect()
+}
+
+/// True iff the file's imports include at least one source matching the given
+/// module patterns. Match is prefix-based: a required `"django"` matches imports
+/// from `"django"`, `"django.urls"`, `"django.dispatch"`, etc. JS/TS scoped
+/// packages use `/` as the separator (`@nestjs/common`), so prefix `"@nestjs"`
+/// also matches.
+///
+/// Both `RawImport.source` and `RawImport.imported_name` are checked: Python's
+/// plain `import fastapi` records `imported_name="fastapi"` with empty source,
+/// so name-side matching is required for that idiom.
+///
+/// Used as a gate before emitting framework-specific `RawFrameworkRef` — we only
+/// claim "this is a FastAPI route" when the file actually imports FastAPI.
+/// Reflection / blind_spots are NOT gated (they're not framework-specific).
+pub fn has_import_from(imports: &[RawImport], modules: &[&str]) -> bool {
+    fn matches_module(value: &str, module: &str) -> bool {
+        if value == module {
+            return true;
+        }
+        // Dotted submodule (`django.urls` under required `django`) or
+        // scoped-package (`@nestjs/common` under required `@nestjs`).
+        value.starts_with(&format!("{}.", module)) || value.starts_with(&format!("{}/", module))
+    }
+    imports.iter().any(|imp| {
+        modules.iter().any(|m| {
+            matches_module(&imp.source, m) || matches_module(&imp.imported_name, m)
+        })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_gate_matches_exact_and_submodule() {
+        let imps = vec![
+            RawImport {
+                source: "django.urls".into(),
+                imported_name: "path".into(),
+                alias: None,
+            },
+            RawImport {
+                source: "os".into(),
+                imported_name: "path".into(),
+                alias: None,
+            },
+        ];
+        assert!(has_import_from(&imps, &["django.urls"]));
+        assert!(has_import_from(&imps, &["django"])); // prefix match
+        assert!(!has_import_from(&imps, &["fastapi"]));
+        assert!(!has_import_from(&imps, &["djangoz"])); // not a dot/slash prefix
+    }
+
+    #[test]
+    fn import_gate_handles_scoped_packages() {
+        let imps = vec![RawImport {
+            source: "@nestjs/common".into(),
+            imported_name: "Controller".into(),
+            alias: None,
+        }];
+        assert!(has_import_from(&imps, &["@nestjs/common"]));
+        assert!(has_import_from(&imps, &["@nestjs"])); // scoped prefix
+    }
+
+    #[test]
+    fn import_gate_matches_bare_python_import() {
+        // `import fastapi` → source is empty, imported_name is "fastapi".
+        let imps = vec![RawImport {
+            source: "".into(),
+            imported_name: "fastapi".into(),
+            alias: None,
+        }];
+        assert!(has_import_from(&imps, &["fastapi"]));
+    }
 }
