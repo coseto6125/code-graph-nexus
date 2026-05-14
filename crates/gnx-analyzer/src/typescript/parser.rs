@@ -1,4 +1,5 @@
 use crate::calls::extract_calls;
+use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
 };
@@ -321,7 +322,7 @@ impl LanguageProvider for TypeScriptProvider {
                     RawFrameworkRef {
                         source_name,
                         target_name: target,
-                        confidence: 0.8,
+                        confidence: framework_confidence::EXPRESS_ROUTE,
                         reason: "express-route-handler".to_string(),
                         span: cap_span,
                     }
@@ -337,7 +338,7 @@ impl LanguageProvider for TypeScriptProvider {
                 framework_refs.push(RawFrameworkRef {
                     source_name: class_name,
                     target_name: method_name,
-                    confidence: 0.9,
+                    confidence: framework_confidence::NESTJS_ROUTE,
                     reason: "nestjs-route-handler".to_string(),
                     span,
                 });

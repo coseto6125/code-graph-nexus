@@ -1,4 +1,5 @@
 use crate::calls::extract_calls;
+use crate::framework_confidence;
 use crate::framework_helpers::{has_import_from, node_span, MODULE_LEVEL_SOURCE};
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
@@ -274,7 +275,7 @@ impl LanguageProvider for RustProvider {
                     framework_refs.push(RawFrameworkRef {
                         source_name: fn_name.clone(),
                         target_name: handler_name,
-                        confidence: 0.8,
+                        confidence: framework_confidence::AXUM_ROUTE,
                         reason: "axum-route-handler".to_string(),
                         span,
                     });
@@ -289,7 +290,7 @@ impl LanguageProvider for RustProvider {
                 framework_refs.push(RawFrameworkRef {
                     source_name: MODULE_LEVEL_SOURCE.to_string(),
                     target_name: handler,
-                    confidence: 0.9,
+                    confidence: framework_confidence::ACTIX_ROUTE,
                     reason: format!("actix-route-{}", method),
                     span,
                 });

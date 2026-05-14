@@ -354,7 +354,7 @@ impl GraphBuilder {
                             target: target_id,
                             rel_type: RelType::Extends,
                             confidence,
-                            reason: reason_heritage.clone(),
+                            reason: reason_heritage,
                         });
                     }
                 }
@@ -376,7 +376,7 @@ impl GraphBuilder {
                             target: target_id,
                             rel_type: RelType::Calls,
                             confidence,
-                            reason: reason_call.clone(),
+                            reason: reason_call,
                         });
                     }
                 }
@@ -395,7 +395,7 @@ impl GraphBuilder {
                             target: target_id,
                             rel_type: RelType::Accesses,
                             confidence,
-                            reason: reason_type.clone(),
+                            reason: reason_type,
                         });
                     }
                 }
@@ -420,8 +420,9 @@ impl GraphBuilder {
                         ResolveTarget::Callable,
                     );
 
+                    // Hoist reason interning out of inner loop — `StrRef` is `Copy`.
+                    let reason_ref = string_pool.add(&fw_ref.reason);
                     for (target_id, _) in targets {
-                        let reason_ref = string_pool.add(&fw_ref.reason);
                         edges.push(Edge {
                             source: source_id,
                             target: target_id,
@@ -451,6 +452,8 @@ impl GraphBuilder {
                 }
 
                 let confidence = (fanout_ref.base_confidence / n.sqrt()).max(0.1);
+                // Hoist reason interning out of both inner loops — `StrRef` is `Copy`.
+                let reason_ref = string_pool.add(&fanout_ref.reason);
 
                 for candidate_name in &fanout_ref.candidates {
                     // Resolve candidate via same-file → import-scoped → global.
@@ -462,7 +465,6 @@ impl GraphBuilder {
                         ResolveTarget::Callable,
                     );
                     for (target_id, _) in targets {
-                        let reason_ref = string_pool.add(&fanout_ref.reason);
                         edges.push(Edge {
                             source: source_id,
                             target: target_id,
