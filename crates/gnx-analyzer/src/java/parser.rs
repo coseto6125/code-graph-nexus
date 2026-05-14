@@ -1,5 +1,5 @@
 use crate::calls::extract_calls;
-use crate::framework_helpers::node_span;
+use crate::framework_helpers::{has_import_from, node_span};
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -84,7 +84,8 @@ impl LanguageProvider for JavaProvider {
 
         let mut node_map: HashMap<usize, RawNode> = HashMap::new();
         let mut imports = Vec::new();
-        let mut framework_refs: Vec<RawFrameworkRef> = Vec::new();
+        // Buffer Spring refs and emit only if the file imports org.springframework.
+        let mut pending_spring_refs: Vec<RawFrameworkRef> = Vec::new();
 
         let idx = &self.indices;
 
@@ -224,7 +225,7 @@ impl LanguageProvider for JavaProvider {
                     std::str::from_utf8(&source[cls.start_byte()..cls.end_byte()]),
                     std::str::from_utf8(&source[tgt.start_byte()..tgt.end_byte()]),
                 ) {
-                    framework_refs.push(RawFrameworkRef {
+                    pending_spring_refs.push(RawFrameworkRef {
                         source_name: class_name.to_string(),
                         target_name: target_name.to_string(),
                         confidence: 0.8,
@@ -240,7 +241,7 @@ impl LanguageProvider for JavaProvider {
                     std::str::from_utf8(&source[cls.start_byte()..cls.end_byte()]),
                     std::str::from_utf8(&source[mth.start_byte()..mth.end_byte()]),
                 ) {
-                    framework_refs.push(RawFrameworkRef {
+                    pending_spring_refs.push(RawFrameworkRef {
                         source_name: class_name.to_string(),
                         target_name: method_name.to_string(),
                         confidence: 0.9,
@@ -250,6 +251,15 @@ impl LanguageProvider for JavaProvider {
                 }
             }
         }
+
+        // Framework-presence gate: emit Spring refs only when the file imports
+        // anything under `org.springframework`. Annotations alone aren't proof.
+        const SPRING_REQUIRED: &[&str] = &["org.springframework"];
+        let framework_refs: Vec<RawFrameworkRef> = if has_import_from(&imports, SPRING_REQUIRED) {
+            pending_spring_refs
+        } else {
+            Vec::new()
+        };
 
         let mut nodes: Vec<RawNode> = node_map.into_values().collect();
 

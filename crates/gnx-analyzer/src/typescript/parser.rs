@@ -1,5 +1,7 @@
 use crate::calls::extract_calls;
-use crate::framework_helpers::{enclosing_function_name, node_span, MODULE_LEVEL_SOURCE};
+use crate::framework_helpers::{
+    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+};
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
 use gnx_core::graph::NodeKind;
@@ -301,32 +303,45 @@ impl LanguageProvider for TypeScriptProvider {
         // Extract call sites and attach to enclosing function/method nodes.
         extract_calls(tree.root_node(), source, &mut nodes, &["call_expression"]);
 
+        // Framework-presence gates: only emit Express/NestJS refs when the file
+        // actually imports the matching package.
+        const EXPRESS_REQUIRED: &[&str] = &["express"];
+        const NESTJS_REQUIRED: &[&str] = &["@nestjs"];
+        let has_express = has_import_from(&imports, EXPRESS_REQUIRED);
+        let has_nestjs = has_import_from(&imports, NESTJS_REQUIRED);
+
         // Resolve framework-ref enclosing functions via span containment.
         // Module-level captures use the MODULE_LEVEL_SOURCE sentinel (consistent with Actix).
-        let mut framework_refs: Vec<RawFrameworkRef> = pending_express_handlers
-            .into_iter()
-            .map(|(target, cap_span)| {
-                let source_name = enclosing_function_name(&nodes, cap_span)
-                    .unwrap_or_else(|| MODULE_LEVEL_SOURCE.to_string());
-                RawFrameworkRef {
-                    source_name,
-                    target_name: target,
-                    confidence: 0.8,
-                    reason: "express-route-handler".to_string(),
-                    span: cap_span,
-                }
-            })
-            .collect();
+        let mut framework_refs: Vec<RawFrameworkRef> = if has_express {
+            pending_express_handlers
+                .into_iter()
+                .map(|(target, cap_span)| {
+                    let source_name = enclosing_function_name(&nodes, cap_span)
+                        .unwrap_or_else(|| MODULE_LEVEL_SOURCE.to_string());
+                    RawFrameworkRef {
+                        source_name,
+                        target_name: target,
+                        confidence: 0.8,
+                        reason: "express-route-handler".to_string(),
+                        span: cap_span,
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // NestJS @Controller → @Get/@Post/... method bindings.
-        for (class_name, method_name, span) in pending_nestjs_handlers {
-            framework_refs.push(RawFrameworkRef {
-                source_name: class_name,
-                target_name: method_name,
-                confidence: 0.9,
-                reason: "nestjs-route-handler".to_string(),
-                span,
-            });
+        if has_nestjs {
+            for (class_name, method_name, span) in pending_nestjs_handlers {
+                framework_refs.push(RawFrameworkRef {
+                    source_name: class_name,
+                    target_name: method_name,
+                    confidence: 0.9,
+                    reason: "nestjs-route-handler".to_string(),
+                    span,
+                });
+            }
         }
 
         Ok(LocalGraph {

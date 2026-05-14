@@ -1,5 +1,5 @@
 use crate::calls::extract_calls;
-use crate::framework_helpers::{node_span, MODULE_LEVEL_SOURCE};
+use crate::framework_helpers::{has_import_from, node_span, MODULE_LEVEL_SOURCE};
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use gnx_core::graph::NodeKind;
@@ -252,35 +252,48 @@ impl LanguageProvider for RustProvider {
             &["call_expression", "macro_invocation"],
         );
 
+        // Framework-presence gates: only claim Axum/Actix refs when the file
+        // actually `use`s the matching crate. Saves us from false positives in
+        // files that happen to define a `get()` fn or use `#[get]` from another
+        // crate.
+        const AXUM_REQUIRED: &[&str] = &["axum"];
+        const ACTIX_REQUIRED: &[&str] = &["actix_web", "actix"];
+        let has_axum = has_import_from(&imports, AXUM_REQUIRED);
+        let has_actix = has_import_from(&imports, ACTIX_REQUIRED);
+
         // Resolve enclosing function for each framework-ref capture via byte-range
         // containment; pick the innermost (smallest) function that contains the capture.
         let mut framework_refs = Vec::with_capacity(axum_handler_captures.len());
-        for (handler_name, cap_start, cap_end, span) in axum_handler_captures {
-            let enclosing = fn_spans
-                .iter()
-                .filter(|(_, range)| range.start <= cap_start && cap_end <= range.end)
-                .min_by_key(|(_, range)| range.end - range.start);
-            if let Some((fn_name, _)) = enclosing {
-                framework_refs.push(RawFrameworkRef {
-                    source_name: fn_name.clone(),
-                    target_name: handler_name,
-                    confidence: 0.8,
-                    reason: "axum-route-handler".to_string(),
-                    span,
-                });
+        if has_axum {
+            for (handler_name, cap_start, cap_end, span) in axum_handler_captures {
+                let enclosing = fn_spans
+                    .iter()
+                    .filter(|(_, range)| range.start <= cap_start && cap_end <= range.end)
+                    .min_by_key(|(_, range)| range.end - range.start);
+                if let Some((fn_name, _)) = enclosing {
+                    framework_refs.push(RawFrameworkRef {
+                        source_name: fn_name.clone(),
+                        target_name: handler_name,
+                        confidence: 0.8,
+                        reason: "axum-route-handler".to_string(),
+                        span,
+                    });
+                }
             }
         }
 
         // Actix attribute-macro routes: emit one ref per #[verb] → fn pair.
         // No natural source — use module-level sentinel; confidence 0.9 (syntactic, unambiguous).
-        for (method, handler, span) in actix_handler_captures {
-            framework_refs.push(RawFrameworkRef {
-                source_name: MODULE_LEVEL_SOURCE.to_string(),
-                target_name: handler,
-                confidence: 0.9,
-                reason: format!("actix-route-{}", method),
-                span,
-            });
+        if has_actix {
+            for (method, handler, span) in actix_handler_captures {
+                framework_refs.push(RawFrameworkRef {
+                    source_name: MODULE_LEVEL_SOURCE.to_string(),
+                    target_name: handler,
+                    confidence: 0.9,
+                    reason: format!("actix-route-{}", method),
+                    span,
+                });
+            }
         }
 
         Ok(LocalGraph {

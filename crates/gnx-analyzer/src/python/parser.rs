@@ -1,7 +1,7 @@
 use crate::calls::extract_calls;
 use crate::framework_helpers::{
-    enclosing_class, enclosing_function_name, enumerate_class_methods, node_span, Span,
-    MODULE_LEVEL_SOURCE,
+    enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
+    Span, MODULE_LEVEL_SOURCE,
 };
 use gnx_core::analyzer::provider::LanguageProvider;
 use gnx_core::analyzer::types::{
@@ -117,8 +117,11 @@ impl LanguageProvider for PythonProvider {
         // the enclosing function via span containment after nodes are built.
         let mut pending_depends: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
 
-        // Directly emitted route decorator refs (no span resolution needed).
-        let mut route_refs: Vec<RawFrameworkRef> = Vec::new();
+        // Per-framework pending refs. Emitted only if the file imports the
+        // matching framework — see gates below.
+        let mut pending_fastapi_refs: Vec<RawFrameworkRef> = Vec::new();
+        let mut pending_django_refs: Vec<RawFrameworkRef> = Vec::new();
+        let mut pending_celery_refs: Vec<RawFrameworkRef> = Vec::new();
 
         // Reflection fan-out sites: outer `getattr(self, name)()` call spans.
         // Resolved after `nodes` is populated (need enclosing class + sibling methods).
@@ -200,7 +203,7 @@ impl LanguageProvider for PythonProvider {
                     if let Ok(target_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
-                        route_refs.push(RawFrameworkRef {
+                        pending_django_refs.push(RawFrameworkRef {
                             source_name: MODULE_LEVEL_SOURCE.to_string(),
                             target_name: target_name.to_string(),
                             confidence: 0.9,
@@ -212,7 +215,7 @@ impl LanguageProvider for PythonProvider {
                     if let Ok(target_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
-                        route_refs.push(RawFrameworkRef {
+                        pending_celery_refs.push(RawFrameworkRef {
                             source_name: MODULE_LEVEL_SOURCE.to_string(),
                             target_name: target_name.to_string(),
                             confidence: 0.9,
@@ -277,7 +280,7 @@ impl LanguageProvider for PythonProvider {
                     std::str::from_utf8(&source[method_n.start_byte()..method_n.end_byte()]),
                     std::str::from_utf8(&source[handler_n.start_byte()..handler_n.end_byte()]),
                 ) {
-                    route_refs.push(RawFrameworkRef {
+                    pending_fastapi_refs.push(RawFrameworkRef {
                         source_name: app_str.to_string(),
                         target_name: handler_str.to_string(),
                         confidence: 0.9,
@@ -378,10 +381,9 @@ impl LanguageProvider for PythonProvider {
 
         // Resolve FastAPI Depends() refs: find the innermost enclosing
         // Function/Method node whose span contains the capture span.
-        let mut framework_refs: Vec<RawFrameworkRef> = route_refs;
         for (target_name, span) in pending_depends {
             if let Some(source_name) = enclosing_function_name(&nodes, span) {
-                framework_refs.push(RawFrameworkRef {
+                pending_fastapi_refs.push(RawFrameworkRef {
                     source_name,
                     target_name,
                     confidence: 0.6,
@@ -389,6 +391,25 @@ impl LanguageProvider for PythonProvider {
                     span,
                 });
             }
+        }
+
+        // Framework-presence gates: only claim "this is a FastAPI/Django/Celery
+        // ref" when the file actually imports the framework. Refraction fan-out
+        // and blind_spots are intentionally not gated — they are language-level
+        // patterns, not framework-specific.
+        const FASTAPI_REQUIRED: &[&str] = &["fastapi"];
+        const DJANGO_REQUIRED: &[&str] = &["django"];
+        const CELERY_REQUIRED: &[&str] = &["celery"];
+
+        let mut framework_refs: Vec<RawFrameworkRef> = Vec::new();
+        if has_import_from(&imports, FASTAPI_REQUIRED) {
+            framework_refs.extend(pending_fastapi_refs);
+        }
+        if has_import_from(&imports, DJANGO_REQUIRED) {
+            framework_refs.extend(pending_django_refs);
+        }
+        if has_import_from(&imports, CELERY_REQUIRED) {
+            framework_refs.extend(pending_celery_refs);
         }
 
         // Resolve reflection-getattr fan-out sites: enclosing method (source)
