@@ -33,22 +33,43 @@ command.
 - **All install / uninstall flows MUST be reached via `gnx admin` TUI menu items.**
 - **DO NOT add `gnx install`, `gnx integrate`, `gnx host-install`, or
   any sibling top-level subcommand.**
+- The TUI's primary choice is *integration mechanism*, not host —
+  user picks "how invasive" first (native fork vs MCP side-car), then
+  the target host. Native is offered only where it's technically
+  available; MCP is the universal fallback.
 - The TUI menu structure (target):
   ```
   gnx admin
-   ├── Host integration
-   │   ├── Claude Code (MCP)        → install / uninstall / status
-   │   ├── Gemini CLI (fork-patch)  → install / uninstall / status
-   │   └── Codex CLI (workspace-dep)→ install / uninstall / status
+   ├── Bind tool to code agent
+   │   ├── Native (no side-car; integrates into host's own tool registry)
+   │   │   ├── Codex CLI (Rust workspace dep — zero IPC, mmap'd graph shared)
+   │   │   └── Gemini CLI (TypeScript BaseTool — spawns gnx subprocess)
+   │   └── MCP (one shared side-car serves any MCP-capable host)
+   │       ├── Claude Code         ← only route Anthropic exposes
+   │       ├── Cursor              ← supports MCP
+   │       ├── Windsurf            ← supports MCP
+   │       ├── Cline / Roo Code    ← supports MCP
+   │       └── (any other MCP-capable host) — generic registration writer
    ├── (future) Diagnostics
    └── (future) Index maintenance
   ```
-- Status detection: each host's `status` action probes whether the
-  current install is present (file exists / config entry present /
-  workspace dep declared) and reports `installed` / `missing` /
-  `outdated`.
+- Each leaf provides three actions: install / uninstall / status.
+- Status detection: probes whether the install is present (file exists
+  / config entry present / workspace dep declared) and reports
+  `installed` / `missing` / `outdated`.
+- **Native and MCP are not mutually exclusive at the host level** — a
+  user could install gnx as native into Codex AND also install the
+  shared MCP side-car for Claude Code. The TUI tracks each leaf
+  independently. The branches in the menu correspond to install
+  *mechanisms*, not user "modes".
 
-## Path 1 — Claude Code (MCP server)
+> **Reading order**: paths below are now grouped by *mechanism* (Native
+> first, MCP second) to match the TUI hierarchy. Within each mechanism,
+> hosts are listed in the order they appear in the menu.
+
+## Mechanism: MCP (shared side-car for any MCP-capable host)
+
+### Path 1 — Claude Code (MCP server)
 
 **Why MCP for Claude Code**: Claude Code is closed source. There is no
 public extension point that injects a tool into the model's
@@ -109,7 +130,27 @@ untouched (read-modify-write, atomic).
 `gnx admin` reads the JSON file and reports `installed` / `missing` /
 `outdated` (compares the binary path in the JSON vs `which gnx-mcp`).
 
-## Path 2 — Gemini CLI (fork patch)
+### Path 1b — Cursor / Windsurf / Cline / Roo Code / generic MCP host
+
+All four of these (and any future MCP-capable host) consume the **same
+`gnx-mcp` side-car binary** as Claude Code. The only difference is
+where the registration entry lives:
+
+| Host | Registration file | Format |
+|---|---|---|
+| Claude Code | `~/.config/claude-code/mcp-servers.json` or `.mcp.json` (project) | JSON `mcpServers` object |
+| Cursor | `~/.cursor/mcp.json` or `.cursor/mcp.json` (project) | JSON `mcpServers` object (same shape) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | JSON |
+| Cline / Roo Code | VS Code settings: `cline.mcpServers` | JSON inside `settings.json` |
+| Other / unknown | TUI prints the JSON snippet + instructs user to paste into their host's config | Manual |
+
+The TUI's MCP branch dispatches on host pick → writes to the right
+file with the right schema variant. The side-car binary itself is
+host-agnostic — install it once, register it N times.
+
+## Mechanism: Native (no side-car; host's own tool registry)
+
+### Path 2 — Gemini CLI (fork patch)
 
 **Why fork**: Gemini CLI is open source. The "feels native" route is to
 add a `BaseTool` subclass that joins the built-in tool registry. MCP
@@ -303,6 +344,8 @@ spec. Its subcommands stay inside the TUI — never exposed as
 |---|---|---|
 | Top-level command name | `gnx admin` | Sibling to `gnx config`; "admin" signals "one-off setup" vs `config`'s "edit current settings". |
 | Install command exposure | TUI-only, no flat `gnx install` | User constraint. Keeps `gnx` public surface minimal; install is admin work. |
+| Menu top-level grouping | By **mechanism** (Native / MCP), not by host | User-clarified 2026-05-15: Codex and Gemini both support MCP *and* native; grouping by host would force a false either-or per host. Grouping by mechanism lets the user pick "how invasive" first and surfaces that MCP is the universal fallback for everything Anthropic-grade and below. |
+| MCP side-car scope | One binary serves all MCP hosts | The `gnx-mcp` binary is host-agnostic — Claude Code, Cursor, Windsurf, Cline all consume the same stdio JSON-RPC interface. The TUI's only per-host work is writing to the right config file. |
 | Auto-patch user forks | No | Too easy to corrupt user's git tree. TUI writes patch file + prints manual steps. |
 | Claude Code integration route | MCP only | Closed source — no other route exists. |
 | Codex CLI integration route | Workspace dep (in-process) | Same language; zero IPC overhead; mmap'd graph shared. |
