@@ -112,6 +112,12 @@ pub fn parse_configs(repo_path: &Path) -> PathAliases {
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
             if !dir.is_empty() {
+                // Reject ..-traversal: a malicious .csproj could otherwise
+                // register an alias pointing outside the repo root, letting
+                // the resolver follow it to read files outside the project.
+                if dir.split('/').any(|seg| seg == "..") {
+                    continue;
+                }
                 let stem = ref_path
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -452,6 +458,37 @@ mod tests {
         assert!(
             !found.is_empty(),
             "ProjectReference should register a path alias for `Shared`"
+        );
+    }
+
+    /// A malicious or compromised .csproj with a `..`-traversal
+    /// `<ProjectReference Include="...">` must not register an alias that
+    /// escapes the repo root — otherwise the downstream resolver would follow
+    /// it to read files outside the project.
+    #[test]
+    fn csproj_traversal_path_rejected_from_aliases() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("Evil.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../../../etc/shadow.csproj" />
+  </ItemGroup>
+</Project>"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut traversal_found = false;
+        aliases.expand("shadow", |c| {
+            if c.split('/').any(|seg| seg == "..") {
+                traversal_found = true;
+            }
+            true
+        });
+        assert!(
+            !traversal_found,
+            "..-traversal ProjectReference must not be registered as an alias"
         );
     }
 }
