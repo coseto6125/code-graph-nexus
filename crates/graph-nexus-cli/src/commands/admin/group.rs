@@ -16,5 +16,5 @@ pub enum GroupCommands {
 }
 
 pub fn run(_cmd: GroupCommands) -> Result<(), GnxError> {
-    Err(GnxError::Output("admin group commands stub — implement in Task 4.2".into()))
+    Err(GnxError::Output("admin group: not yet implemented".into()))
 }

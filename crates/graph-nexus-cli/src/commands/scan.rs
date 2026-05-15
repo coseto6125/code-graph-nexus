@@ -15,5 +15,5 @@ pub struct ScanArgs {
 }
 
 pub fn run(_args: ScanArgs, _engine: &Engine) -> Result<(), GnxError> {
-    Err(GnxError::Output("scan command stub — implement in Task 3.1".into()))
+    Err(GnxError::Output("scan: not yet implemented".into()))
 }
