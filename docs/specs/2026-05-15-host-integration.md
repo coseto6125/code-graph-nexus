@@ -127,25 +127,114 @@ pub fn run(args: ContextArgs, engine: &Engine) -> Result<()> {
 }
 ```
 
-MCP side then consumes `run_inner` directly, **but renders output as
-TOON (token-efficient), not raw JSON** — this preserves the project's
-token-cheapest-output principle which is the whole point of the Rust
-port vs upstream:
+MCP side consumes `run_inner` directly, **renders output as TOON
+(token-efficient), not raw JSON** — preserves the project's
+token-cheapest-output principle. **Zero hardcoding** of which tools
+exist: each command self-registers via the `inventory` crate at link
+time; the MCP crate is tool-agnostic.
+
+### MCP crate infrastructure (~80 LOC, written once)
 
 ```rust
-// graph-nexus-mcp/src/tools.rs
-async fn context_handler(args: Value, engine: &Engine) -> ToolResult {
-    let parsed: ContextArgs = serde_json::from_value(args)?;
-    let value = commands::context::run_inner(parsed, engine)?;
+// graph-nexus-mcp/src/registry.rs
 
-    // Default to TOON for max token economy.  Model may override per
-    // call via an extra `format` arg if it specifically needs JSON
-    // for downstream parsing (mirrors gnx CLI's --format flag).
-    let format = parsed.format.unwrap_or(OutputFormat::Toon);
-    let body = output::emit_to_string(&value, format)?;
-    ToolResult::text(body)   // text content, NOT json content
+pub struct GnxMcpTool {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub schema: fn() -> schemars::schema::RootSchema,
+    pub handler: fn(serde_json::Value, &Engine)
+        -> Result<serde_json::Value, GnxError>,
+}
+inventory::collect!(GnxMcpTool);
+
+/// MCP server is completely tool-agnostic — iterate whatever was
+/// submitted at link time.
+pub fn register_all(server: &mut McpServer, engine: &Engine) {
+    for tool in inventory::iter::<GnxMcpTool>() {
+        server.register(tool.name, tool.description, (tool.schema)(),
+            move |args| {
+                let value = (tool.handler)(args, engine)?;
+                let body = output::emit_to_string(&value, OutputFormat::Toon)?;
+                Ok(ToolResult::text(body))
+            });
+    }
 }
 ```
+
+### Per-command self-registration (one line at the bottom of each `commands/<x>.rs`)
+
+```rust
+// commands/context.rs
+
+/// Look up a symbol's definition, callers, callees, surrounding context.
+#[derive(Args, Serialize, Deserialize, JsonSchema)]
+pub struct ContextArgs { /* fields with /// doc comments */ }
+
+pub fn run_inner(args: ContextArgs, engine: &Engine)
+    -> Result<serde_json::Value, GnxError> { /* business logic */ }
+
+pub fn run(args: ContextArgs, engine: &Engine) -> Result<(), GnxError> {
+    let value = run_inner(args, engine)?;
+    emit(&value, args.format)
+}
+
+// ← single line; tool name auto-derived from module_path!()
+//   ("...::commands::context" → "gnx_context")
+gnx_register_mcp_tool!(ContextArgs, run_inner);
+```
+
+### The registration macro (one definition, in `graph-nexus-mcp::macros`)
+
+```rust
+#[macro_export]
+macro_rules! gnx_register_mcp_tool {
+    ($args:ty, $inner:path) => {
+        inventory::submit! {
+            $crate::registry::GnxMcpTool {
+                name: $crate::registry::derive_tool_name(module_path!()),
+                description: <$args as ::schemars::JsonSchema>::schema_name(),
+                schema: || ::schemars::schema_for!($args),
+                handler: |raw, engine| {
+                    let parsed: $args = ::serde_json::from_value(raw)?;
+                    $inner(parsed, engine)
+                },
+            }
+        }
+    };
+}
+```
+
+### What "zero hardcode" means concretely
+
+- **MCP crate** has NO list of commands. It iterates `inventory::iter::<GnxMcpTool>()`.
+- **Adding a 9th command** requires only: write `commands/foo.rs` with `Args + run_inner + gnx_register_mcp_tool!(FooArgs, run_inner)`. Zero changes to MCP crate.
+- **Tool name** is derived from `module_path!()`; no string literal anywhere.
+- **Tool description** is derived from the `/// doc comment` on the Args struct via schemars; no separate description text.
+- **Tool input schema** is derived from the `JsonSchema` derive; no hand-written schema JSON.
+
+### Output handling refactor (unchanged)
+
+- `output::emit_to_string(value, format) -> Result<String>` — new helper,
+  same serialization logic the CLI uses, returns String instead of
+  writing to stdout.
+- `output::emit(value, format)` becomes `println!("{}", emit_to_string(value, format)?)`.
+
+The CLI's per-command default format (some commands default `toon`,
+some `text`, some `compact` — already token-optimized per the
+README) is preserved on the CLI path. MCP defaults to TOON across all
+tools for consistency and best token density.
+
+### Constraint disclosure
+
+Rust has no Python-style runtime module reflection (no
+`importlib.import_module` / `dir(commands)`). The `inventory` crate
+uses linker-section tricks to collect static submissions at program
+start — items only land in the iter if their containing module is
+actually compiled into the binary. Since every `commands/<x>.rs`
+already has `pub mod xxx;` in `commands/mod.rs` (else the CLI
+subcommand wouldn't work), the `inventory` collection is complete
+by construction. **No platform caveats for our target environments**
+(Linux / macOS / Windows native binaries); WASM is not a target.
 
 Output handling refactor (paired with `run_inner` split):
 
@@ -167,12 +256,14 @@ Refactor scope: 28 `commands/*.rs` files, +10-15 LOC each, total
 ~300-400 LOC mechanical refactor. **Must land before
 `graph-nexus-mcp` crate work begins.**
 
-### Tool set (initial)
+### Tool set (initial — auto-discovered, this list is informational)
 
-Tools exposed via MCP (each name `gnx_<subcommand>` mirrors upstream
-gitnexus for familiarity):
+The MCP crate doesn't enumerate tools; it iterates whatever
+`inventory` collects. The list below is the **expected** set after
+all `commands/*.rs` ship their one-line registration. Each name is
+auto-derived from `module_path!()`:
 
-| MCP tool | Wraps `run_inner` of |
+| Auto-derived MCP tool name | Source module |
 |---|---|
 | `gnx_context` | `commands::context` |
 | `gnx_impact` | `commands::impact` |
@@ -182,6 +273,11 @@ gitnexus for familiarity):
 | `gnx_route_map` | `commands::route_map` |
 | `gnx_shape_check` | `commands::shape_check` |
 | `gnx_multi_query` | `commands::multi_query` |
+
+Test invariant: `gnx mcp tools` must list these 8 names exactly. If
+a command file forgets `gnx_register_mcp_tool!`, the test fails
+loudly. New commands appear in `gnx mcp tools` the moment the macro
+line is added — no MCP-crate change required.
 
 Rust MCP SDK: `rmcp` (Anthropic-blessed) primary candidate; `mcp-rs`
 as fallback. Final pick deferred to implementation phase.
@@ -434,6 +530,8 @@ spec. Its subcommands stay inside the TUI — never exposed as
 | Args + business-logic sharing | Refactor `commands/<x>.rs::run` → `run_inner` (returns Value) + `run` (calls inner + emit) | User-clarified 2026-05-15: no schema or output duplication between CLI and MCP. Args struct adds `Serialize, Deserialize, JsonSchema` derives; schema auto-generated via `schemars::schema_for!`. MCP wrapper consumes `run_inner` directly. Precondition for graph-nexus-mcp crate work. |
 | MCP output format | TOON by default (`ToolResult::text(toon_body)`) | User-clarified 2026-05-15: raw JSON would defeat the token-economy thesis. Reuse CLI's `emit_to_string(value, OutputFormat::Toon)` helper so MCP and CLI share serialization. Model can override via per-call `format` arg if it specifically needs JSON. |
 | Output helper refactor | Add `output::emit_to_string()` returning String | Split serialization from stdout-write so both CLI (`emit`) and MCP (`ToolResult::text`) consume the same code. Paired with the `run_inner` refactor. |
+| MCP tool discovery | `inventory` crate + per-command self-registration via `gnx_register_mcp_tool!` macro | User-clarified 2026-05-15: zero hardcoded tool list in MCP crate. Adding a command = one macro line in that command's own file. MCP crate iterates `inventory::iter::<GnxMcpTool>()`. Tool name from `module_path!()`, description from `JsonSchema` doc comment — no string literals anywhere. |
+| Self-registration completeness invariant | Test asserts `gnx mcp tools` reports exactly the 8 known commands | Catches "forgot to add the macro line" silent regressions. Adding a 9th command updates the test. |
 | Native install automation | Manual (TUI prints patch + steps) | Too easy to corrupt user's git tree. Auto-`git apply` rejected. |
 | MCP install automation | Fully automated (atomic JSON write) | All MCP host config files are well-known JSON; safe to auto-write with read-modify-write atomicity. TUI just asks "which host?" then writes the entry. |
 | Native scope | Codex + Gemini only | User-clarified 2026-05-15: every other host is either closed source (Cursor/Copilot/Windsurf/Claude Code) or open source with too-small user base to justify per-fork maintenance (Cline/Roo/Aider/Continue). MCP catches all of those. |
