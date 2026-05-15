@@ -426,39 +426,65 @@ line is added — no MCP-crate change required.
 Rust MCP SDK: `rmcp` (Anthropic-blessed) primary candidate; `mcp-rs`
 as fallback. Final pick deferred to implementation phase.
 
-### Registration steps (what the TUI does)
+### Registration steps (idempotent upsert)
 
-1. Probe `claude --version` — abort with friendly message if not installed.
-2. Atomic read-modify-write `~/.config/claude-code/mcp-servers.json`
-   (or per-project `.mcp.json` if user picks project scope):
-   ```json
-   {
-     "mcpServers": {
-       "gnx": {
-         "command": "gnx",
-         "args": ["mcp", "serve"],
-         "env": {}
-       }
-     }
-   }
-   ```
+The TUI never silently overwrites. Three-state install logic, applied
+uniformly to every MCP host:
+
+1. Probe `claude --version` (or equivalent for each host) — abort with
+   friendly message if host not installed.
+2. Atomic read-modify-write on the host's config file with **upsert**
+   semantics. Read the existing `mcpServers.gnx` entry (if any) and
+   compare against the entry we'd write:
+   - **State A — no existing entry** → write it, report `installed`.
+   - **State B — entry matches what we'd write** (same `command`,
+     `args`, `env`) → no-op, report `already up to date`. Exit cleanly.
+   - **State C — entry exists but differs** (e.g. user previously
+     installed in spawn mode and is now picking daemon, or `gnx`
+     binary moved on PATH) → display a unified diff:
+     ```
+     Existing gnx entry:
+       command: gnx
+       args:    ["mcp", "serve"]
+     New entry:
+       command: gnx
+       args:    ["mcp", "serve", "--daemon"]
+     Update? [y/N]
+     ```
+     On confirm → overwrite. On decline → abort, leave existing entry
+     untouched, exit non-zero so scripts can detect.
 3. Print uninstall reminder: `gnx admin → Bind tool to code agent → MCP → Claude Code → uninstall`.
+
+Atomicity contract: the file write goes through `atomic_write_json` —
+tmp + fsync + rename — so partial writes never corrupt the host's
+config. Other `mcpServers` entries (non-`gnx` keys) are read in,
+preserved through the modify cycle, and written back untouched.
 
 ### Uninstall
 
 Remove the `"gnx"` key from the same JSON file; leave other entries
-untouched (read-modify-write, atomic).
+untouched (read-modify-write, atomic). If no `gnx` key exists, report
+`not installed` and exit cleanly (idempotent — uninstalling something
+that isn't there is a no-op, not an error).
 
 ### Status probe
 
-`gnx admin` reads the JSON file and reports `installed` / `missing` /
-`outdated` (compares the binary path in the JSON vs `which gnx-mcp`).
+`gnx admin` reads the JSON file and reports one of:
+- `installed (mode=spawn)` / `installed (mode=daemon)` — entry exists
+  and matches current binary location;
+- `outdated` — entry exists but `command` path doesn't match
+  `which gnx`, OR `args` indicates a mode we no longer support;
+- `missing` — no `gnx` entry.
+
+Status output never modifies the file. Useful in scripts to
+conditionally run install.
 
 ### Path 1b — Cursor / Windsurf / Cline / Roo Code / generic MCP host
 
 All four of these (and any future MCP-capable host) consume the **same
-`gnx-mcp` side-car binary** as Claude Code. The only difference is
-where the registration entry lives:
+`gnx` binary** as Claude Code, invoked the same way (`gnx mcp serve`
+or `gnx mcp serve --daemon`). The only difference is where the
+registration entry lives:
 
 | Host | Registration file | Format |
 |---|---|---|
@@ -680,6 +706,7 @@ spec. Its subcommands stay inside the TUI — never exposed as
 | Default mode | Spawn (Fresh) | Safer defaults — no stale graph, no memory footprint, no mtime-remap edge cases. Power users opt into daemon via the TUI mode picker. |
 | Daemon stale-graph mitigation | mtime-remap before each dispatch (~30 LOC) | POSIX `rename()` (used by `gnx analyze` via `crates/graph-nexus-core/src/registry/io.rs:17-35`) swaps dentry but mmap holds the unlinked old inode. Without mitigation, daemon serves stale data until restart. `fs::metadata().modified()` follows dentry → returns new inode's mtime → daemon detects and remaps. Cost: one syscall per call (<0.1ms). |
 | TUI mode picker | Asked at MCP install time per host | TUI prompts "Fast (daemon) ~12ms/call, 50-500MB resident, auto-refresh on gnx analyze · Fresh (spawn) ~24ms/call, <10MB resident, always 100% fresh". Writes appropriate `args` array into host config. User can re-run install to switch modes later. |
+| Install semantics | Three-state idempotent upsert | User-clarified 2026-05-15: re-running install when entry already exists must NOT silently overwrite. State A (no entry) → write. State B (entry matches) → no-op, report `already up to date`. State C (entry differs) → show diff + `y/N` confirm. Uninstall is idempotent — removing a non-existent entry is a no-op, not an error. Other `mcpServers` entries are preserved through every read-modify-write cycle. |
 | Native install automation | Manual (TUI prints patch + steps) | Too easy to corrupt user's git tree. Auto-`git apply` rejected. |
 | MCP install automation | Fully automated (atomic JSON write) | All MCP host config files are well-known JSON; safe to auto-write with read-modify-write atomicity. TUI just asks "which host?" then writes the entry. |
 | Native scope | Codex + Gemini only | User-clarified 2026-05-15: every other host is either closed source (Cursor/Copilot/Windsurf/Claude Code) or open source with too-small user base to justify per-fork maintenance (Cline/Roo/Aider/Continue). MCP catches all of those. |
