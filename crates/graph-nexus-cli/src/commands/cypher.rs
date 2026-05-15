@@ -120,8 +120,31 @@ fn value_to_json(v: &cypher::Value) -> serde_json::Value {
     }
 }
 
-fn serialize_toon(_r: &cypher::QueryResult) -> String {
-    unimplemented!("D3")
+fn serialize_toon(r: &cypher::QueryResult) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("columns: {}\n", r.columns.join(", ")));
+    out.push_str(&format!("rows[{}]:\n", r.rows.len()));
+    for row in &r.rows {
+        out.push_str("  ");
+        let cells: Vec<String> = row.iter().map(value_to_toon).collect();
+        out.push_str(&cells.join(", "));
+        out.push('\n');
+    }
+    out
+}
+
+fn value_to_toon(v: &cypher::Value) -> String {
+    use cypher::Value::*;
+    match v {
+        Null => "null".into(),
+        Bool(b) => b.to_string(),
+        Int(i) => i.to_string(),
+        Float(f) => f.to_string(),
+        Str(s) => s.clone(),
+        List(xs) => format!("[{}]", xs.iter().map(value_to_toon).collect::<Vec<_>>().join(",")),
+        NodeRef { name, kind, .. } => format!("{name}:{kind}"),
+        EdgeRef { rel_type, confidence, .. } => format!("{rel_type:?}:{confidence}"),
+    }
 }
 
 #[cfg(test)]
@@ -140,5 +163,21 @@ mod tests {
         assert_eq!(v["columns"], serde_json::json!(["a.name", "n"]));
         assert_eq!(v["rows"][0][0], "caller");
         assert_eq!(v["rows"][0][1], 3);
+    }
+
+    #[test]
+    fn toon_serialization_shape() {
+        let r = QueryResult {
+            columns: vec!["a.name".into(), "n".into()],
+            rows: vec![
+                vec![Value::Str("caller".into()), Value::Int(3)],
+                vec![Value::Str("foo".into()), Value::Int(1)],
+            ],
+        };
+        let s = serialize_toon(&r);
+        assert!(s.contains("columns: a.name, n"));
+        assert!(s.contains("rows[2]:"));
+        assert!(s.contains("caller, 3"));
+        assert!(s.contains("foo, 1"));
     }
 }
