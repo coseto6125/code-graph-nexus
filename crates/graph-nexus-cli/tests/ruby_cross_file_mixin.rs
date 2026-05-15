@@ -147,33 +147,32 @@ fn cross_file_delegator_alias_is_visible_inside_originating_file() {
 }
 
 #[test]
-fn cross_file_delegator_alias_does_not_propagate_through_include() {
-    // The architectural pin: from inside bar.rb, the resolver cannot see
-    // Foo's delegator-aliases. bar.rb's `RawImport` set does NOT contain
-    // `read`/`write` (only `Bar`'s class declaration sits in bar.rb), and
-    // the resolver's heritage-aware path is limited to emitting `Extends`
-    // edges — it does not perform method lookup through the chain.
-    //
-    // If a future PR closes this gap (option B in the spec), it should
-    // *invert* this assertion: `resolve_symbol("read", &bar.imports)` would
-    // start returning at least the alias hit (with low/medium confidence
-    // depending on whether `backend` is registered).
+fn cross_file_delegator_propagates_through_include_via_heritage_tier() {
+    // Cross-file mixin resolution: from inside bar.rb, looking up an
+    // unqualified `read` walks Bar's heritage (`["Foo"]`) through the
+    // resolver's Tier 2.75 (HeritageScoped) — `resolve_qualifier_file`
+    // locates `lib/foo.rb`, then `lookup_in_file` finds the Method
+    // RawNode the Ruby parser materialised for the `def_delegators`
+    // entry. bar.rb's own RawImport set stays clean (it does not absorb
+    // Foo's imports), but the resolver's enriched path now reaches the
+    // inherited method.
     let foo = parse_ruby("lib/foo.rb", FOO_RB);
     let bar = parse_ruby("lib/bar.rb", BAR_RB);
 
-    // bar.rb's RawImport set contains no delegator alias.
+    // bar.rb's RawImport set still contains no delegator alias — the
+    // heritage tier resolves through the symbol table, not by copying
+    // imports across files.
     let bar_has_read_alias = bar
         .imports
         .iter()
         .any(|i| i.alias.as_deref() == Some("read"));
     assert!(
         !bar_has_read_alias,
-        "current architecture: bar.rb must NOT carry Foo's delegator alias \
-         (cross-file mixin propagation is not yet implemented); got {:?}",
+        "bar.rb must NOT carry Foo's delegator alias verbatim — heritage tier \
+         resolves at lookup time, not by RawImport propagation; got {:?}",
         bar.imports
     );
 
-    // The full resolver path with bar.rb as the caller also returns no hits.
     let mut symbols = SymbolTable::new();
     let mut idx = 0u32;
     for n in &foo.nodes {
@@ -185,16 +184,21 @@ fn cross_file_delegator_alias_does_not_propagate_through_include() {
         idx += 1;
     }
     let resolver = Resolver::new(&symbols);
-    let res = resolver.resolve_symbol(
+    let bar_class = bar
+        .nodes
+        .iter()
+        .find(|n| n.name == "Bar")
+        .expect("Bar class node");
+    let res = resolver.resolve_symbol_with_heritage(
         Path::new("lib/bar.rb"),
         "read",
         &bar.imports,
         ResolveTarget::Callable,
+        &bar_class.heritage,
     );
     assert!(
-        res.is_empty(),
-        "current architecture: resolver from bar.rb must not resolve `read` \
-         through the Foo mixin; got hits {:?}",
-        res
+        !res.is_empty(),
+        "Tier 2.75 must resolve `read` from bar.rb through Bar's heritage \
+         (Foo's delegator-materialised Method); got no hits"
     );
 }

@@ -1,14 +1,15 @@
 # Ruby Receiver-Aware Resolver — design spec
 
 **Date**: 2026-05-16
-**Status**: Phase 1 landed in PR #13（single-file emit + cross-file pin test）; Phase 2 (cross-file mixin propagation in the resolver tier) deferred.
+**Status**: Both phases landed in PR #13 — single-file emit + Option C (resolver Tier 2.75 `HeritageScoped`) closes the cross-file mixin gap. The pin test was flipped to verify positive resolution.
 **Goal**: 描述如何讓 Ruby parser/resolver 能可靠識別 `def_delegator` / `def_delegators` / `delegate` 等 metaprogramming 呼叫，補上 PR [#13](https://github.com/coseto6125/gitnexus-rs/pull/13)（Ruby Named binding）刻意延後的最後一塊——「需要 receiver type 才能判斷的 method-creating call」。
 
-**Status update (post-implementation, 2026-05-16)**：PR #13 後續 commit 已 ship Option B + Option-A 兼容路徑：
-- `crates/graph-nexus-analyzer/src/ruby/{parser.rs, queries.scm}` 加入 `def_delegator` / `def_delegators` / `delegate` 三個 metaprogramming 呼叫的識別與 RawImport emit。
-- `crates/graph-nexus-analyzer/tests/ruby_named.rs` 新增 5 case 覆蓋 Forwardable / 無 Forwardable fallback / 使用者自定義 `def def_delegator` 反例。
-- `crates/graph-nexus-cli/tests/ruby_cross_file_mixin.rs` 透過全 Resolver pipeline 驗證 cross-file 邊界——目前的 architectural 事實是：跨檔 `module Foo { def_delegators }` + `class Bar { include Foo }` 場景下，Bar 內的 callsite **無法**自動透過 heritage chain 看到 Foo 的 delegator alias，因為 `Resolver::resolve_symbol`（resolver.rs:93-261）的 tier ladder 不會走 heritage closure 去 pull parent 的 `RawImport`。Heritage 只負責 emit `Extends` graph edge（builder.rs:1058-1074），不影響 symbol 查表。
-- 因此 §2 「Cross-file boundary」段落仍適用——跨檔 mixin propagation 留給未來獨立 PR（option C：resolver tier 增加 heritage-aware lookup），目前用 pin test 鎖住現狀。
+**Status update (post-implementation, 2026-05-16)**：PR #13 後續三個 commit 已完整 ship Option B + Option-A fallback + **Option C resolver tier**：
+- `crates/graph-nexus-analyzer/src/ruby/{parser.rs, queries.scm}` 加入 `def_delegator` / `def_delegators` / `delegate` 三個 metaprogramming 呼叫的識別。除了 RawImport alias 之外，**也同步 materialise 一個 `NodeKind::Method` RawNode** 到 enclosing class — 這是讓跨檔 heritage chain 能找到 delegated method 的關鍵。
+- `crates/graph-nexus-analyzer/src/resolution/heuristics.rs` + `resolver.rs` 新增 **Tier 2.75 `HeritageScoped`**（confidence 0.80，介於 QualifierScoped 0.85 與 Global 0.7）：bare-name callee 在 Tier 1/2/2.5 都 miss 時，把 caller 的 enclosing-class heritage 視為 implicit qualifier，逐一用 `resolve_qualifier_file` 找 parent 檔，再 `lookup_in_file` 找 method。
+- `crates/graph-nexus-analyzer/src/resolution/builder.rs` 新增 `enclosing_class_heritage` helper：對每個 method-level RawNode 找最小 span 包住它的 Class（NodeKind::Class，Ruby module 也是 Class kind）並回傳 heritage 列；Pass-2 call-edge emission 改用新增的 `resolve_symbol_with_heritage` 把 heritage 傳進去。
+- `crates/graph-nexus-cli/tests/ruby_cross_file_mixin.rs` **flipped** — 原 pin 住「跨檔 mixin 不傳遞」的測試現在反向驗證「`bar.rb` 內的 `read` callsite 透過 Bar.heritage=[Foo] 走 Tier 2.75 解到 `lib/foo.rb` 內的 delegated Method」。
+- 全 workspace 817 tests 全綠（cross-language regression-free），clippy `-D warnings` clean。
 
 **Related**:
 - [[named-binding-ruby]] — PR #13，已加入 `alias` keyword / `alias_method` / 常數別名三類靜態可解析的 named binding。
@@ -190,9 +191,9 @@ end
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| 主路線 | Option B（class-scope mixin tracking） | 在「LOC 成本 / false-positive 抑制 / 衝擊半徑」三軸都優於 A 與 C；C 留給未來跨檔 spec。 |
-| Option A 角色 | 收編為 B 的 low-confidence fallback | 避免「看到 `def_delegator` 但沒看到 `extend Forwardable`」直接消失；用 `confidence=low` 標記讓 downstream 可選擇。 |
-| 跨檔 mixin | 一階段不做（PR #13 已 verified by integration test） | 保持 PR 大小可控；跨檔需要 resolver 走 heritage closure（option C），由獨立 PR 承接。`crates/graph-nexus-cli/tests/ruby_cross_file_mixin.rs` 已 pin 住現狀，未來收尾 PR 直接翻轉 assertion 即可。 |
+| 主路線 | Option B + Option C 一起 ship | 原 spec 推薦 B 並把 C 留給未來；落地時驗證 C 的 patch 規模可控（resolver +35 LOC, builder helper +25 LOC, 全 workspace test 仍 0 failure），所以一輪內收掉。 |
+| Option A 角色 | 收編為 B 的 low-confidence fallback | 避免「看到 `def_delegator` 但沒看到 `extend Forwardable`」直接消失；後續若 `BindingKind` 落地可再升級為高/低信心二分 emit。 |
+| 跨檔 mixin | 已透過 Tier 2.75 + parser materialise Method node ship | `Resolver::resolve_symbol_with_heritage` 用 caller heritage 當 implicit qualifier 探 parent 檔，parser 把 delegator 同時 emit 成 Method RawNode，跨檔 chain 自動 work。`ruby_cross_file_mixin.rs` 的 pin test 已 flipped 為正向斷言。 |
 | 與 PR #13 關係 | 直接追加 commit 到 PR #13（非 stacked） | `def_delegator/s` + delegate 識別在 PR #13 的 second/third commit 內 ship；同一 PR 的 cross-file pin test 把 architectural 限制鎖住。 |
 | Feature flag | 不引入 | 改進方向，無 rollback 需求。 |
 | README 矩陣調整 | 不改 cell，per-cell note 已追加 `def_delegator/s + delegate (with Forwardable mixin detection)` | Named 已 ✓；本 commit 升級 per-cell note 的 coverage 描述。 |

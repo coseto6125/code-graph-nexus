@@ -563,6 +563,21 @@ impl LanguageProvider for RubyProvider {
             // BindingKind discriminant when one becomes available.
             let source_path = format!("{target}.{method}");
             push_alias_binding(&mut imports, &method, &source_path);
+            // Also materialise the delegator as a Method RawNode so cross-file
+            // mixin chains resolve via Tier 2.75 (HeritageScoped): without a
+            // real node in the originating module the alias is only visible
+            // to same-file lookups, leaving `class Bar; include Foo; end`
+            // callers unable to reach `Foo`'s delegated methods.
+            nodes.push(RawNode {
+                decorators: vec![],
+                is_exported: true,
+                heritage: vec![],
+                type_annotation: None,
+                name: method.clone(),
+                kind: NodeKind::Method,
+                span: (line, 0, line, 0),
+                calls: vec![],
+            });
         }
 
         // Extract call sites with receiver-type binding.
