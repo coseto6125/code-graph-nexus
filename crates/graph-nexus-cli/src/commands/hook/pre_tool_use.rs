@@ -99,7 +99,17 @@ fn extract_from_shell(cmd: &str) -> Option<String> {
         return None;
     }
     let flags_with_values = [
-        "-e", "-f", "-m", "-A", "-B", "-C", "-g", "--glob", "-t", "--type", "--include",
+        "-e",
+        "-f",
+        "-m",
+        "-A",
+        "-B",
+        "-C",
+        "-g",
+        "--glob",
+        "-t",
+        "--type",
+        "--include",
         "--exclude",
     ];
     let mut found_cmd = false;
