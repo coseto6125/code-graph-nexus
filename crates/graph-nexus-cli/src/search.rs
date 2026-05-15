@@ -17,8 +17,11 @@ pub struct TantivyEngine;
 ///     `parseHTML` → `parse HTML`, `parseConfig` → `parse Config`)
 ///   - letter↔digit boundaries (`utf8` → `utf 8`)
 fn tokenize_identifier(name: &str) -> String {
+    // Subword tokens go here; the original identifier is prepended at
+    // the end if (and only if) any actual split occurred. Skipping the
+    // prepend for single-word names avoids `"config" → "config config"`,
+    // which would double the term frequency and skew BM25 IDF.
     let mut tokens: Vec<String> = Vec::with_capacity(4);
-    tokens.push(name.to_string());
 
     let mut current = String::new();
     let chars: Vec<char> = name.chars().collect();
@@ -52,7 +55,21 @@ fn tokenize_identifier(name: &str) -> String {
     if !current.is_empty() {
         tokens.push(current);
     }
-    tokens.join(" ")
+    // Only one subword == the input itself: skip prepending the original
+    // to avoid the duplicate-token artefact.
+    match tokens.len() {
+        0 => String::new(),
+        1 => tokens.into_iter().next().unwrap(),
+        _ => {
+            let mut out = String::with_capacity(name.len() * 2);
+            out.push_str(name);
+            for t in &tokens {
+                out.push(' ');
+                out.push_str(t);
+            }
+            out
+        }
+    }
 }
 
 impl TantivyEngine {
@@ -116,44 +133,42 @@ impl TantivyEngine {
         Ok(())
     }
 
-    pub fn search(repo_path: &Path, query_str: &str) -> Vec<(f32, String)> {
+    /// Query the on-disk tantivy index. The return type distinguishes
+    /// two failure modes that callers (especially `bm25_hits_from_graph`)
+    /// need to handle differently:
+    ///
+    /// - `None` — index unavailable (missing dir, open failed, reader
+    ///   build failed, query parse error). Caller should fall back to
+    ///   substring scan so the hook still produces context.
+    /// - `Some(empty)` — index opened cleanly, query ran, BM25
+    ///   genuinely matched nothing. Caller MUST NOT fall back, since
+    ///   substring scan would produce noisy 0.4 hits that the trusted
+    ///   index already ruled out.
+    /// - `Some(vec)` — ranked uids + scores.
+    pub fn search(repo_path: &Path, query_str: &str) -> Option<Vec<(f32, String)>> {
         let index_dir = repo_path.join(".gitnexus-rs").join("tantivy");
         if !index_dir.exists() {
-            return vec![];
+            return None;
         }
-
-        let index = match Index::open_in_dir(&index_dir) {
-            Ok(idx) => idx,
-            Err(_) => return vec![],
-        };
-
-        let reader = match index
+        let index = Index::open_in_dir(&index_dir).ok()?;
+        let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()
-        {
-            Ok(r) => r,
-            Err(_) => return vec![],
-        };
-
-        let searcher = reader.searcher();
+            .ok()?;
+        let searcher: tantivy::Searcher = reader.searcher();
         let schema = index.schema();
         let name_field = schema.get_field("name").unwrap();
         let uid_field = schema.get_field("uid").unwrap();
 
         let query_parser = QueryParser::for_index(&index, vec![name_field]);
         let expanded = tokenize_identifier(query_str);
-        let query = match query_parser.parse_query(&expanded) {
-            Ok(q) => q,
-            Err(_) => return vec![],
-        };
+        let query = query_parser.parse_query(&expanded).ok()?;
+        let top_docs = searcher
+            .search(&query, &TopDocs::with_limit(20).order_by_score())
+            .ok()?;
 
-        let top_docs = match searcher.search(&query, &TopDocs::with_limit(20).order_by_score()) {
-            Ok(docs) => docs,
-            Err(_) => return vec![],
-        };
-
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(top_docs.len());
         for (score, doc_address) in top_docs {
             if let Ok(retrieved_doc) = searcher.doc::<tantivy::TantivyDocument>(doc_address) {
                 if let Some(uid_val) = retrieved_doc.get_first(uid_field) {
@@ -164,7 +179,7 @@ impl TantivyEngine {
             }
         }
 
-        results
+        Some(results)
     }
 }
 
@@ -221,7 +236,9 @@ mod tests {
 
     #[test]
     fn single_lowercase_word_passes_through() {
-        assert_eq!(tokenize_identifier("config"), "config config");
+        // No splits → return the input only (no `"config config"` duplicate
+        // that would skew BM25 IDF for unsplittable identifiers).
+        assert_eq!(tokenize_identifier("config"), "config");
     }
 
     #[test]

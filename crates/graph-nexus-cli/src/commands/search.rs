@@ -266,16 +266,22 @@ fn tantivy_hits(
     repo_label: &Option<String>,
     repo_root: &std::path::Path,
 ) -> Vec<Hit> {
-    let scored = crate::search::TantivyEngine::search(repo_root, pattern);
+    let scored = match crate::search::TantivyEngine::search(repo_root, pattern) {
+        Some(s) => s,
+        // Index unavailable / corrupt / parse error — fall through so
+        // hook context isn't silently empty.
+        None => return substring_hits(graph, pattern, kind_set, repo_label),
+    };
+    // Index ran cleanly. An empty scored vec means BM25 ruled out every
+    // symbol; we MUST NOT fall back to substring scan, since that would
+    // surface 0.4-scored noise the trusted index already rejected.
     if scored.is_empty() {
-        // Tantivy returns `vec![]` on either zero matches or open failure.
-        // Fall through so a stale/corrupt index doesn't silently produce
-        // empty hook context.
-        return substring_hits(graph, pattern, kind_set, repo_label);
+        return Vec::new();
     }
 
-    // uid → node_idx lookup. Built lazily and only once per call.
-    let mut uid_to_idx: HashMap<&str, usize> = HashMap::with_capacity(scored.len());
+    // uid → node_idx lookup over the whole graph (capacity matches the
+    // number of insertions, not the smaller `scored` set).
+    let mut uid_to_idx: HashMap<&str, usize> = HashMap::with_capacity(graph.nodes.len());
     for (idx, node) in graph.nodes.iter().enumerate() {
         uid_to_idx.insert(node.uid.resolve(&graph.string_pool), idx);
     }
