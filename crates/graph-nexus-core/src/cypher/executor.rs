@@ -850,4 +850,34 @@ mod tests {
             assert_eq!(r.rows.len(), 2, "expected c and d, got {:?}", r.rows);
         });
     }
+
+    // -----------------------------------------------------------------------
+    // C5 – bidirectional and reverse arrows
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn exec_reverse_arrow() {
+        // callee <-[:Calls]- caller  →  same edge, traversed in reverse
+        with_two(|g| {
+            let q = parse(
+                "MATCH (b:Function)<-[:Calls]-(a:Function) RETURN a.name, b.name",
+            )
+            .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1);
+            assert_eq!(r.rows[0][0], Value::Str("caller".into()));
+            assert_eq!(r.rows[0][1], Value::Str("callee".into()));
+        });
+    }
+
+    #[test]
+    fn exec_undirected_finds_both_directions() {
+        // undirected: same edge traversed out (caller→callee) and in (callee←caller)
+        with_two(|g| {
+            let q = parse("MATCH (a:Function)-[:Calls]-(b:Function) RETURN a.name, b.name")
+                .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 2);
+        });
+    }
 }
