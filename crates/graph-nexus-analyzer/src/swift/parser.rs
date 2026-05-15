@@ -198,6 +198,7 @@ impl LanguageProvider for SwiftProvider {
                         alias: Some(lhs.clone()),
                         imported_name: lhs,
                         source: rhs,
+                        binding_kind: None,
                     });
                 }
             }
@@ -283,6 +284,7 @@ impl LanguageProvider for SwiftProvider {
                                 alias: Some(ext.clone()),
                                 imported_name: ext,
                                 source: name_str.to_string(),
+                                binding_kind: None,
                             });
                         }
                     }
