@@ -1,6 +1,5 @@
 ;; Declarations
 (class_declaration
-  (attribute)* @decorator
   (modifiers (visibility_modifier) @export)?
   name: [
     (type_identifier)
@@ -14,7 +13,6 @@
 ;; return type as a sibling `name:` field on `function_declaration`, so we
 ;; capture it positionally rather than via a `result:` field.
 (function_declaration
-  (attribute)* @decorator
   (modifiers (visibility_modifier) @export)?
   name: (simple_identifier) @function.name) @function
 

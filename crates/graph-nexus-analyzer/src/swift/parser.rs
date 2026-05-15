@@ -99,7 +99,6 @@ impl LanguageProvider for SwiftProvider {
         let idx_export = self.query.capture_index_for_name("export");
         let idx_heritage = self.query.capture_index_for_name("heritage");
         let idx_type = self.query.capture_index_for_name("type");
-        let idx_decorator = self.query.capture_index_for_name("decorator");
 
         let idx_param = self.query.capture_index_for_name("param");
         let idx_param_name = self.query.capture_index_for_name("param.name");
@@ -119,7 +118,6 @@ impl LanguageProvider for SwiftProvider {
             let mut is_exported = false;
             let mut heritage = Vec::new();
             let mut type_annotation = None;
-            let mut decorators = Vec::new();
 
             let mut param_root: Option<tree_sitter::Node<'_>> = None;
             let mut param_name: Option<tree_sitter::Node<'_>> = None;
@@ -172,12 +170,6 @@ impl LanguageProvider for SwiftProvider {
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         type_annotation = Some(type_str.to_string());
-                    }
-                } else if Some(cap_idx) == idx_decorator {
-                    if let Ok(d_str) =
-                        std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
-                    {
-                        decorators.push(d_str.to_string());
                     }
                 } else if Some(cap_idx) == idx_param {
                     param_root = Some(cap.node);
@@ -284,8 +276,7 @@ impl LanguageProvider for SwiftProvider {
                     // rename binding shows up in the named-binding dimension
                     // alongside Java static-import aliases. The attribute node
                     // is nested under `(modifiers)` (not a direct
-                    // `function_declaration` child), so walk the subtree
-                    // rather than relying on the @decorator capture.
+                    // `function_declaration` child), so walk the subtree.
                     if k == NodeKind::Function {
                         if let Some(ext) = find_objc_rename_attribute(root, source) {
                             imports.push(RawImport {
@@ -296,7 +287,7 @@ impl LanguageProvider for SwiftProvider {
                         }
                     }
                     nodes.push(RawNode {
-                        decorators,
+                        decorators: vec![],
                         is_exported,
                         heritage,
                         type_annotation,
