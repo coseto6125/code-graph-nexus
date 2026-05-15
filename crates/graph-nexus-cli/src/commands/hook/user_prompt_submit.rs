@@ -34,9 +34,7 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     if complete.exists() {
         let stats = read_stats(&gnx_dir);
         let _ = fs::remove_file(&complete);
-        let msg = format!(
-            "gnx index rebuild complete ({stats}). gnx tools now return fresh data."
-        );
+        let msg = format!("gnx index rebuild complete ({stats}). gnx tools now return fresh data.");
         emit_additional_context("UserPromptSubmit", &msg);
     }
     Ok(())

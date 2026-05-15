@@ -367,7 +367,13 @@ fn compute_multi(
 pub fn compute_hits(args: SearchArgs, engine: &Engine) -> Result<Vec<Hit>, GnxError> {
     let targets = resolve_targets(args.repo.as_deref())?;
     if targets.is_empty() {
-        compute_single(&args.pattern, &args.mode, args.kind.as_deref(), engine, None)
+        compute_single(
+            &args.pattern,
+            &args.mode,
+            args.kind.as_deref(),
+            engine,
+            None,
+        )
     } else if targets.len() == 1 {
         let (repo_name, graph_path) = targets.into_iter().next().unwrap();
         let local_engine = Engine::load(std::path::PathBuf::from(&graph_path))

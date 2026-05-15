@@ -67,5 +67,8 @@ fn quoted_git_inside_echo_does_not_trigger() {
     let out = run_with(
         r#"{"tool_name":"Bash","tool_input":{"command":"echo \"git commit -m foo\""},"tool_output":{"exit_code":0}}"#,
     );
-    assert!(out.stdout.is_empty(), "quoted git inside echo should not trigger");
+    assert!(
+        out.stdout.is_empty(),
+        "quoted git inside echo should not trigger"
+    );
 }
