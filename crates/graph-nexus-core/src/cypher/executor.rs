@@ -326,11 +326,7 @@ fn walk_rel(from: u32, rel: &RelPat, graph: &ArchivedZeroCopyGraph) -> Vec<(u32,
     out
 }
 
-fn eval_expr(
-    e: &Expr,
-    b: &Binding,
-    graph: &ArchivedZeroCopyGraph,
-) -> Result<Value, CypherError> {
+fn eval_expr(e: &Expr, b: &Binding, graph: &ArchivedZeroCopyGraph) -> Result<Value, CypherError> {
     use Expr::*;
     match e {
         Lit(l) => Ok(lit_to_value(l)),
@@ -358,25 +354,36 @@ fn eval_expr(
         }
         In(lhs, lits) => {
             let v = eval_expr(lhs, b, graph)?;
-            Ok(Value::Bool(lits.iter().any(|l| values_eq(&v, &lit_to_value(l)))))
+            Ok(Value::Bool(
+                lits.iter().any(|l| values_eq(&v, &lit_to_value(l))),
+            ))
         }
         Regex(lhs, pat) => {
             let v = eval_expr(lhs, b, graph)?;
-            let re = regex::Regex::new(pat)
-                .map_err(|err| CypherError::Exec { msg: format!("bad regex: {err}") })?;
-            Ok(Value::Bool(matches!(v, Value::Str(ref s) if re.is_match(s))))
+            let re = regex::Regex::new(pat).map_err(|err| CypherError::Exec {
+                msg: format!("bad regex: {err}"),
+            })?;
+            Ok(Value::Bool(
+                matches!(v, Value::Str(ref s) if re.is_match(s)),
+            ))
         }
         StartsWith(lhs, p) => {
             let v = eval_expr(lhs, b, graph)?;
-            Ok(Value::Bool(matches!(v, Value::Str(ref s) if s.starts_with(p.as_str()))))
+            Ok(Value::Bool(
+                matches!(v, Value::Str(ref s) if s.starts_with(p.as_str())),
+            ))
         }
         EndsWith(lhs, p) => {
             let v = eval_expr(lhs, b, graph)?;
-            Ok(Value::Bool(matches!(v, Value::Str(ref s) if s.ends_with(p.as_str()))))
+            Ok(Value::Bool(
+                matches!(v, Value::Str(ref s) if s.ends_with(p.as_str())),
+            ))
         }
         Contains(lhs, p) => {
             let v = eval_expr(lhs, b, graph)?;
-            Ok(Value::Bool(matches!(v, Value::Str(ref s) if s.contains(p.as_str()))))
+            Ok(Value::Bool(
+                matches!(v, Value::Str(ref s) if s.contains(p.as_str())),
+            ))
         }
         FunCall { .. } => Err(CypherError::Exec {
             msg: "function calls in WHERE not yet supported".into(),
@@ -494,9 +501,7 @@ fn values_eq(a: &Value, b: &Value) -> bool {
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x == y,
         (Value::Str(x), Value::Str(y)) => x == y,
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-            *i as f64 == *f
-        }
+        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => *i as f64 == *f,
         _ => false,
     }
 }
@@ -515,7 +520,10 @@ fn project_item(
     graph: &ArchivedZeroCopyGraph,
     _cache: &mut ContentCache,
 ) -> Result<(String, Value), CypherError> {
-    let col_name = item.alias.clone().unwrap_or_else(|| return_item_default_col(item));
+    let col_name = item
+        .alias
+        .clone()
+        .unwrap_or_else(|| return_item_default_col(item));
     let v = match &item.expr {
         ReturnExpr::Prop(var, prop) => prop_value(var, prop, b, graph),
         ReturnExpr::Var(var) => {
@@ -656,13 +664,46 @@ mod tests {
                 category: FileCategory::Source,
             }],
             nodes: vec![
-                Node { uid: ua, name: na, file_idx: 0, kind: NodeKind::Function, span: (0, 0, 1, 0), community_id: 0 },
-                Node { uid: ub, name: nb, file_idx: 0, kind: NodeKind::Function, span: (2, 0, 3, 0), community_id: 0 },
-                Node { uid: uc, name: nc, file_idx: 0, kind: NodeKind::Function, span: (4, 0, 5, 0), community_id: 0 },
+                Node {
+                    uid: ua,
+                    name: na,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (0, 0, 1, 0),
+                    community_id: 0,
+                },
+                Node {
+                    uid: ub,
+                    name: nb,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (2, 0, 3, 0),
+                    community_id: 0,
+                },
+                Node {
+                    uid: uc,
+                    name: nc,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (4, 0, 5, 0),
+                    community_id: 0,
+                },
             ],
             edges: vec![
-                Edge { source: 0, target: 1, rel_type: RelType::Calls, confidence: 1.0, reason: r1 },
-                Edge { source: 1, target: 2, rel_type: RelType::Calls, confidence: 1.0, reason: r2 },
+                Edge {
+                    source: 0,
+                    target: 1,
+                    rel_type: RelType::Calls,
+                    confidence: 1.0,
+                    reason: r1,
+                },
+                Edge {
+                    source: 1,
+                    target: 2,
+                    rel_type: RelType::Calls,
+                    confidence: 1.0,
+                    reason: r2,
+                },
             ],
             out_offsets: vec![0, 1, 2, 2],
             in_offsets: vec![0, 0, 1, 2],
@@ -717,9 +758,27 @@ mod tests {
                 })
                 .collect(),
             edges: vec![
-                Edge { source: 0, target: 1, rel_type: RelType::Calls, confidence: 1.0, reason: reasons[0] },
-                Edge { source: 1, target: 2, rel_type: RelType::Calls, confidence: 1.0, reason: reasons[1] },
-                Edge { source: 2, target: 3, rel_type: RelType::Calls, confidence: 1.0, reason: reasons[2] },
+                Edge {
+                    source: 0,
+                    target: 1,
+                    rel_type: RelType::Calls,
+                    confidence: 1.0,
+                    reason: reasons[0],
+                },
+                Edge {
+                    source: 1,
+                    target: 2,
+                    rel_type: RelType::Calls,
+                    confidence: 1.0,
+                    reason: reasons[1],
+                },
+                Edge {
+                    source: 2,
+                    target: 3,
+                    rel_type: RelType::Calls,
+                    confidence: 1.0,
+                    reason: reasons[2],
+                },
             ],
             out_offsets: vec![0, 1, 2, 3, 3],
             in_offsets: vec![0, 0, 1, 2, 3],
@@ -829,9 +888,17 @@ mod tests {
             .unwrap();
             let r = execute(&q, g, Path::new(".")).unwrap();
             assert_eq!(r.rows.len(), 3, "expected 3 rows, got {:?}", r.rows);
-            let names: Vec<&str> = r.rows.iter().map(|row| {
-                if let Value::Str(s) = &row[0] { s.as_str() } else { "" }
-            }).collect();
+            let names: Vec<&str> = r
+                .rows
+                .iter()
+                .map(|row| {
+                    if let Value::Str(s) = &row[0] {
+                        s.as_str()
+                    } else {
+                        ""
+                    }
+                })
+                .collect();
             assert!(names.contains(&"b"), "missing b");
             assert!(names.contains(&"c"), "missing c");
             assert!(names.contains(&"d"), "missing d");
@@ -859,10 +926,8 @@ mod tests {
     fn exec_reverse_arrow() {
         // callee <-[:Calls]- caller  →  same edge, traversed in reverse
         with_two(|g| {
-            let q = parse(
-                "MATCH (b:Function)<-[:Calls]-(a:Function) RETURN a.name, b.name",
-            )
-            .unwrap();
+            let q =
+                parse("MATCH (b:Function)<-[:Calls]-(a:Function) RETURN a.name, b.name").unwrap();
             let r = execute(&q, g, Path::new(".")).unwrap();
             assert_eq!(r.rows.len(), 1);
             assert_eq!(r.rows[0][0], Value::Str("caller".into()));
@@ -874,8 +939,8 @@ mod tests {
     fn exec_undirected_finds_both_directions() {
         // undirected: same edge traversed out (caller→callee) and in (callee←caller)
         with_two(|g| {
-            let q = parse("MATCH (a:Function)-[:Calls]-(b:Function) RETURN a.name, b.name")
-                .unwrap();
+            let q =
+                parse("MATCH (a:Function)-[:Calls]-(b:Function) RETURN a.name, b.name").unwrap();
             let r = execute(&q, g, Path::new(".")).unwrap();
             assert_eq!(r.rows.len(), 2);
         });
@@ -954,6 +1019,102 @@ mod tests {
             .unwrap();
             let r = execute(&q, g, Path::new(".")).unwrap();
             assert_eq!(r.rows.len(), 1);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // C7 – OPTIONAL MATCH left-join
+    // -----------------------------------------------------------------------
+
+    /// Single isolated node with no outgoing edges.
+    fn build_lone_node() -> Vec<u8> {
+        let mut pool = StringPool::new();
+        let nm = pool.add("lone");
+        let fp = pool.add("src/x.ts");
+        let uid = pool.add("0:lone");
+
+        let g = ZeroCopyGraph {
+            magic: GRAPH_MAGIC,
+            version: GRAPH_FORMAT_VERSION,
+            fingerprint: [0; 32],
+            string_pool: pool.bytes,
+            files: vec![File {
+                path: fp,
+                mtime: 0,
+                content_hash: [0u8; 32],
+                category: FileCategory::Source,
+            }],
+            nodes: vec![Node {
+                uid,
+                name: nm,
+                file_idx: 0,
+                kind: NodeKind::Function,
+                span: (0, 0, 1, 0),
+                community_id: 0,
+            }],
+            edges: vec![],
+            out_offsets: vec![0, 0],
+            in_offsets: vec![0, 0],
+            in_edge_idx: vec![],
+            name_index: vec![],
+            embeddings: None,
+            process_start: 1,
+            traces_offsets: vec![],
+            traces_data: vec![],
+            blind_spots: vec![],
+            route_shapes: vec![],
+        };
+        rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
+    }
+
+    fn with_lone<F: FnOnce(&crate::graph::ArchivedZeroCopyGraph)>(f: F) {
+        let bytes = build_lone_node();
+        let archived =
+            rkyv::access::<crate::graph::ArchivedZeroCopyGraph, rkyv::rancor::Error>(&bytes)
+                .unwrap();
+        f(archived);
+    }
+
+    #[test]
+    fn exec_optional_match_returns_null_for_missing_hop() {
+        // "lone" has no outgoing edges; OPTIONAL MATCH yields one row with b.name = null.
+        with_lone(|g| {
+            let q =
+                parse("MATCH (a:Function) OPTIONAL MATCH (a)-[:Calls]->(b) RETURN a.name, b.name")
+                    .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(
+                r.rows.len(),
+                1,
+                "expected 1 row from OPTIONAL MATCH left-join"
+            );
+            assert_eq!(r.rows[0][0], Value::Str("lone".into()));
+            assert_eq!(r.rows[0][1], Value::Null);
+        });
+    }
+
+    #[test]
+    fn exec_optional_match_still_returns_when_present() {
+        // two-node fixture: OPTIONAL MATCH should behave like MATCH when edge exists.
+        with_two(|g| {
+            let q =
+                parse("MATCH (a:Function) OPTIONAL MATCH (a)-[:Calls]->(b) RETURN a.name, b.name")
+                    .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            // caller has callee; callee has no outgoing → 2 rows
+            assert_eq!(r.rows.len(), 2);
+            let caller_row = r
+                .rows
+                .iter()
+                .find(|row| row[0] == Value::Str("caller".into()))
+                .unwrap();
+            assert_eq!(caller_row[1], Value::Str("callee".into()));
+            let callee_row = r
+                .rows
+                .iter()
+                .find(|row| row[0] == Value::Str("callee".into()))
+                .unwrap();
+            assert_eq!(callee_row[1], Value::Null);
         });
     }
 }
