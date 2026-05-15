@@ -76,6 +76,8 @@ enum Commands {
     /// Internal: MCP transport (serve | tools) — for external agents talking to gnx.
     #[command(hide = true)]
     Mcp(commands::mcp::McpArgs),
+    /// Interactive TUI for host-integration management (bind gnx to a code agent)
+    Admin(admin::AdminArgs),
 }
 
 fn main() {
