@@ -66,12 +66,54 @@ pub fn parse_query(tokens: &[Token]) -> Result<Query, CypherError> {
     Ok(q)
 }
 
-fn parse_single_query(_c: &mut Cursor) -> Result<Query, CypherError> {
-    // Filled out in B10.
-    Err(CypherError::Parse {
-        offset: 0,
-        expected: "MATCH".into(),
-        found: "stub".into(),
+fn parse_single_query(c: &mut Cursor) -> Result<Query, CypherError> {
+    let mut matches = vec![parse_match_clause(c)?];
+    let mut with: Option<WithClause> = None;
+    let mut where_: Option<Expr> = None;
+
+    loop {
+        if c.check(&Token::With) {
+            with = Some(parse_with(c)?);
+            continue;
+        }
+        if c.check(&Token::Where) {
+            where_ = Some(parse_where(c)?);
+            continue;
+        }
+        if c.check(&Token::Match) || c.check(&Token::Optional) {
+            matches.push(parse_match_clause(c)?);
+            continue;
+        }
+        break;
+    }
+
+    let return_ = parse_return_clause(c)?;
+    let order_by = if c.check(&Token::OrderBy) {
+        parse_order_by(c)?
+    } else {
+        Vec::new()
+    };
+    let skip = parse_skip(c)?;
+    let limit = parse_limit(c)?;
+
+    let (union, union_all) = if c.eat(&Token::Union) {
+        let all = c.eat(&Token::All);
+        let next = parse_single_query(c)?;
+        (Some(Box::new(next)), all)
+    } else {
+        (None, false)
+    };
+
+    Ok(Query {
+        matches,
+        where_,
+        with,
+        return_,
+        order_by,
+        skip,
+        limit,
+        union,
+        union_all,
     })
 }
 
@@ -92,28 +134,39 @@ pub fn parse_pattern(c: &mut Cursor) -> Result<Pattern, CypherError> {
     while c.check(&Token::Dash) || c.check(&Token::RevArrow) {
         // Left side of the relationship
         let left_in = c.eat(&Token::RevArrow);
-        if !left_in { c.expect(&Token::Dash)?; }
+        if !left_in {
+            c.expect(&Token::Dash)?;
+        }
 
         // Optional bracketed rel
         let mut rel = if c.check(&Token::LBracket) {
             parse_rel_pat(c)?
         } else {
-            RelPat { var: None, types: Vec::new(), range: None, dir: Direction::Out }
+            RelPat {
+                var: None,
+                types: Vec::new(),
+                range: None,
+                dir: Direction::Out,
+            }
         };
 
         // Right side
         let right_out = c.eat(&Token::Arrow);
-        if !right_out { c.expect(&Token::Dash)?; }
+        if !right_out {
+            c.expect(&Token::Dash)?;
+        }
 
         rel.dir = match (left_in, right_out) {
-            (false, true)  => Direction::Out,
-            (true,  false) => Direction::In,
+            (false, true) => Direction::Out,
+            (true, false) => Direction::In,
             (false, false) => Direction::Both,
-            (true,  true)  => return Err(CypherError::Parse {
-                offset: c.pos,
-                expected: "single-direction arrow".into(),
-                found: "<- and -> both".into(),
-            }),
+            (true, true) => {
+                return Err(CypherError::Parse {
+                    offset: c.pos,
+                    expected: "single-direction arrow".into(),
+                    found: "<- and -> both".into(),
+                })
+            }
         };
 
         rels.push(rel);
@@ -125,8 +178,14 @@ pub fn parse_pattern(c: &mut Cursor) -> Result<Pattern, CypherError> {
 pub fn parse_node_pat(c: &mut Cursor) -> Result<NodePat, CypherError> {
     c.expect(&Token::LParen)?;
     let var = if let Some(Token::Ident(_)) = c.peek() {
-        if let Token::Ident(s) = c.advance().unwrap() { Some(s.clone()) } else { unreachable!() }
-    } else { None };
+        if let Token::Ident(s) = c.advance().unwrap() {
+            Some(s.clone())
+        } else {
+            unreachable!()
+        }
+    } else {
+        None
+    };
 
     let mut kinds = Vec::new();
     if c.eat(&Token::Colon) {
@@ -139,7 +198,9 @@ pub fn parse_node_pat(c: &mut Cursor) -> Result<NodePat, CypherError> {
     let mut props = Vec::new();
     if c.eat(&Token::LBrace) {
         loop {
-            if c.eat(&Token::RBrace) { break; }
+            if c.eat(&Token::RBrace) {
+                break;
+            }
             let key = match c.advance() {
                 Some(Token::Ident(s)) => s.clone(),
                 _ => return Err(c.err("property name")),
@@ -147,7 +208,10 @@ pub fn parse_node_pat(c: &mut Cursor) -> Result<NodePat, CypherError> {
             c.expect(&Token::Colon)?;
             let lit = parse_literal(c)?;
             props.push((key, lit));
-            if !c.eat(&Token::Comma) { c.expect(&Token::RBrace)?; break; }
+            if !c.eat(&Token::Comma) {
+                c.expect(&Token::RBrace)?;
+                break;
+            }
         }
     }
 
@@ -158,8 +222,14 @@ pub fn parse_node_pat(c: &mut Cursor) -> Result<NodePat, CypherError> {
 pub fn parse_rel_pat(c: &mut Cursor) -> Result<RelPat, CypherError> {
     c.expect(&Token::LBracket)?;
     let var = if let Some(Token::Ident(_)) = c.peek() {
-        if let Token::Ident(s) = c.advance().unwrap() { Some(s.clone()) } else { unreachable!() }
-    } else { None };
+        if let Token::Ident(s) = c.advance().unwrap() {
+            Some(s.clone())
+        } else {
+            unreachable!()
+        }
+    } else {
+        None
+    };
 
     let mut types = Vec::new();
     if c.eat(&Token::Colon) {
@@ -170,16 +240,37 @@ pub fn parse_rel_pat(c: &mut Cursor) -> Result<RelPat, CypherError> {
     }
 
     let range = if c.eat(&Token::Star) {
-        let min = if let Some(Token::Int(n)) = c.peek() { let v = *n as u32; c.advance(); v } else { 1 };
+        let min = if let Some(Token::Int(n)) = c.peek() {
+            let v = *n as u32;
+            c.advance();
+            v
+        } else {
+            1
+        };
         let max = if c.eat(&Token::DotDot) {
-            if let Some(Token::Int(n)) = c.peek() { let v = *n as u32; c.advance(); v } else { u32::MAX }
-        } else { min };
+            if let Some(Token::Int(n)) = c.peek() {
+                let v = *n as u32;
+                c.advance();
+                v
+            } else {
+                u32::MAX
+            }
+        } else {
+            min
+        };
         Some((min, max))
-    } else { None };
+    } else {
+        None
+    };
 
     c.expect(&Token::RBracket)?;
     // Direction is set by parse_pattern based on surrounding arrows.
-    Ok(RelPat { var, types, range, dir: Direction::Out })
+    Ok(RelPat {
+        var,
+        types,
+        range,
+        dir: Direction::Out,
+    })
 }
 
 fn parse_node_kind(c: &mut Cursor) -> Result<NodeKind, CypherError> {
@@ -187,8 +278,9 @@ fn parse_node_kind(c: &mut Cursor) -> Result<NodeKind, CypherError> {
         Some(Token::Ident(s)) => s.clone(),
         _ => return Err(c.err("NodeKind ident")),
     };
-    name.parse::<NodeKind>()
-        .map_err(|_| CypherError::Semantic { msg: format!("unknown NodeKind '{name}'") })
+    name.parse::<NodeKind>().map_err(|_| CypherError::Semantic {
+        msg: format!("unknown NodeKind '{name}'"),
+    })
 }
 
 fn parse_rel_type(c: &mut Cursor) -> Result<RelType, CypherError> {
@@ -198,8 +290,9 @@ fn parse_rel_type(c: &mut Cursor) -> Result<RelType, CypherError> {
     };
     // RelType::FromStr expects UPPER_SNAKE_CASE. Convert CamelCase → UPPER_SNAKE.
     let snake = camel_to_upper_snake(&name);
-    snake.parse::<RelType>()
-        .map_err(|_| CypherError::Semantic { msg: format!("unknown RelType '{name}'") })
+    snake.parse::<RelType>().map_err(|_| CypherError::Semantic {
+        msg: format!("unknown RelType '{name}'"),
+    })
 }
 
 pub fn parse_with(c: &mut Cursor) -> Result<WithClause, CypherError> {
@@ -207,9 +300,15 @@ pub fn parse_with(c: &mut Cursor) -> Result<WithClause, CypherError> {
     let mut items = Vec::new();
     loop {
         items.push(parse_return_item(c)?);
-        if !c.eat(&Token::Comma) { break; }
+        if !c.eat(&Token::Comma) {
+            break;
+        }
     }
-    let where_ = if c.check(&Token::Where) { Some(parse_where(c)?) } else { None };
+    let where_ = if c.check(&Token::Where) {
+        Some(parse_where(c)?)
+    } else {
+        None
+    };
     Ok(WithClause { items, where_ })
 }
 
@@ -219,17 +318,23 @@ pub fn parse_order_by(c: &mut Cursor) -> Result<Vec<OrderItem>, CypherError> {
     loop {
         let item = parse_return_item(c)?;
         let expr = item.expr;
-        let desc = if c.eat(&Token::Desc)      { true }
-                   else if c.eat(&Token::Asc)  { false }
-                   else                        { false };
+        // ASC is default; consume it if present, but it doesn't change desc.
+        let desc = c.eat(&Token::Desc);
+        if !desc {
+            c.eat(&Token::Asc);
+        }
         out.push(OrderItem { expr, desc });
-        if !c.eat(&Token::Comma) { break; }
+        if !c.eat(&Token::Comma) {
+            break;
+        }
     }
     Ok(out)
 }
 
 pub fn parse_skip(c: &mut Cursor) -> Result<Option<u64>, CypherError> {
-    if !c.eat(&Token::Skip) { return Ok(None); }
+    if !c.eat(&Token::Skip) {
+        return Ok(None);
+    }
     match c.advance() {
         Some(Token::Int(n)) => Ok(Some(*n as u64)),
         _ => Err(c.err("int after SKIP")),
@@ -237,7 +342,9 @@ pub fn parse_skip(c: &mut Cursor) -> Result<Option<u64>, CypherError> {
 }
 
 pub fn parse_limit(c: &mut Cursor) -> Result<Option<u64>, CypherError> {
-    if !c.eat(&Token::Limit) { return Ok(None); }
+    if !c.eat(&Token::Limit) {
+        return Ok(None);
+    }
     match c.advance() {
         Some(Token::Int(n)) => Ok(Some(*n as u64)),
         _ => Err(c.err("int after LIMIT")),
@@ -250,7 +357,9 @@ pub fn parse_return_clause(c: &mut Cursor) -> Result<ReturnClause, CypherError> 
     let mut items = Vec::new();
     loop {
         items.push(parse_return_item(c)?);
-        if !c.eat(&Token::Comma) { break; }
+        if !c.eat(&Token::Comma) {
+            break;
+        }
     }
     Ok(ReturnClause { distinct, items })
 }
@@ -280,11 +389,17 @@ fn parse_return_item(c: &mut Cursor) -> Result<ReturnItem, CypherError> {
                 if !c.check(&Token::RParen) {
                     loop {
                         args.push(parse_expr(c)?);
-                        if !c.eat(&Token::Comma) { break; }
+                        if !c.eat(&Token::Comma) {
+                            break;
+                        }
                     }
                 }
                 c.expect(&Token::RParen)?;
-                ReturnExpr::FunCall { name: name.to_ascii_uppercase(), distinct, args }
+                ReturnExpr::FunCall {
+                    name: name.to_ascii_uppercase(),
+                    distinct,
+                    args,
+                }
             }
         } else {
             ReturnExpr::Var(name)
@@ -298,7 +413,9 @@ fn parse_return_item(c: &mut Cursor) -> Result<ReturnItem, CypherError> {
             Some(Token::Ident(s)) => Some(s.clone()),
             _ => return Err(c.err("alias after AS")),
         }
-    } else { None };
+    } else {
+        None
+    };
 
     Ok(ReturnItem { expr, alias })
 }
@@ -349,7 +466,9 @@ fn parse_comparison(c: &mut Cursor) -> Result<Expr, CypherError> {
         if !c.check(&Token::RBracket) {
             loop {
                 items.push(parse_literal(c)?);
-                if !c.eat(&Token::Comma) { break; }
+                if !c.eat(&Token::Comma) {
+                    break;
+                }
             }
         }
         c.expect(&Token::RBracket)?;
@@ -385,13 +504,21 @@ fn parse_comparison(c: &mut Cursor) -> Result<Expr, CypherError> {
     }
 
     // Infix binary comparisons
-    let op = if c.eat(&Token::Eq)      { Some(Op::Eq) }
-        else if c.eat(&Token::Ne)      { Some(Op::Ne) }
-        else if c.eat(&Token::Lt)      { Some(Op::Lt) }
-        else if c.eat(&Token::Le)      { Some(Op::Le) }
-        else if c.eat(&Token::Gt)      { Some(Op::Gt) }
-        else if c.eat(&Token::Ge)      { Some(Op::Ge) }
-        else                           { None };
+    let op = if c.eat(&Token::Eq) {
+        Some(Op::Eq)
+    } else if c.eat(&Token::Ne) {
+        Some(Op::Ne)
+    } else if c.eat(&Token::Lt) {
+        Some(Op::Lt)
+    } else if c.eat(&Token::Le) {
+        Some(Op::Le)
+    } else if c.eat(&Token::Gt) {
+        Some(Op::Gt)
+    } else if c.eat(&Token::Ge) {
+        Some(Op::Ge)
+    } else {
+        None
+    };
 
     if let Some(op) = op {
         let rhs = parse_primary(c)?;
@@ -432,11 +559,17 @@ fn parse_primary(c: &mut Cursor) -> Result<Expr, CypherError> {
             if !c.check(&Token::RParen) {
                 loop {
                     args.push(parse_expr(c)?);
-                    if !c.eat(&Token::Comma) { break; }
+                    if !c.eat(&Token::Comma) {
+                        break;
+                    }
                 }
             }
             c.expect(&Token::RParen)?;
-            return Ok(Expr::FunCall { name: name.to_ascii_uppercase(), distinct, args });
+            return Ok(Expr::FunCall {
+                name: name.to_ascii_uppercase(),
+                distinct,
+                args,
+            });
         }
         // Bare variable reference (e.g. inside function args or WHERE hits > 2).
         return Ok(Expr::Var(name));
@@ -461,18 +594,20 @@ fn camel_to_upper_snake(s: &str) -> String {
 
 fn parse_literal(c: &mut Cursor) -> Result<Literal, CypherError> {
     match c.advance() {
-        Some(Token::Null)     => Ok(Literal::Null),
-        Some(Token::True)     => Ok(Literal::Bool(true)),
-        Some(Token::False)    => Ok(Literal::Bool(false)),
-        Some(Token::Int(n))   => Ok(Literal::Int(*n)),
+        Some(Token::Null) => Ok(Literal::Null),
+        Some(Token::True) => Ok(Literal::Bool(true)),
+        Some(Token::False) => Ok(Literal::Bool(false)),
+        Some(Token::Int(n)) => Ok(Literal::Int(*n)),
         Some(Token::Float(f)) => Ok(Literal::Float(*f)),
-        Some(Token::Str(s))   => Ok(Literal::Str(s.clone())),
+        Some(Token::Str(s)) => Ok(Literal::Str(s.clone())),
         Some(Token::LBracket) => {
             let mut items = Vec::new();
             if !c.check(&Token::RBracket) {
                 loop {
                     items.push(parse_literal(c)?);
-                    if !c.eat(&Token::Comma) { break; }
+                    if !c.eat(&Token::Comma) {
+                        break;
+                    }
                 }
             }
             c.expect(&Token::RBracket)?;
@@ -618,6 +753,47 @@ mod tests {
         assert!(matches!(e, Expr::BinOp(Op::Eq, ..)));
     }
 
+    fn q(s: &str) -> Query {
+        let toks = tokenize(s).unwrap();
+        parse_query(&toks).unwrap()
+    }
+
+    #[test]
+    fn query_full_form() {
+        let q = q("MATCH (a:Function)-[r:Calls]->(b:Function) WHERE a.name = 'main' RETURN a.name, b.name AS callee ORDER BY b.name DESC SKIP 1 LIMIT 5");
+        assert_eq!(q.matches.len(), 1);
+        assert!(q.where_.is_some());
+        assert_eq!(q.return_.items.len(), 2);
+        assert_eq!(q.return_.items[1].alias.as_deref(), Some("callee"));
+        assert_eq!(q.order_by.len(), 1);
+        assert!(q.order_by[0].desc);
+        assert_eq!(q.skip, Some(1));
+        assert_eq!(q.limit, Some(5));
+    }
+
+    #[test]
+    fn query_optional_match_and_with() {
+        let q = q(
+            "MATCH (a) WITH a, COUNT(*) AS n WHERE n > 0 OPTIONAL MATCH (a)-->(b) RETURN a.name, n",
+        );
+        assert_eq!(q.matches.len(), 2);
+        assert!(q.matches[1].optional);
+        assert!(q.with.is_some());
+    }
+
+    #[test]
+    fn query_union() {
+        let q = q("MATCH (a:Function) RETURN a.name UNION MATCH (b:Method) RETURN b.name");
+        assert!(q.union.is_some());
+        assert!(!q.union_all);
+    }
+
+    #[test]
+    fn query_union_all() {
+        let q = q("MATCH (a:Function) RETURN a.name UNION ALL MATCH (b:Method) RETURN b.name");
+        assert!(q.union_all);
+    }
+
     #[test]
     fn with_items_and_inner_where() {
         let toks = tokenize("WITH a, COUNT(r) AS hits WHERE hits > 2").unwrap();
@@ -663,7 +839,9 @@ mod tests {
     fn return_distinct_with_property() {
         let r = rt("RETURN DISTINCT a.name");
         assert!(r.distinct);
-        assert!(matches!(r.items[0].expr, ReturnExpr::Prop(ref v, ref p) if v == "a" && p == "name"));
+        assert!(
+            matches!(r.items[0].expr, ReturnExpr::Prop(ref v, ref p) if v == "a" && p == "name")
+        );
     }
 
     #[test]
