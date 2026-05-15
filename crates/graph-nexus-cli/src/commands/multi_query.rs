@@ -21,10 +21,14 @@ use clap::Args;
 use graph_nexus_core::registry::{IndexLayout, Registry};
 use graph_nexus_core::GnxError;
 use rayon::prelude::*;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-#[derive(Args, Debug, Clone)]
+/// Search for symbols across multiple registered repos concurrently and
+/// return a merged top-K ranked result set.
+#[derive(Args, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiQueryArgs {
     /// Search term matched against symbol names (case-insensitive substring).
     #[arg(long)]
@@ -93,7 +97,7 @@ impl OrderedHit {
     }
 }
 
-pub fn run(args: MultiQueryArgs) -> Result<(), GnxError> {
+pub fn run_inner(args: MultiQueryArgs) -> Result<serde_json::Value, GnxError> {
     let format = OutputFormat::parse(args.format.as_deref());
     let home_gnx = graph_nexus_core::registry::resolve_home_gnx();
     let registry = Registry::open(&home_gnx)
@@ -130,7 +134,7 @@ pub fn run(args: MultiQueryArgs) -> Result<(), GnxError> {
             "summary": "0 repos targeted",
             "results": serde_json::Value::Array(Vec::new()),
         });
-        return emit(&result, format);
+        return Ok(result);
     }
 
     // ── Per-repo concurrent search via rayon. Each worker loads the
@@ -198,7 +202,7 @@ pub fn run(args: MultiQueryArgs) -> Result<(), GnxError> {
         ordered.len()
     );
 
-    match format {
+    let value = match format {
         OutputFormat::Text => {
             // Text output — one repo-prefixed line per hit; LLM-agent friendly.
             let mut lines = vec![serde_json::Value::String(summary)];
@@ -209,16 +213,32 @@ pub fn run(args: MultiQueryArgs) -> Result<(), GnxError> {
                     h.kind, h.repo, h.file, h.line, h.name, score
                 )));
             }
-            emit(&serde_json::json!({ "results": lines }), format)
+            serde_json::json!({ "results": lines })
         }
-        OutputFormat::Json | OutputFormat::Toon => emit(
-            &serde_json::json!({
-                "status": "success",
-                "summary": summary,
-                "results": results,
-            }),
-            format,
-        ),
+        OutputFormat::Json | OutputFormat::Toon => serde_json::json!({
+            "status": "success",
+            "summary": summary,
+            "results": results,
+        }),
+    };
+    Ok(value)
+}
+
+pub fn run(args: MultiQueryArgs) -> Result<(), graph_nexus_core::GnxError> {
+    let format = crate::output::OutputFormat::parse(args.format.as_deref());
+    let value = run_inner(args)?;
+    emit(&value, format)
+}
+
+#[cfg(test)]
+mod inner_tests {
+    use super::*;
+    #[test]
+    fn run_inner_returns_structured_value_not_unit() {
+        fn _accepts(
+            _f: fn(MultiQueryArgs) -> Result<serde_json::Value, graph_nexus_core::GnxError>,
+        ) {}
+        _accepts(run_inner);
     }
 }
 
