@@ -45,10 +45,16 @@ macro_rules! gnx_register_mcp_tool {
     ($args:ty, $inner:path) => {
         inventory::submit! {
             $crate::registry::GnxMcpTool {
-                name: || $crate::registry::derive_tool_name(module_path!()),
-                description: || $crate::macros::cow_to_static(
-                    <$args as ::schemars::JsonSchema>::schema_name()
-                ),
+                name: || {
+                    static N: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+                    *N.get_or_init(|| $crate::registry::derive_tool_name(module_path!()))
+                },
+                description: || {
+                    static D: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+                    *D.get_or_init(|| $crate::macros::cow_to_static(
+                        <$args as ::schemars::JsonSchema>::schema_name()
+                    ))
+                },
                 schema: || ::schemars::schema_for!($args),
                 handler: |raw, engine| {
                     let parsed: $args = ::serde_json::from_value(raw)
