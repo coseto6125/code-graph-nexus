@@ -1,10 +1,19 @@
 use super::receiver_types::{build_receiver_map, collect_local_types, extract_go_calls};
+use crate::framework_confidence;
+use crate::framework_helpers::{enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE};
 use graph_nexus_core::analyzer::provider::LanguageProvider;
-use graph_nexus_core::analyzer::types::{LocalGraph, RawImport, RawNode};
+use graph_nexus_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use graph_nexus_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
+
+/// gin / echo / chi all share `r.METHOD("/path", handler)`. Gate the
+/// framework_ref by the imported package — the route shape alone can't
+/// distinguish gin from echo. Ported from upstream
+/// `gitnexus/src/core/group/extractors/http-patterns/go.ts:23-39`.
+const GIN_REQUIRED: &[&str] = &["github.com/gin-gonic/gin"];
+const ECHO_REQUIRED: &[&str] = &["github.com/labstack/echo"];
 
 thread_local! {
     static PARSER: std::cell::RefCell<tree_sitter::Parser> = std::cell::RefCell::new({
@@ -63,6 +72,13 @@ impl LanguageProvider for GoProvider {
         let idx_route_call = self.query.capture_index_for_name("route.call");
         let idx_route_method = self.query.capture_index_for_name("route.method");
         let idx_route_path = self.query.capture_index_for_name("route.path");
+        let idx_route_handler = self.query.capture_index_for_name("route.handler");
+
+        // Pending framework refs for gin / echo. Collected during the
+        // match loop; only emitted after we confirm an import gate match
+        // (so we don't pollute framework_refs when net/http or chi is used).
+        let mut pending_gin: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
+        let mut pending_echo: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
 
         let idx_field_name = self.query.capture_index_for_name("field.name");
         let idx_field_type = self.query.capture_index_for_name("field.type");
@@ -92,6 +108,7 @@ impl LanguageProvider for GoProvider {
             let mut route_method_node = None;
             let mut route_path_node = None;
             let mut route_span_node = None;
+            let mut route_handler_node: Option<tree_sitter::Node> = None;
 
             // Buffers for per-name struct-field emission. `X, Y int` produces
             // multiple `@field.name` captures + one `@field.type`; we collect
@@ -165,6 +182,8 @@ impl LanguageProvider for GoProvider {
                     route_method_node = Some(cap.node);
                 } else if cap_idx == idx_route_path {
                     route_path_node = Some(cap.node);
+                } else if cap_idx == idx_route_handler {
+                    route_handler_node = Some(cap.node);
                 } else if cap_idx == idx_field_name {
                     // One `field_declaration` can declare multiple names
                     // (`X, Y int`), so buffer name nodes here and emit one
@@ -347,6 +366,20 @@ impl LanguageProvider for GoProvider {
                             end.column as u32,
                         ),
                     });
+
+                    // Stage a framework_ref for gin / echo. We can't tell
+                    // them apart from the route shape alone, so push to
+                    // both pending lists; the import-gate pass below picks
+                    // the matching one (or drops both if neither imported).
+                    if let Some(h_node) = route_handler_node {
+                        if let Ok(handler_name) =
+                            std::str::from_utf8(&source[h_node.start_byte()..h_node.end_byte()])
+                        {
+                            let span = node_span(&h_node);
+                            pending_gin.push((handler_name.to_string(), span));
+                            pending_echo.push((handler_name.to_string(), span));
+                        }
+                    }
                 }
             }
 
@@ -402,6 +435,36 @@ impl LanguageProvider for GoProvider {
         let local_types = collect_local_types(tree.root_node(), source, &recv_map);
         extract_go_calls(tree.root_node(), source, &mut nodes, &local_types);
 
+        // Gate-and-emit pending gin / echo framework refs. Both lists hold
+        // the same handlers (we couldn't tell them apart at capture time);
+        // only one matches an import gate, so at most one set is emitted.
+        let mut framework_refs: Vec<RawFrameworkRef> = Vec::new();
+        if has_import_from(&imports, GIN_REQUIRED) {
+            for (target_name, span) in &pending_gin {
+                let source_name = enclosing_function_name(&nodes, *span)
+                    .unwrap_or_else(|| MODULE_LEVEL_SOURCE.to_string());
+                framework_refs.push(RawFrameworkRef {
+                    source_name,
+                    target_name: target_name.clone(),
+                    confidence: framework_confidence::GIN_ROUTE,
+                    reason: "gin-route".to_string(),
+                    span: *span,
+                });
+            }
+        } else if has_import_from(&imports, ECHO_REQUIRED) {
+            for (target_name, span) in &pending_echo {
+                let source_name = enclosing_function_name(&nodes, *span)
+                    .unwrap_or_else(|| MODULE_LEVEL_SOURCE.to_string());
+                framework_refs.push(RawFrameworkRef {
+                    source_name,
+                    target_name: target_name.clone(),
+                    confidence: framework_confidence::ECHO_ROUTE,
+                    reason: "echo-route".to_string(),
+                    span: *span,
+                });
+            }
+        }
+
         Ok(LocalGraph {
             content_hash: [0; 32],
             routes,
@@ -409,7 +472,7 @@ impl LanguageProvider for GoProvider {
             nodes,
             imports,
             documents: vec![],
-            framework_refs: vec![],
+            framework_refs,
             fanout_refs: vec![],
             blind_spots: vec![],
         })
