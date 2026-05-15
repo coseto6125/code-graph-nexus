@@ -12,6 +12,9 @@ struct Binding {
     node_vars: HashMap<String, u32>,
     /// var_name -> edge index into `graph.edges`
     edge_vars: HashMap<String, u32>,
+    /// Values computed by a prior WITH clause. Checked before node_vars/edge_vars
+    /// in prop_value and project_item.
+    computed: HashMap<String, Value>,
 }
 
 /// Reading file content for `.content` projection (used by C12+).
@@ -71,24 +74,37 @@ fn execute_inner(
         bindings.retain(|b| eval_expr(w, b, graph).map(value_truthy).unwrap_or(false));
     }
 
-    // Phase 3: RETURN projection.
+    // Phase 3: WITH clause (optional).
+    if let Some(wc) = &query.with {
+        bindings = exec_with(wc, bindings, graph)?;
+    }
+
+    // Phase 4: RETURN projection — detect aggregation in RETURN items.
+    let has_agg = query
+        .return_
+        .items
+        .iter()
+        .any(|i| matches!(i.expr, ReturnExpr::FunCall { .. }));
+
     let mut columns: Vec<String> = Vec::new();
     let mut rows: Vec<Vec<Value>> = Vec::new();
 
-    for b in &bindings {
-        let mut row = Vec::new();
-        for item in &query.return_.items {
-            let (col_name, v) = project_item(item, b, graph, cache)?;
-            if rows.is_empty() {
-                columns.push(col_name);
-            }
-            row.push(v);
-        }
-        rows.push(row);
-    }
+    if has_agg {
+        // Partition RETURN items into group-key items and aggregate items.
+        let group_items: Vec<&ReturnItem> = query
+            .return_
+            .items
+            .iter()
+            .filter(|i| !matches!(i.expr, ReturnExpr::FunCall { .. }))
+            .collect();
+        let agg_items: Vec<&ReturnItem> = query
+            .return_
+            .items
+            .iter()
+            .filter(|i| matches!(i.expr, ReturnExpr::FunCall { .. }))
+            .collect();
 
-    // Emit columns even when result set is empty.
-    if rows.is_empty() {
+        // Build column names.
         for item in &query.return_.items {
             columns.push(
                 item.alias
@@ -96,9 +112,407 @@ fn execute_inner(
                     .unwrap_or_else(|| return_item_default_col(item)),
             );
         }
+
+        // Group bindings by key values.
+        let mut groups: Vec<(Vec<Value>, Vec<Binding>)> = Vec::new();
+        let mut key_index: HashMap<String, usize> = HashMap::new();
+
+        for b in &bindings {
+            let key_vals: Result<Vec<Value>, CypherError> = group_items
+                .iter()
+                .map(|gi| project_item(gi, b, graph, cache).map(|(_, v)| v))
+                .collect();
+            let key_vals = key_vals?;
+            let key_str: String = key_vals
+                .iter()
+                .map(value_key)
+                .collect::<Vec<_>>()
+                .join("\x00");
+            let entry = key_index.entry(key_str.clone()).or_insert_with(|| {
+                groups.push((key_vals.clone(), Vec::new()));
+                groups.len() - 1
+            });
+            groups[*entry].1.push(b.clone());
+        }
+
+        // If no bindings at all but RETURN has only aggregates (no group keys),
+        // emit one row with COUNT=0 etc.
+        if groups.is_empty() && group_items.is_empty() {
+            groups.push((vec![], vec![]));
+        }
+
+        for (key_vals, group) in &groups {
+            let mut row = Vec::new();
+            let mut key_iter = key_vals.iter();
+            let mut agg_iter = agg_items.iter();
+            for item in &query.return_.items {
+                if matches!(item.expr, ReturnExpr::FunCall { .. }) {
+                    let ai = agg_iter.next().unwrap();
+                    if let ReturnExpr::FunCall {
+                        name,
+                        distinct,
+                        args,
+                    } = &ai.expr
+                    {
+                        let v = apply_aggregate(name, *distinct, args, group, graph)?;
+                        row.push(v);
+                    }
+                } else {
+                    row.push(key_iter.next().cloned().unwrap_or(Value::Null));
+                }
+            }
+            rows.push(row);
+        }
+    } else {
+        // No aggregation: simple row-by-row projection.
+        for b in &bindings {
+            let mut row = Vec::new();
+            for item in &query.return_.items {
+                let (col_name, v) = project_item(item, b, graph, cache)?;
+                if rows.is_empty() {
+                    columns.push(col_name);
+                }
+                row.push(v);
+            }
+            rows.push(row);
+        }
+
+        // Emit columns even when result set is empty.
+        if rows.is_empty() {
+            for item in &query.return_.items {
+                columns.push(
+                    item.alias
+                        .clone()
+                        .unwrap_or_else(|| return_item_default_col(item)),
+                );
+            }
+        }
     }
 
     Ok(QueryResult { columns, rows })
+}
+
+/// Stable string key for a Value (used as group-by key; avoids Hash on Value).
+fn value_key(v: &Value) -> String {
+    format!("{v:?}")
+}
+
+/// Evaluate a ReturnItem's expression into a Value, preserving NodeRef/EdgeRef
+/// for variables bound to graph nodes/edges. Used by WITH group-key computation
+/// so that `a.name` still resolves after aggregation clears node_vars.
+fn eval_return_item_rich(item: &ReturnItem, b: &Binding, graph: &ArchivedZeroCopyGraph) -> Value {
+    match &item.expr {
+        ReturnExpr::Var(var) => {
+            // Check computed first.
+            if let Some(v) = b.computed.get(var) {
+                return v.clone();
+            }
+            if let Some(&idx) = b.node_vars.get(var) {
+                let n = &graph.nodes[idx as usize];
+                let kind: crate::graph::NodeKind =
+                    rkyv::deserialize::<crate::graph::NodeKind, rkyv::rancor::Error>(&n.kind)
+                        .unwrap();
+                let fi = n.file_idx.to_native() as usize;
+                let file_path = if fi < graph.files.len() {
+                    graph.files[fi].path.resolve(&graph.string_pool).to_string()
+                } else {
+                    String::new()
+                };
+                return Value::NodeRef {
+                    idx,
+                    name: n.name.resolve(&graph.string_pool).to_string(),
+                    kind: format!("{kind:?}"),
+                    file_path,
+                };
+            }
+            if let Some(&eidx) = b.edge_vars.get(var) {
+                let e = &graph.edges[eidx as usize];
+                let rt: crate::graph::RelType =
+                    rkyv::deserialize::<crate::graph::RelType, rkyv::rancor::Error>(&e.rel_type)
+                        .unwrap();
+                return Value::EdgeRef {
+                    src: e.source.to_native(),
+                    tgt: e.target.to_native(),
+                    rel_type: rt,
+                    confidence: e.confidence.to_native(),
+                    reason: e.reason.resolve(&graph.string_pool).to_string(),
+                };
+            }
+            Value::Null
+        }
+        ReturnExpr::Prop(var, prop) => prop_value(var, prop, b, graph),
+        ReturnExpr::Star => Value::Null,
+        ReturnExpr::FunCall { .. } => Value::Null,
+    }
+}
+
+/// Execute a WITH clause: rebind plain items into `computed`, or group+aggregate.
+fn exec_with(
+    wc: &WithClause,
+    bindings: Vec<Binding>,
+    graph: &ArchivedZeroCopyGraph,
+) -> Result<Vec<Binding>, CypherError> {
+    let has_agg = wc
+        .items
+        .iter()
+        .any(|i| matches!(i.expr, ReturnExpr::FunCall { .. }));
+
+    let mut out: Vec<Binding> = if has_agg {
+        // Partition WITH items into group-key items and aggregate items.
+        let group_items: Vec<&ReturnItem> = wc
+            .items
+            .iter()
+            .filter(|i| !matches!(i.expr, ReturnExpr::FunCall { .. }))
+            .collect();
+        let agg_items: Vec<&ReturnItem> = wc
+            .items
+            .iter()
+            .filter(|i| matches!(i.expr, ReturnExpr::FunCall { .. }))
+            .collect();
+
+        type GroupEntry = (Vec<(String, Value)>, Vec<Binding>);
+        // Group bindings by key values.
+        let mut groups: Vec<GroupEntry> = Vec::new();
+        let mut key_index: HashMap<String, usize> = HashMap::new();
+
+        for b in &bindings {
+            let key_pairs: Vec<(String, Value)> = group_items
+                .iter()
+                .map(|gi| {
+                    let col = gi
+                        .alias
+                        .clone()
+                        .unwrap_or_else(|| return_item_default_col(gi));
+                    let v = eval_return_item_rich(gi, b, graph);
+                    (col, v)
+                })
+                .collect();
+            let key_str: String = key_pairs
+                .iter()
+                .map(|(_, v)| value_key(v))
+                .collect::<Vec<_>>()
+                .join("\x00");
+            let entry = key_index.entry(key_str).or_insert_with(|| {
+                groups.push((key_pairs.clone(), Vec::new()));
+                groups.len() - 1
+            });
+            groups[*entry].1.push(b.clone());
+        }
+
+        // Produce one output Binding per group.
+        let mut result = Vec::with_capacity(groups.len());
+        for (key_pairs, group) in &groups {
+            let mut computed: HashMap<String, Value> = HashMap::new();
+            for (col, val) in key_pairs {
+                computed.insert(col.clone(), val.clone());
+            }
+            for ai in &agg_items {
+                let col = ai
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| return_item_default_col(ai));
+                if let ReturnExpr::FunCall {
+                    name,
+                    distinct,
+                    args,
+                } = &ai.expr
+                {
+                    let v = apply_aggregate(name, *distinct, args, group, graph)?;
+                    computed.insert(col, v);
+                }
+            }
+            result.push(Binding {
+                node_vars: HashMap::new(),
+                edge_vars: HashMap::new(),
+                computed,
+            });
+        }
+        result
+    } else {
+        // Plain rebinding: no aggregation. Preserve node_vars/edge_vars so that
+        // subsequent MATCH clauses can still traverse them.
+        let mut result = Vec::with_capacity(bindings.len());
+        for b in &bindings {
+            let mut computed: HashMap<String, Value> = HashMap::new();
+            for item in &wc.items {
+                let col = item
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| return_item_default_col(item));
+                // Use rich projection to preserve NodeRef/EdgeRef identity.
+                let v = eval_return_item_rich(item, b, graph);
+                computed.insert(col, v);
+            }
+            result.push(Binding {
+                node_vars: b.node_vars.clone(),
+                edge_vars: b.edge_vars.clone(),
+                computed,
+            });
+        }
+        result
+    };
+
+    // Apply inner WHERE of WITH clause (filters post-aggregation output).
+    if let Some(w) = &wc.where_ {
+        out.retain(|b| eval_expr(w, b, graph).map(value_truthy).unwrap_or(false));
+    }
+
+    Ok(out)
+}
+
+/// Evaluate one aggregate function over a group of bindings.
+fn apply_aggregate(
+    name: &str,
+    distinct: bool,
+    args: &[Expr],
+    group: &[Binding],
+    graph: &ArchivedZeroCopyGraph,
+) -> Result<Value, CypherError> {
+    // COUNT(*) sentinel: args = [Lit(Null)]
+    let is_count_star = matches!(args, [Expr::Lit(Literal::Null)]);
+
+    match name {
+        "COUNT" => {
+            if is_count_star {
+                return Ok(Value::Int(group.len() as i64));
+            }
+            let arg = &args[0];
+            if distinct {
+                let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut cnt = 0i64;
+                for b in group {
+                    let v = eval_expr(arg, b, graph)?;
+                    if !matches!(v, Value::Null) {
+                        let k = value_key(&v);
+                        if seen.insert(k) {
+                            cnt += 1;
+                        }
+                    }
+                }
+                Ok(Value::Int(cnt))
+            } else {
+                let mut cnt = 0i64;
+                for b in group {
+                    let v = eval_expr(arg, b, graph)?;
+                    if !matches!(v, Value::Null) {
+                        cnt += 1;
+                    }
+                }
+                Ok(Value::Int(cnt))
+            }
+        }
+        "SUM" => {
+            let arg = &args[0];
+            let mut sum_i: i64 = 0;
+            let mut sum_f: f64 = 0.0;
+            let mut has_float = false;
+            for b in group {
+                match eval_expr(arg, b, graph)? {
+                    Value::Int(i) => sum_i += i,
+                    Value::Float(f) => {
+                        sum_f += f;
+                        has_float = true;
+                    }
+                    _ => {}
+                }
+            }
+            if has_float {
+                Ok(Value::Float(sum_f + sum_i as f64))
+            } else {
+                Ok(Value::Int(sum_i))
+            }
+        }
+        "MIN" => {
+            let arg = &args[0];
+            let mut min: Option<Value> = None;
+            for b in group {
+                let v = eval_expr(arg, b, graph)?;
+                if matches!(v, Value::Null) {
+                    continue;
+                }
+                min = Some(match min {
+                    None => v,
+                    Some(cur) => {
+                        if eval_binop(Op::Lt, &v, &cur) {
+                            v
+                        } else {
+                            cur
+                        }
+                    }
+                });
+            }
+            Ok(min.unwrap_or(Value::Null))
+        }
+        "MAX" => {
+            let arg = &args[0];
+            let mut max: Option<Value> = None;
+            for b in group {
+                let v = eval_expr(arg, b, graph)?;
+                if matches!(v, Value::Null) {
+                    continue;
+                }
+                max = Some(match max {
+                    None => v,
+                    Some(cur) => {
+                        if eval_binop(Op::Gt, &v, &cur) {
+                            v
+                        } else {
+                            cur
+                        }
+                    }
+                });
+            }
+            Ok(max.unwrap_or(Value::Null))
+        }
+        "AVG" => {
+            let arg = &args[0];
+            let mut sum: f64 = 0.0;
+            let mut cnt: i64 = 0;
+            for b in group {
+                match eval_expr(arg, b, graph)? {
+                    Value::Int(i) => {
+                        sum += i as f64;
+                        cnt += 1;
+                    }
+                    Value::Float(f) => {
+                        sum += f;
+                        cnt += 1;
+                    }
+                    _ => {}
+                }
+            }
+            if cnt == 0 {
+                Ok(Value::Null)
+            } else {
+                Ok(Value::Float(sum / cnt as f64))
+            }
+        }
+        "COLLECT" => {
+            let arg = &args[0];
+            let mut items: Vec<Value> = Vec::new();
+            let mut seen: Option<std::collections::HashSet<String>> = if distinct {
+                Some(std::collections::HashSet::new())
+            } else {
+                None
+            };
+            for b in group {
+                let v = eval_expr(arg, b, graph)?;
+                if matches!(v, Value::Null) {
+                    continue;
+                }
+                if let Some(ref mut s) = seen {
+                    if !s.insert(value_key(&v)) {
+                        continue;
+                    }
+                }
+                items.push(v);
+            }
+            Ok(Value::List(items))
+        }
+        _ => Err(CypherError::Exec {
+            msg: format!("unknown aggregate function '{name}'"),
+        }),
+    }
 }
 
 fn exec_match_clause(
@@ -331,6 +745,10 @@ fn eval_expr(e: &Expr, b: &Binding, graph: &ArchivedZeroCopyGraph) -> Result<Val
     match e {
         Lit(l) => Ok(lit_to_value(l)),
         Var(var) => {
+            // Check computed values from WITH clause first.
+            if let Some(v) = b.computed.get(var) {
+                return Ok(v.clone());
+            }
             if let Some(&idx) = b.node_vars.get(var) {
                 Ok(Value::Str(
                     graph.nodes[idx as usize]
@@ -403,6 +821,57 @@ fn lit_to_value(l: &Literal) -> Value {
 }
 
 fn prop_value(var: &str, prop: &str, b: &Binding, graph: &ArchivedZeroCopyGraph) -> Value {
+    // Check computed values first (set by WITH clause).
+    if let Some(computed_val) = b.computed.get(var) {
+        return match computed_val {
+            // If the computed value is a NodeRef, resolve the property from the graph.
+            Value::NodeRef { idx, .. } => {
+                let n = &graph.nodes[*idx as usize];
+                match prop {
+                    "name" => Value::Str(n.name.resolve(&graph.string_pool).to_string()),
+                    "uid" => Value::Str(n.uid.resolve(&graph.string_pool).to_string()),
+                    "kind" => {
+                        let kind: crate::graph::NodeKind = rkyv::deserialize::<
+                            crate::graph::NodeKind,
+                            rkyv::rancor::Error,
+                        >(&n.kind)
+                        .unwrap();
+                        Value::Str(format!("{kind:?}"))
+                    }
+                    "filePath" => {
+                        let fi = n.file_idx.to_native() as usize;
+                        Value::Str(if fi < graph.files.len() {
+                            graph.files[fi].path.resolve(&graph.string_pool).to_string()
+                        } else {
+                            String::new()
+                        })
+                    }
+                    _ => Value::Null,
+                }
+            }
+            // EdgeRef: resolve edge properties.
+            Value::EdgeRef {
+                src: _,
+                tgt: _,
+                rel_type,
+                confidence,
+                reason,
+            } => match prop {
+                "confidence" => Value::Float(*confidence as f64),
+                "reason" => Value::Str(reason.clone()),
+                "rel_type" => Value::Str(format!("{rel_type:?}")),
+                _ => Value::Null,
+            },
+            // Scalar: only bare var reference makes sense; <var>.<prop> returns Null.
+            _ => {
+                if prop.is_empty() {
+                    computed_val.clone()
+                } else {
+                    Value::Null
+                }
+            }
+        };
+    }
     if let Some(&idx) = b.node_vars.get(var) {
         let n = &graph.nodes[idx as usize];
         return match prop {
@@ -527,7 +996,10 @@ fn project_item(
     let v = match &item.expr {
         ReturnExpr::Prop(var, prop) => prop_value(var, prop, b, graph),
         ReturnExpr::Var(var) => {
-            if let Some(&idx) = b.node_vars.get(var) {
+            // Check computed values from WITH clause first.
+            if let Some(v) = b.computed.get(var) {
+                v.clone()
+            } else if let Some(&idx) = b.node_vars.get(var) {
                 Value::Str(
                     graph.nodes[idx as usize]
                         .name
@@ -539,6 +1011,7 @@ fn project_item(
             }
         }
         ReturnExpr::Star => Value::Null,
+        // FunCall is handled by execute_inner's aggregation path; should not reach here.
         ReturnExpr::FunCall { .. } => Value::Null,
     };
     Ok((col_name, v))
@@ -1090,6 +1563,219 @@ mod tests {
             );
             assert_eq!(r.rows[0][0], Value::Str("lone".into()));
             assert_eq!(r.rows[0][1], Value::Null);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // C8 – aggregation fixture: fan(0)->leaf_a(1), fan(0)->leaf_b(2)
+    // fan calls leaf_a (conf=0.8) and leaf_b (conf=0.6).
+    // -----------------------------------------------------------------------
+
+    fn build_fan() -> Vec<u8> {
+        let mut pool = StringPool::new();
+        let n_fan = pool.add("fan");
+        let n_leaf_a = pool.add("leaf_a");
+        let n_leaf_b = pool.add("leaf_b");
+        let fp = pool.add("src/x.ts");
+        let r1 = pool.add("r1");
+        let r2 = pool.add("r2");
+        let u_fan = pool.add("0:fan");
+        let u_la = pool.add("0:leaf_a");
+        let u_lb = pool.add("0:leaf_b");
+
+        let g = ZeroCopyGraph {
+            magic: GRAPH_MAGIC,
+            version: GRAPH_FORMAT_VERSION,
+            fingerprint: [0; 32],
+            string_pool: pool.bytes,
+            files: vec![File {
+                path: fp,
+                mtime: 0,
+                content_hash: [0u8; 32],
+                category: FileCategory::Source,
+            }],
+            nodes: vec![
+                Node {
+                    uid: u_fan,
+                    name: n_fan,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (0, 0, 1, 0),
+                    community_id: 0,
+                },
+                Node {
+                    uid: u_la,
+                    name: n_leaf_a,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (2, 0, 3, 0),
+                    community_id: 0,
+                },
+                Node {
+                    uid: u_lb,
+                    name: n_leaf_b,
+                    file_idx: 0,
+                    kind: NodeKind::Function,
+                    span: (4, 0, 5, 0),
+                    community_id: 0,
+                },
+            ],
+            edges: vec![
+                Edge {
+                    source: 0,
+                    target: 1,
+                    rel_type: RelType::Calls,
+                    confidence: 0.8,
+                    reason: r1,
+                },
+                Edge {
+                    source: 0,
+                    target: 2,
+                    rel_type: RelType::Calls,
+                    confidence: 0.6,
+                    reason: r2,
+                },
+            ],
+            // Node 0 has edges 0..2 out; nodes 1,2 have no outgoing.
+            out_offsets: vec![0, 2, 2, 2],
+            // Node 1 has edge 0 incoming; node 2 has edge 1 incoming.
+            in_offsets: vec![0, 0, 1, 2],
+            in_edge_idx: vec![0, 1],
+            name_index: vec![],
+            embeddings: None,
+            process_start: 3,
+            traces_offsets: vec![],
+            traces_data: vec![],
+            blind_spots: vec![],
+            route_shapes: vec![],
+        };
+        rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
+    }
+
+    fn with_fan<F: FnOnce(&crate::graph::ArchivedZeroCopyGraph)>(f: F) {
+        let bytes = build_fan();
+        let archived =
+            rkyv::access::<crate::graph::ArchivedZeroCopyGraph, rkyv::rancor::Error>(&bytes)
+                .unwrap();
+        f(archived);
+    }
+
+    // C8 tests
+
+    #[test]
+    fn exec_count_star() {
+        // fan graph: MATCH (a:Function) RETURN COUNT(*) → 3 nodes total
+        with_fan(|g| {
+            let q = parse("MATCH (a:Function) RETURN COUNT(*)").unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1, "expected 1 aggregated row");
+            assert_eq!(r.rows[0][0], Value::Int(3));
+        });
+    }
+
+    #[test]
+    fn exec_count_grouped() {
+        // fan->leaf_a, fan->leaf_b: grouping by a.name gives fan→2, leaf_a→0, leaf_b→0.
+        // Use MATCH (a)-[:Calls]->(b) RETURN a.name, COUNT(*): 2 rows (both under fan)
+        with_fan(|g| {
+            let q =
+                parse("MATCH (a:Function)-[:Calls]->(b:Function) RETURN a.name, COUNT(*)").unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            // fan calls both leaf_a and leaf_b → 2 bindings, all with a.name="fan"
+            // so 1 group: fan → COUNT=2
+            assert_eq!(r.rows.len(), 1, "expected 1 group: fan→2, got {:?}", r.rows);
+            assert_eq!(r.rows[0][0], Value::Str("fan".into()));
+            assert_eq!(r.rows[0][1], Value::Int(2));
+        });
+    }
+
+    #[test]
+    fn exec_count_distinct() {
+        // MATCH (a)-[:Calls]->(b) RETURN COUNT(DISTINCT b.name)
+        // two different targets leaf_a, leaf_b → 2 distinct
+        with_fan(|g| {
+            let q =
+                parse("MATCH (a:Function)-[:Calls]->(b:Function) RETURN COUNT(DISTINCT b.name)")
+                    .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1);
+            assert_eq!(r.rows[0][0], Value::Int(2));
+        });
+    }
+
+    #[test]
+    fn exec_sum_min_max_avg() {
+        // fan->leaf_a conf=0.8, fan->leaf_b conf=0.6
+        with_fan(|g| {
+            let q = parse(
+                "MATCH (a:Function)-[r:Calls]->(b:Function) RETURN SUM(r.confidence), MIN(r.confidence), MAX(r.confidence), AVG(r.confidence)",
+            )
+            .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1);
+            // SUM ≈ 1.4 (f32→f64 precision: tolerance 1e-6)
+            assert!(matches!(r.rows[0][0], Value::Float(f) if (f - 1.4).abs() < 1e-6));
+            // MIN ≈ 0.6
+            assert!(matches!(r.rows[0][1], Value::Float(f) if (f - 0.6).abs() < 1e-6));
+            // MAX ≈ 0.8
+            assert!(matches!(r.rows[0][2], Value::Float(f) if (f - 0.8).abs() < 1e-6));
+            // AVG ≈ 0.7
+            assert!(matches!(r.rows[0][3], Value::Float(f) if (f - 0.7).abs() < 1e-6));
+        });
+    }
+
+    #[test]
+    fn exec_collect_list() {
+        // COLLECT(b.name) → list of leaf names
+        with_fan(|g| {
+            let q =
+                parse("MATCH (a:Function)-[:Calls]->(b:Function) RETURN COLLECT(b.name)").unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1);
+            let list = match &r.rows[0][0] {
+                Value::List(v) => v.clone(),
+                other => panic!("expected List, got {other:?}"),
+            };
+            assert_eq!(list.len(), 2);
+            assert!(list.contains(&Value::Str("leaf_a".into())));
+            assert!(list.contains(&Value::Str("leaf_b".into())));
+        });
+    }
+
+    #[test]
+    fn exec_with_aggregate_then_filter() {
+        // WITH a, COUNT(*) AS n WHERE n > 0 RETURN a.name, n
+        // fan calls 2 targets; leaf_a and leaf_b call nothing.
+        // After WITH aggregation: fan→n=2, leaf_a→n=0, leaf_b→n=0.
+        // WHERE n > 0 keeps only fan row.
+        with_fan(|g| {
+            let q = parse(
+                "MATCH (a:Function) OPTIONAL MATCH (a)-[:Calls]->(b) WITH a, COUNT(b) AS n WHERE n > 0 RETURN a.name, n",
+            )
+            .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(
+                r.rows.len(),
+                1,
+                "only fan should pass WHERE n > 0, got {:?}",
+                r.rows
+            );
+            assert_eq!(r.rows[0][0], Value::Str("fan".into()));
+            assert_eq!(r.rows[0][1], Value::Int(2));
+        });
+    }
+
+    #[test]
+    fn exec_with_plain_rebinding() {
+        // WITH a.name AS nm RETURN nm
+        with_fan(|g| {
+            let q = parse("MATCH (a:Function)-[:Calls]->(b:Function) WITH a.name AS nm RETURN nm")
+                .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            // Two hops from fan: both have a.name="fan"
+            assert_eq!(r.rows.len(), 2);
+            assert_eq!(r.columns, vec!["nm"]);
+            assert!(r.rows.iter().all(|row| row[0] == Value::Str("fan".into())));
         });
     }
 
