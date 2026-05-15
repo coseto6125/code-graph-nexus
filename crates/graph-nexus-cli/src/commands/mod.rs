@@ -24,6 +24,7 @@ pub mod contracts;
 pub mod rename;
 pub mod rename_branch;
 pub mod route_map;
+pub mod routes;
 pub mod scan;
 pub mod shape_check;
 pub mod status;

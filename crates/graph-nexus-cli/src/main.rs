@@ -47,7 +47,7 @@ enum Commands {
     /// Registry + repo health (indexed repos, freshness, frameworks, externals, blind spots)
     Coverage(commands::coverage::CoverageArgs),
     /// List HTTP routes; with path, show handler + caller chain
-    Routes(commands::route_map::RouteMapArgs),
+    Routes(commands::routes::RoutesArgs),
     /// Verify a file's symbol references exist in the graph
     Scan(commands::scan::ScanArgs),
     /// Cross-repo API contracts inventory (routes / queue / RPC)
@@ -154,7 +154,7 @@ fn main() {
         Commands::Impact(args) => commands::impact::run(args, &engine),
         Commands::Rename(args) => commands::rename::run(args, &engine),
         Commands::Cypher(args) => commands::cypher::run(args, &engine),
-        Commands::Routes(args) => commands::route_map::run(args, &engine),
+        Commands::Routes(args) => commands::routes::run(args, &engine),
         Commands::Scan(args) => commands::scan::run(args, &engine),
         Commands::Contracts(args) => commands::contracts::run(args, &engine),
         Commands::ShapeCheck(args) => commands::shape_check::run(args, &engine),
