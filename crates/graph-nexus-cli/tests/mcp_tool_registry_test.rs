@@ -33,4 +33,5 @@ fn expected_eight_tools_present() {
             "missing {tool} in registry; got {names:?}"
         );
     }
+    assert_eq!(names.len(), 8, "registry has unexpected tools: {:?}", names);
 }
