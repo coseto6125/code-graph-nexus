@@ -43,12 +43,11 @@ pub struct ShapeCheckArgs {
 }
 
 pub fn run_inner(
-    args: ShapeCheckArgs,
+    _args: ShapeCheckArgs,
     engine: &dyn graph_nexus_mcp::registry::EngineRef,
 ) -> Result<serde_json::Value, GnxError> {
     let engine = crate::engine::cast_engine(engine)?;
     let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
-    let format = OutputFormat::parse(args.format.as_deref());
 
     // Lookup: route node_idx → (known_keys set, response_keys list, error_keys list).
     // One pass over route_shapes; resolves StrRef → owned String once so the
@@ -71,10 +70,7 @@ pub fn run_inner(
         })
         .collect();
 
-    // JSON payload entries — built unconditionally; emit() branches on format.
     let mut report_entries: Vec<serde_json::Value> = Vec::new();
-    // Pre-rendered text lines (used only for the Text format path).
-    let mut text_lines: Vec<String> = Vec::new();
     let mut total_fetches: u64 = 0;
     let mut drift_count: u64 = 0;
 
@@ -132,42 +128,14 @@ pub fn run_inner(
             "error_keys": err_keys,
             "fetch_count": parsed.fetch_count,
         }));
-
-        text_lines.push(format!(
-            "DRIFT  {consumer_file}:{consumer_name}  →  {route_name}\n       consumer reads:  {drift_owned:?}\n       route emits:     response_keys={resp_keys:?} error_keys={err_keys:?}"
-        ));
     }
 
-    let header = if drift_count == 0 {
-        format!("shape_check: {total_fetches} Fetches edge(s), 0 drift detected.")
-    } else {
-        format!("shape_check: {total_fetches} Fetches edge(s), {drift_count} with drift")
-    };
-
-    let value = match format {
-        OutputFormat::Text => {
-            // Build a results array of pre-rendered string lines; output::emit
-            // prints each line when the array contains strings.
-            let mut lines = Vec::with_capacity(1 + text_lines.len());
-            lines.push(serde_json::Value::String(header));
-            if !text_lines.is_empty() {
-                lines.push(serde_json::Value::String(String::new())); // blank separator
-                for line in &text_lines {
-                    lines.push(serde_json::Value::String(line.clone()));
-                }
-            }
-            serde_json::json!({ "results": lines })
-        }
-        OutputFormat::Json | OutputFormat::Toon => {
-            serde_json::json!({
-                "status": "success",
-                "total_fetches": total_fetches,
-                "drift_count": drift_count,
-                "drift": report_entries,
-            })
-        }
-    };
-    Ok(value)
+    Ok(serde_json::json!({
+        "status": "success",
+        "total_fetches": total_fetches,
+        "drift_count": drift_count,
+        "drift": report_entries,
+    }))
 }
 
 pub fn run(
@@ -176,7 +144,43 @@ pub fn run(
 ) -> Result<(), graph_nexus_core::GnxError> {
     let format = crate::output::OutputFormat::parse(args.format.as_deref());
     let value = run_inner(args, engine)?;
-    emit(&value, format)
+    let emit_value = match format {
+        OutputFormat::Text => {
+            let total = value["total_fetches"].as_u64().unwrap_or(0);
+            let drift_count = value["drift_count"].as_u64().unwrap_or(0);
+            let header = if drift_count == 0 {
+                format!("shape_check: {total} Fetches edge(s), 0 drift detected.")
+            } else {
+                format!("shape_check: {total} Fetches edge(s), {drift_count} with drift")
+            };
+            let mut lines: Vec<serde_json::Value> = vec![serde_json::Value::String(header)];
+            if let Some(drift) = value["drift"].as_array() {
+                if !drift.is_empty() {
+                    lines.push(serde_json::Value::String(String::new()));
+                    for entry in drift {
+                        let consumer_file = entry["consumer_file"].as_str().unwrap_or("");
+                        let consumer_name = entry["consumer_name"].as_str().unwrap_or("");
+                        let route_name = entry["route_name"].as_str().unwrap_or("");
+                        let drift_keys = entry["drift_keys"].as_array().map(|a| {
+                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
+                        }).unwrap_or_default();
+                        let resp_keys = entry["response_keys"].as_array().map(|a| {
+                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
+                        }).unwrap_or_default();
+                        let err_keys = entry["error_keys"].as_array().map(|a| {
+                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
+                        }).unwrap_or_default();
+                        lines.push(serde_json::Value::String(format!(
+                            "DRIFT  {consumer_file}:{consumer_name}  →  {route_name}\n       consumer reads:  {drift_keys:?}\n       route emits:     response_keys={resp_keys:?} error_keys={err_keys:?}"
+                        )));
+                    }
+                }
+            }
+            serde_json::json!({ "results": lines })
+        }
+        OutputFormat::Json | OutputFormat::Toon => value,
+    };
+    emit(&emit_value, format)
 }
 
 #[cfg(test)]
