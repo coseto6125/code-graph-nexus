@@ -69,9 +69,7 @@ enum Commands {
     /// Internal: detached watcher dispatched by hook-handle
     #[command(hide = true)]
     HookWatcher(commands::hook_watcher::HookWatcherArgs),
-    /// Internal: HTTP consumer key vs route response shape check
-    /// (will fold into `contracts` in a future task)
-    #[command(hide = true)]
+    /// Detect drift between HTTP consumer access patterns and Route response shapes.
     ShapeCheck(commands::shape_check::ShapeCheckArgs),
     /// Internal: Claude Code / Codex / Gemini agent hook dispatch.
     #[command(hide = true)]
