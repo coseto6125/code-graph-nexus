@@ -97,11 +97,8 @@ impl GnxMcpServer {
                 // existing engine in place rather than aborting — the
                 // caller will get whatever the (possibly stale) engine
                 // returns, which is safer than 503-ing the whole tool.
-                if let Ok(true) = crate::daemon::needs_remap(&state.engine_path, state.loaded_at) {
-                    // Refresh loaded_at. Actual Engine re-load is the
-                    // responsibility of the CLI-side daemon wiring
-                    // (Task 16) which has the concrete Engine type.
-                    state.loaded_at = std::fs::metadata(&state.engine_path)?.modified()?;
+                if let Ok(Some(new_mtime)) = crate::daemon::needs_remap(&state.engine_path, state.loaded_at) {
+                    state.loaded_at = new_mtime;
                 }
                 let value = (tool.handler)(args, &*state)
                     .map_err(|e| anyhow::anyhow!("tool handler: {e}"))?;

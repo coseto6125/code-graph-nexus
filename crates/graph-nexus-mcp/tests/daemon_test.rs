@@ -9,7 +9,7 @@ fn needs_remap_false_when_mtime_unchanged() {
     let path = dir.path().join("graph.bin");
     fs::write(&path, b"v1").unwrap();
     let loaded_at = fs::metadata(&path).unwrap().modified().unwrap();
-    assert!(!needs_remap(&path, loaded_at).unwrap());
+    assert!(needs_remap(&path, loaded_at).unwrap().is_none());
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn needs_remap_true_when_file_atomically_replaced() {
     fs::write(&tmp, b"v2").unwrap();
     fs::rename(&tmp, &path).unwrap();
 
-    assert!(needs_remap(&path, loaded_at).unwrap());
+    assert!(needs_remap(&path, loaded_at).unwrap().is_some());
 }
 
 #[test]
