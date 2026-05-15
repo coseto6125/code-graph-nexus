@@ -4,6 +4,7 @@
 
 pub mod argv;
 pub mod daemon;
+pub mod macros;
 pub mod registry;
 pub mod server;
 pub mod spawn;
