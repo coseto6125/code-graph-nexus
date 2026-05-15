@@ -132,4 +132,21 @@ mod tests {
         let hits = find_identifier_occurrences("A.PY", b"def foo(): pass\nfoo()\n", "foo");
         assert_eq!(hits.len(), 2);
     }
+
+    #[test]
+    fn dispatch_extras_bash_routes_via_sh_extension() {
+        // Guards against `.sh` ever being routed to the wrong module.
+        let hits = find_identifier_occurrences("a.sh", b"foo() { :; }\nfoo\n", "foo");
+        assert_eq!(hits.len(), 2);
+    }
+
+    #[test]
+    fn dispatch_extras_sql_routes_via_sql_extension() {
+        let hits = find_identifier_occurrences(
+            "a.sql",
+            b"CREATE TABLE users (id INT);\nSELECT * FROM users;\n",
+            "users",
+        );
+        assert!(hits.len() >= 2, "{:?}", hits);
+    }
 }
