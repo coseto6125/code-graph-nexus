@@ -202,6 +202,17 @@ fn parse_rel_type(c: &mut Cursor) -> Result<RelType, CypherError> {
         .map_err(|_| CypherError::Semantic { msg: format!("unknown RelType '{name}'") })
 }
 
+pub fn parse_with(c: &mut Cursor) -> Result<WithClause, CypherError> {
+    c.expect(&Token::With)?;
+    let mut items = Vec::new();
+    loop {
+        items.push(parse_return_item(c)?);
+        if !c.eat(&Token::Comma) { break; }
+    }
+    let where_ = if c.check(&Token::Where) { Some(parse_where(c)?) } else { None };
+    Ok(WithClause { items, where_ })
+}
+
 pub fn parse_order_by(c: &mut Cursor) -> Result<Vec<OrderItem>, CypherError> {
     c.expect(&Token::OrderBy)?;
     let mut out = Vec::new();
@@ -427,7 +438,8 @@ fn parse_primary(c: &mut Cursor) -> Result<Expr, CypherError> {
             c.expect(&Token::RParen)?;
             return Ok(Expr::FunCall { name: name.to_ascii_uppercase(), distinct, args });
         }
-        return Err(c.err("`.<prop>` or `(...)` after identifier"));
+        // Bare variable reference (e.g. inside function args or WHERE hits > 2).
+        return Ok(Expr::Var(name));
     }
     // Literal
     let lit = parse_literal(c)?;
@@ -604,6 +616,15 @@ mod tests {
         let mut c = Cursor::new(&toks);
         let e = parse_where(&mut c).unwrap();
         assert!(matches!(e, Expr::BinOp(Op::Eq, ..)));
+    }
+
+    #[test]
+    fn with_items_and_inner_where() {
+        let toks = tokenize("WITH a, COUNT(r) AS hits WHERE hits > 2").unwrap();
+        let mut c = Cursor::new(&toks);
+        let w = parse_with(&mut c).unwrap();
+        assert_eq!(w.items.len(), 2);
+        assert!(w.where_.is_some());
     }
 
     #[test]

@@ -78,6 +78,7 @@ pub enum UnaryOp {
 pub enum Expr {
     BinOp(Op, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
+    Var(String),
     Prop(String, String),
     Lit(Literal),
     In(Box<Expr>, Vec<Literal>),
