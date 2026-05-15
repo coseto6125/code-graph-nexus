@@ -75,7 +75,7 @@ fn build_payload(
     let mut report_entries: Vec<serde_json::Value> = Vec::new();
     let mut total_fetches: u64 = 0;
     let mut drift_count: u64 = 0;
-    let mut matched_count: usize = 0;
+    let mut filter_matched_count: usize = 0;
 
     for edge in graph.edges.iter() {
         if !matches!(&edge.rel_type, ArchivedRelType::Fetches) {
@@ -102,6 +102,7 @@ fn build_payload(
             if !route_path.contains(route_filter) {
                 continue;
             }
+            filter_matched_count += 1;
         }
 
         // `known` is response_keys ∪ error_keys. We iterate parsed.keys and
@@ -116,7 +117,6 @@ fn build_payload(
             continue;
         }
         drift_count += 1;
-        matched_count += 1;
 
         let source_idx = edge.source.to_native() as usize;
         let consumer_node = &graph.nodes[source_idx];
@@ -145,12 +145,11 @@ fn build_payload(
         }));
     }
 
-    // Emit no-match message if route filter was provided but no edges matched.
-    if args.route.is_some() && matched_count == 0 {
-        eprintln!(
-            "No routes match `{}` in the graph.",
-            args.route.as_ref().unwrap()
-        );
+    // Emit no-match message if route filter was provided but no routes matched.
+    if let Some(filter) = &args.route {
+        if filter_matched_count == 0 {
+            eprintln!("No routes match `{filter}` in the graph.");
+        }
     }
 
     Ok(serde_json::json!({
