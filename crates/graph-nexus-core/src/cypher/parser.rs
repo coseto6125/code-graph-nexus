@@ -75,6 +75,43 @@ fn parse_single_query(_c: &mut Cursor) -> Result<Query, CypherError> {
     })
 }
 
+pub fn parse_pattern(c: &mut Cursor) -> Result<Pattern, CypherError> {
+    let mut nodes = vec![parse_node_pat(c)?];
+    let mut rels = Vec::new();
+
+    while c.check(&Token::Dash) || c.check(&Token::RevArrow) {
+        // Left side of the relationship
+        let left_in = c.eat(&Token::RevArrow);
+        if !left_in { c.expect(&Token::Dash)?; }
+
+        // Optional bracketed rel
+        let mut rel = if c.check(&Token::LBracket) {
+            parse_rel_pat(c)?
+        } else {
+            RelPat { var: None, types: Vec::new(), range: None, dir: Direction::Out }
+        };
+
+        // Right side
+        let right_out = c.eat(&Token::Arrow);
+        if !right_out { c.expect(&Token::Dash)?; }
+
+        rel.dir = match (left_in, right_out) {
+            (false, true)  => Direction::Out,
+            (true,  false) => Direction::In,
+            (false, false) => Direction::Both,
+            (true,  true)  => return Err(CypherError::Parse {
+                offset: c.pos,
+                expected: "single-direction arrow".into(),
+                found: "<- and -> both".into(),
+            }),
+        };
+
+        rels.push(rel);
+        nodes.push(parse_node_pat(c)?);
+    }
+    Ok(Pattern { nodes, rels })
+}
+
 pub fn parse_node_pat(c: &mut Cursor) -> Result<NodePat, CypherError> {
     c.expect(&Token::LParen)?;
     let var = if let Some(Token::Ident(_)) = c.peek() {
@@ -251,5 +288,46 @@ mod tests {
     fn rel_type_alternation() {
         let r = rp("[:Calls|HasMethod]");
         assert_eq!(r.types, vec![RelType::Calls, RelType::HasMethod]);
+    }
+
+    fn pat(s: &str) -> Pattern {
+        let toks = tokenize(s).unwrap();
+        let mut c = Cursor::new(&toks);
+        parse_pattern(&mut c).unwrap()
+    }
+
+    #[test]
+    fn pattern_single_hop_out() {
+        let p = pat("(a:Function)-[r:Calls]->(b:Function)");
+        assert_eq!(p.nodes.len(), 2);
+        assert_eq!(p.rels.len(), 1);
+        assert_eq!(p.rels[0].dir, Direction::Out);
+    }
+
+    #[test]
+    fn pattern_reverse_arrow() {
+        let p = pat("(a)<-[:Calls]-(b)");
+        assert_eq!(p.rels[0].dir, Direction::In);
+    }
+
+    #[test]
+    fn pattern_undirected() {
+        let p = pat("(a)-[:Calls]-(b)");
+        assert_eq!(p.rels[0].dir, Direction::Both);
+    }
+
+    #[test]
+    fn pattern_three_hops() {
+        let p = pat("(a)-[:Calls]->(b)-[:Calls]->(c)-[:Calls]->(d)");
+        assert_eq!(p.nodes.len(), 4);
+        assert_eq!(p.rels.len(), 3);
+    }
+
+    #[test]
+    fn pattern_anonymous_rel() {
+        let p = pat("(a)-->(b)");
+        assert_eq!(p.rels.len(), 1);
+        assert!(p.rels[0].types.is_empty());
+        assert_eq!(p.rels[0].dir, Direction::Out);
     }
 }
