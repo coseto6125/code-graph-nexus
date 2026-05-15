@@ -99,30 +99,54 @@ pub fn run_inner(
         }
     }
 
-    // Stage 3a: dry-run — print summary + diff preview.
+    // Stage 3a: dry-run — collect summary + diff preview into lines.
     if args.dry_run {
         let total_hits: usize = hits.iter().map(|(_, r)| r.len()).sum();
-        println!("risk safe; files {}; usages {}", hits.len(), total_hits);
-        println!();
+        let mut lines: Vec<String> = Vec::new();
+        lines.push(format!(
+            "risk safe; files {}; usages {}",
+            hits.len(),
+            total_hits
+        ));
+        lines.push(String::new());
         for (path, ranges) in &hits {
             let bytes = std::fs::read(path).map_err(GnxError::Io)?;
-            print_diff(&bytes, ranges, &args.symbol, &args.new_name, path);
+            collect_diff(
+                &bytes,
+                ranges,
+                &args.symbol,
+                &args.new_name,
+                path,
+                &mut lines,
+            );
         }
-        return Ok(serde_json::Value::Null);
+        let files_affected = hits.len();
+        return Ok(serde_json::json!({
+            "results": lines,
+            "mode": "dry_run",
+            "files_affected": files_affected,
+        }));
     }
 
     // Stage 3b: execute — atomic per-file replace by descending offset.
+    let files_modified = hits.len();
+    let mut lines: Vec<String> = Vec::new();
     for (path, ranges) in hits {
+        lines.push(format!("renamed: {}", path.display()));
         apply_rename(&path, &ranges, args.new_name.as_bytes()).map_err(GnxError::Io)?;
     }
-    Ok(serde_json::Value::Null)
+    Ok(serde_json::json!({
+        "results": lines,
+        "mode": "executed",
+        "files_modified": files_modified,
+    }))
 }
 
 pub fn run(
     args: RenameArgs,
     engine: &crate::engine::Engine,
 ) -> Result<(), graph_nexus_core::GnxError> {
-    let format = crate::output::OutputFormat::Toon;
+    let format = crate::output::OutputFormat::Text;
     let value = run_inner(args, engine)?;
     crate::output::emit(&value, format)
 }
@@ -130,6 +154,7 @@ pub fn run(
 #[cfg(test)]
 mod inner_tests {
     use super::*;
+
     #[test]
     fn run_inner_returns_structured_value_not_unit() {
         fn _accepts(
@@ -140,6 +165,77 @@ mod inner_tests {
         ) {
         }
         _accepts(run_inner);
+    }
+
+    /// Verify that `collect_diff` produces the expected structured lines.
+    /// Uses a two-byte synthetic buffer with a known old/new name so the
+    /// shape can be exact-matched without a real graph engine.
+    #[test]
+    fn collect_diff_produces_expected_lines() {
+        let src = b"fn foo() { foo(); }";
+        let ranges = vec![
+            IdentifierRange {
+                start_byte: 3,
+                end_byte: 6,
+                row: 0,
+                col: 3,
+            },
+            IdentifierRange {
+                start_byte: 11,
+                end_byte: 14,
+                row: 0,
+                col: 11,
+            },
+        ];
+        let mut out: Vec<String> = Vec::new();
+        collect_diff(
+            src,
+            &ranges,
+            "foo",
+            "bar",
+            std::path::Path::new("lib.rs"),
+            &mut out,
+        );
+
+        // Expected: path header, one pair of ± lines (row 0 deduped), trailing blank.
+        assert_eq!(
+            out,
+            vec![
+                "lib.rs".to_string(),
+                "- fn foo() { foo(); }".to_string(),
+                "+ fn bar() { bar(); }".to_string(),
+                String::new(),
+            ]
+        );
+    }
+
+    /// Verify the dry_run structured shape: results array + mode + files_affected.
+    #[test]
+    fn collect_diff_dry_run_result_shape() {
+        let lines = vec!["risk safe; files 0; usages 0".to_string(), String::new()];
+        let value = serde_json::json!({
+            "results": lines,
+            "mode": "dry_run",
+            "files_affected": 0usize,
+        });
+        assert_eq!(value["mode"], "dry_run");
+        assert_eq!(value["files_affected"], 0);
+        let results = value["results"].as_array().expect("array");
+        assert_eq!(results[0].as_str().unwrap(), "risk safe; files 0; usages 0");
+    }
+
+    /// Verify the execute structured shape: results array + mode + files_modified.
+    #[test]
+    fn collect_diff_execute_result_shape() {
+        let value = serde_json::json!({
+            "results": ["renamed: src/lib.rs"],
+            "mode": "executed",
+            "files_modified": 1usize,
+        });
+        assert_eq!(value["mode"], "executed");
+        assert_eq!(value["files_modified"], 1);
+        let results = value["results"].as_array().expect("array");
+        assert_eq!(results[0].as_str().unwrap(), "renamed: src/lib.rs");
     }
 }
 
@@ -155,11 +251,18 @@ fn apply_rename(path: &Path, ranges: &[IdentifierRange], new_bytes: &[u8]) -> st
     atomic_write_bytes(path, &bytes)
 }
 
-/// Print a minimal unified-diff-ish preview: for each hit, one `-`
-/// line (current) and one `+` line (after substitution). Multiple hits
-/// on the same line collapse into a single replacement line.
-fn print_diff(bytes: &[u8], ranges: &[IdentifierRange], old: &str, new: &str, path: &Path) {
-    println!("{}", path.display());
+/// Collect a minimal unified-diff-ish preview into `out`: for each hit,
+/// one `-` line (current) and one `+` line (after substitution). Multiple
+/// hits on the same source line collapse into a single replacement entry.
+fn collect_diff(
+    bytes: &[u8],
+    ranges: &[IdentifierRange],
+    old: &str,
+    new: &str,
+    path: &Path,
+    out: &mut Vec<String>,
+) {
+    out.push(path.display().to_string());
     let text = String::from_utf8_lossy(bytes);
     let lines: Vec<&str> = text.lines().collect();
     let mut shown: HashSet<usize> = HashSet::new();
@@ -168,9 +271,9 @@ fn print_diff(bytes: &[u8], ranges: &[IdentifierRange], old: &str, new: &str, pa
             continue;
         }
         if let Some(line) = lines.get(r.row) {
-            println!("- {line}");
-            println!("+ {}", line.replace(old, new));
+            out.push(format!("- {line}"));
+            out.push(format!("+ {}", line.replace(old, new)));
         }
     }
-    println!();
+    out.push(String::new());
 }

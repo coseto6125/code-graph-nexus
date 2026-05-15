@@ -161,15 +161,18 @@ pub fn run(
                         let consumer_file = entry["consumer_file"].as_str().unwrap_or("");
                         let consumer_name = entry["consumer_name"].as_str().unwrap_or("");
                         let route_name = entry["route_name"].as_str().unwrap_or("");
-                        let drift_keys = entry["drift_keys"].as_array().map(|a| {
-                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
-                        }).unwrap_or_default();
-                        let resp_keys = entry["response_keys"].as_array().map(|a| {
-                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
-                        }).unwrap_or_default();
-                        let err_keys = entry["error_keys"].as_array().map(|a| {
-                            a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>()
-                        }).unwrap_or_default();
+                        let drift_keys = entry["drift_keys"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                            .unwrap_or_default();
+                        let resp_keys = entry["response_keys"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                            .unwrap_or_default();
+                        let err_keys = entry["error_keys"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                            .unwrap_or_default();
                         lines.push(serde_json::Value::String(format!(
                             "DRIFT  {consumer_file}:{consumer_name}  →  {route_name}\n       consumer reads:  {drift_keys:?}\n       route emits:     response_keys={resp_keys:?} error_keys={err_keys:?}"
                         )));

@@ -98,7 +98,9 @@ impl GnxMcpServer {
                     .clone()
                     .ok_or_else(|| anyhow::anyhow!("daemon mode requires DaemonState"))?;
                 // Recover from poison — a panicked handler shouldn't kill the server permanently.
-                let mut state = state_arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut state = state_arc
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 // mtime-remap probe (cheap stat). On Err we leave the
                 // existing engine in place rather than aborting — the
                 // caller will get whatever the (possibly stale) engine
