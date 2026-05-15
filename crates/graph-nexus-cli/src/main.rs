@@ -76,9 +76,6 @@ enum Commands {
     /// (will fold into `contracts` in a future task)
     #[command(hide = true)]
     ShapeCheck(commands::shape_check::ShapeCheckArgs),
-    /// Internal: MCP transport (serve | tools) — for external agents talking to gnx.
-    #[command(hide = true)]
-    Mcp(commands::mcp::McpArgs),
     /// Internal: Claude Code / Codex / Gemini agent hook dispatch.
     #[command(hide = true)]
     Hook(commands::hook::HookArgs),
@@ -98,7 +95,7 @@ fn main() {
     // Admin: subcommand → run the admin operation; no subcommand → launch TUI.
     if let Commands::Admin { command } = cli.command {
         let err = match command {
-            Some(cmd) => commands::admin::run(cmd),
+            Some(cmd) => commands::admin::run(cmd, Cli::command()),
             None => admin::run(admin::AdminArgs {}),
         };
         if let Err(e) = err {
@@ -129,9 +126,6 @@ fn main() {
             run_no_graph!(commands::coverage::run(args.clone(), &cli.graph))
         }
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
-        Commands::Mcp(args) => {
-            run_no_graph!(commands::mcp::run(args.clone(), Cli::command()))
-        }
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
         _ => {} // fall through to graph-loading path
     }
@@ -152,7 +146,6 @@ fn main() {
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
         | Commands::VerifyResolver(_)
-        | Commands::Mcp(_)
         | Commands::Hook(_) => None,
     };
     let cwd = repo_opt
@@ -189,7 +182,6 @@ fn main() {
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
         | Commands::VerifyResolver(_)
-        | Commands::Mcp(_)
         | Commands::Hook(_) => {
             unreachable!("handled before graph load")
         }
