@@ -21,7 +21,7 @@ pub enum McpAction {
         /// Optional path to graph.bin (daemon mode only; defaults to
         /// the same resolution gnx commands use).
         #[arg(long)]
-        graph: Option<String>,
+        graph: Option<std::path::PathBuf>,
     },
     /// List tools that would be exposed by `serve`. Useful for debug
     /// and for the test invariant.
