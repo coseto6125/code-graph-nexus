@@ -70,3 +70,43 @@ fn diff_baseline_pr_form_calls_gh() {
         .expect("run gnx diff");
     assert!(!output.status.success(), "non-existent PR must error");
 }
+
+#[test]
+fn git_guard_restores_branch_on_drop() {
+    use std::env;
+
+    // Capture current branch HEAD ref.
+    let before = Command::new("git")
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .current_dir(env::current_dir().unwrap())
+        .output()
+        .expect("git symbolic-ref");
+    let before_branch = String::from_utf8_lossy(&before.stdout).trim().to_string();
+    if before_branch.is_empty() {
+        eprintln!("skipping: HEAD is detached");
+        return;
+    }
+
+    let baseline_sha = {
+        let out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("git rev-parse")
+            .stdout;
+        String::from_utf8_lossy(&out).trim().to_string()
+    };
+
+    let _ = Command::new(env!("CARGO_BIN_EXE_gnx"))
+        .args(["diff", "--section", "bindings", "--baseline", &baseline_sha])
+        .output();
+
+    let after = Command::new("git")
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .expect("git symbolic-ref");
+    let after_branch = String::from_utf8_lossy(&after.stdout).trim().to_string();
+    assert_eq!(
+        before_branch, after_branch,
+        "branch must be restored after diff"
+    );
+}

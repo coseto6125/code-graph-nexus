@@ -8,6 +8,7 @@ use clap::{Args, ValueEnum};
 use graph_nexus_core::GnxError;
 
 pub mod baseline;
+pub mod git_guard;
 
 /// Section of the graph to diff. `All` = bindings + routes + contracts.
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq, Hash)]
@@ -50,9 +51,47 @@ pub fn run(args: DiffArgs) -> Result<(), GnxError> {
     };
 
     let baseline_sha = baseline::resolve(&args.baseline, &repo_dir)?;
+    let current_sha = baseline::resolve("HEAD", &repo_dir)?;
 
-    // Tasks 8+: stash + checkout baseline_sha, run analyzer, compare.
-    Err(GnxError::Output(format!(
-        "baseline resolved to {baseline_sha}; section diff not yet implemented"
-    )))
+    let want_bindings = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Bindings | DiffSection::All));
+    let want_routes = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Routes | DiffSection::All));
+    let want_contracts = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Contracts | DiffSection::All));
+
+    // Build baseline snapshot via temp checkout.
+    let _baseline_data = {
+        let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
+        snapshot_sections(&repo_dir, &args.section)?
+    }; // _guard dropped here, restores branch + stash
+
+    let _current_data = snapshot_sections(&repo_dir, &args.section)?;
+    let _ = (current_sha, want_bindings, want_routes, want_contracts);
+
+    // Section diff lands in Tasks 9-12.
+    Err(GnxError::Output(
+        "section diff not yet implemented".into(),
+    ))
+}
+
+fn snapshot_sections(
+    _repo_dir: &std::path::Path,
+    _sections: &[DiffSection],
+) -> Result<SectionSnapshot, GnxError> {
+    Ok(SectionSnapshot::default())
+}
+
+#[derive(Default)]
+#[allow(dead_code)] // fields populated in Tasks 9-12
+pub(crate) struct SectionSnapshot {
+    pub bindings: Vec<serde_json::Value>,
+    pub routes: Vec<serde_json::Value>,
+    pub contracts: Vec<serde_json::Value>,
 }
