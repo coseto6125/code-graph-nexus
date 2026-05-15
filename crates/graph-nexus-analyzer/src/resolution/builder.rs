@@ -729,6 +729,7 @@ impl GraphBuilder {
             traces_data,
             files,
             blind_spots: all_blind_spots,
+            route_shapes: Vec::new(),
         }
     }
 }

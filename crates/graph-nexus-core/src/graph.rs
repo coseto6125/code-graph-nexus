@@ -11,7 +11,7 @@ pub const GRAPH_MAGIC: [u8; 8] = *b"GNX-RS\0\0";
 /// the new reader (or vice-versa). The reader refuses any version it
 /// does not recognize, so a stale CLI does not segfault on a fresh
 /// `graph.bin` and a fresh CLI does not silently misinterpret old data.
-pub const GRAPH_FORMAT_VERSION: u32 = 1;
+pub const GRAPH_FORMAT_VERSION: u32 = 2;
 
 impl std::str::FromStr for NodeKind {
     type Err = ();
@@ -53,6 +53,7 @@ impl std::str::FromStr for RelType {
             "STEP_IN_PROCESS" => Ok(RelType::StepInProcess),
             "REFERENCES" => Ok(RelType::References),
             "DEFINES" => Ok(RelType::Defines),
+            "FETCHES" => Ok(RelType::Fetches),
             _ => Err(()),
         }
     }
@@ -106,6 +107,12 @@ pub enum RelType {
     HandlesRoute,
     StepInProcess,
     References,
+    /// HTTP client → Route edge: a consumer file calls `fetch(...)` /
+    /// `axios.get(...)` against a URL that matches a Route handler. The
+    /// `Edge.reason` encodes accessed response keys + per-file fetch
+    /// count as `fetch-url-match[|keys:a,b][|fetches:N]`, parsed by
+    /// `graph_nexus_analyzer::fetch_shape`.
+    Fetches,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -146,6 +153,20 @@ pub struct File {
     pub mtime: u64,
     pub content_hash: [u8; 32],
     pub category: FileCategory,
+}
+
+/// Per-Route response shape extracted from the handler's source. `node_idx`
+/// points into `ZeroCopyGraph.nodes`. `response_keys` are the top-level
+/// keys emitted on success paths (status 2xx or no status decoration);
+/// `error_keys` are the keys emitted on 4xx/5xx paths. `shape_check` uses
+/// `(response_keys ∪ error_keys)` as the "known" set against which
+/// consumer-side accessed keys are compared.
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+pub struct RouteShape {
+    pub node_idx: u32,
+    pub response_keys: Vec<StrRef>,
+    pub error_keys: Vec<StrRef>,
 }
 
 /// File-level record of a truly unresolvable code pattern (eval/dynamic
@@ -190,6 +211,12 @@ pub struct ZeroCopyGraph {
     /// File-level metadata: unresolvable code patterns detected during analysis.
     /// Not graph edges — just sites the LLM should flag for manual review.
     pub blind_spots: Vec<BlindSpotRecord>,
+
+    /// Per-Route response-shape metadata extracted from handler source.
+    /// Sparse: only Routes whose handler had a parseable `.json({...})` /
+    /// `json_encode([...])` payload appear here. `shape_check` joins this
+    /// against `RelType::Fetches` edge reasons to find consumer drift.
+    pub route_shapes: Vec<RouteShape>,
 }
 
 #[cfg(test)]
@@ -233,6 +260,7 @@ mod tests {
             traces_offsets: vec![],
             traces_data: vec![],
             blind_spots: vec![],
+            route_shapes: vec![],
         };
 
         // Serialize
