@@ -18,11 +18,18 @@ pub type Span = (u32, u32, u32, u32);
 pub const MODULE_LEVEL_SOURCE: &str = "<module>";
 
 /// Extract `(start_row, start_col, end_row, end_col)` span from a tree-sitter node.
+/// Uses saturating conversion: rows/cols exceeding `u32::MAX` clamp to the cap
+/// rather than silently truncating to a wrong line/col.
 #[inline]
 pub fn node_span(node: &tree_sitter::Node) -> Span {
     let s = node.start_position();
     let e = node.end_position();
-    (s.row as u32, s.column as u32, e.row as u32, e.column as u32)
+    (
+        crate::calls::safe_row(s.row),
+        u32::try_from(s.column).unwrap_or(u32::MAX),
+        crate::calls::safe_row(e.row),
+        u32::try_from(e.column).unwrap_or(u32::MAX),
+    )
 }
 
 /// True iff `outer` (row,col,row,col) fully contains `inner`.

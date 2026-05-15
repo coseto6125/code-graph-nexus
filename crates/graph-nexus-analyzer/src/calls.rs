@@ -2,6 +2,18 @@ use graph_nexus_core::analyzer::types::RawNode;
 use graph_nexus_core::graph::NodeKind;
 use tree_sitter::Node;
 
+/// Saturating conversion of a tree-sitter row (`usize`) to `u32`.
+/// Files exceeding `u32::MAX` rows clamp to `u32::MAX` rather than silently
+/// truncating to a wrong line number — the call would be misattributed to
+/// whichever function happens to contain row `truncated_value`. With
+/// saturation, the call is attached to whichever function contains the very
+/// last line (almost certainly a no-op since no real function spans line
+/// 4.29 billion).
+#[inline]
+pub fn safe_row(row: usize) -> u32 {
+    u32::try_from(row).unwrap_or(u32::MAX)
+}
+
 /// Walk the AST and attach `callee` names to the smallest enclosing
 /// function/method/constructor `RawNode` by span containment. Reused across
 /// languages — the `call_kinds` set lists this language's AST node kinds that
@@ -13,7 +25,7 @@ pub fn extract_calls(root: Node<'_>, source: &[u8], nodes: &mut [RawNode], call_
         if call_kinds.contains(&n.kind()) {
             let callee_name = callee_name_from(n, source);
             if let Some(name) = callee_name {
-                let line = n.start_position().row as u32;
+                let line = safe_row(n.start_position().row);
                 attach_to_enclosing(line, name, nodes);
             }
         }

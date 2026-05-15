@@ -442,6 +442,20 @@ impl GraphBuilder {
 
         let mut start_indices: Vec<u32> = Vec::with_capacity(self.local_graphs.len());
         {
+            // Precompute as u64 so we detect overflow before the lossy cast
+            // would corrupt indices. Hitting this means >4.29B total RawNodes
+            // — not currently observed in any real repo, but a single int
+            // truncation would silently misalign every downstream index.
+            let total: u64 = self
+                .local_graphs
+                .iter()
+                .map(|lg| lg.nodes.len() as u64)
+                .sum();
+            assert!(
+                total <= u32::MAX as u64,
+                "total RawNode count {} exceeds u32::MAX — graph node ID scheme would overflow",
+                total
+            );
             let mut acc: u32 = 0;
             for lg in &self.local_graphs {
                 start_indices.push(acc);
@@ -719,7 +733,14 @@ impl GraphBuilder {
             out_offsets[i + 1] += out_offsets[i];
         }
 
-        // Build in_edge_idx (indices of edges sorted by target)
+        // Build in_edge_idx (indices of edges sorted by target).
+        // Same overflow guard as the node accumulator: precompute total in
+        // u64 and assert before the lossy cast would corrupt the index range.
+        assert!(
+            edges.len() as u64 <= u32::MAX as u64,
+            "total edge count {} exceeds u32::MAX — edge index scheme would overflow",
+            edges.len()
+        );
         let mut in_edge_idx: Vec<u32> = (0..edges.len() as u32).collect();
         in_edge_idx.sort_by_key(|&idx| edges[idx as usize].target);
 
@@ -1126,7 +1147,11 @@ mod tests {
             match original.tier {
                 DecisionTier::ImportScoped => assert_eq!(v["tier"], "ImportScoped"),
                 DecisionTier::Unresolved => assert_eq!(v["tier"], "Unresolved"),
-                _ => panic!("unexpected tier"),
+                DecisionTier::SameFile
+                | DecisionTier::QualifierScoped
+                | DecisionTier::Global => {
+                    panic!("fixture should only produce ImportScoped/Unresolved, got {:?}", original.tier)
+                }
             }
         }
     }
