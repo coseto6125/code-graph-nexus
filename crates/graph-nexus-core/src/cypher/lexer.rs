@@ -59,6 +59,26 @@ pub enum Token {
     RegexMatch,
 }
 
+/// Attempt to consume one whitespace-separated word at `*i` that matches
+/// `expected` (case-insensitive). Advances `*i` past the word on success;
+/// restores `*i` to its entry value on mismatch.
+fn try_consume_word(input: &str, bytes: &[u8], i: &mut usize, expected: &str) -> bool {
+    let save = *i;
+    while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
+        *i += 1;
+    }
+    let bs = *i;
+    while *i < bytes.len() && bytes[*i].is_ascii_alphabetic() {
+        *i += 1;
+    }
+    if input[bs..*i].eq_ignore_ascii_case(expected) {
+        true
+    } else {
+        *i = save;
+        false
+    }
+}
+
 pub fn tokenize(input: &str) -> Result<Vec<Token>, CypherError> {
     let bytes = input.as_bytes();
     let mut i = 0;
@@ -265,19 +285,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, CypherError> {
                 "WITH" => Token::With,
                 "AS" => Token::As,
                 "ORDER" => {
-                    // expect BY
-                    let save = i;
-                    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                        i += 1;
-                    }
-                    let bs = i;
-                    while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
-                        i += 1;
-                    }
-                    if input[bs..i].eq_ignore_ascii_case("BY") {
+                    if try_consume_word(input, bytes, &mut i, "BY") {
                         Token::OrderBy
                     } else {
-                        i = save;
                         Token::Ident(s.into())
                     }
                 }
@@ -292,34 +302,16 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, CypherError> {
                 "NOT" => Token::Not,
                 "IN" => Token::In,
                 "STARTS" => {
-                    let save = i;
-                    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                        i += 1;
-                    }
-                    let bs = i;
-                    while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
-                        i += 1;
-                    }
-                    if input[bs..i].eq_ignore_ascii_case("WITH") {
+                    if try_consume_word(input, bytes, &mut i, "WITH") {
                         Token::StartsWith
                     } else {
-                        i = save;
                         Token::Ident(s.into())
                     }
                 }
                 "ENDS" => {
-                    let save = i;
-                    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-                        i += 1;
-                    }
-                    let bs = i;
-                    while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
-                        i += 1;
-                    }
-                    if input[bs..i].eq_ignore_ascii_case("WITH") {
+                    if try_consume_word(input, bytes, &mut i, "WITH") {
                         Token::EndsWith
                     } else {
-                        i = save;
                         Token::Ident(s.into())
                     }
                 }
