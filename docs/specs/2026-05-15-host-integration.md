@@ -83,7 +83,7 @@ prompt-layer mechanisms; the model sees them as text, not tools.
   the same binary, not a separate executable — see "Single-binary
   model" below)
 
-### Single-binary model: `gnx mcp serve`
+### Single-binary model: `gnx mcp serve` with dual dispatch modes
 
 A new crate `crates/graph-nexus-mcp/` exposes the **server library**
 (stdio JSON-RPC handler, tool dispatch, schema generation). The
@@ -94,14 +94,88 @@ wraps the library:
 # CLI mode — existing usage unchanged
 gnx context --name foo
 
-# MCP server mode — what hosts invoke
-gnx mcp serve            # stdio JSON-RPC server, blocks until host disconnects
-gnx mcp tools            # list exposed tools (debug)
+# MCP server mode (Fresh, default) — each tool call spawns a fresh CLI
+gnx mcp serve
+
+# MCP server mode (Fast, opt-in) — Engine stays mmap'd for server lifetime
+gnx mcp serve --daemon
+
+# Debug — list tools exposed via inventory + their schemas
+gnx mcp tools
 ```
 
-Host config writes `command: "gnx", args: ["mcp", "serve"]` —
-one binary serves all callers, no separate `gnx-mcp` install step,
-no PATH duplication.
+The user picks the mode at TUI install time. Two dispatch back-ends
+share the same inventory-based tool registry; only the per-call
+dispatch differs.
+
+### Why dual mode
+
+LLM coding hosts have two distinct usage profiles:
+
+- **Interactive** (Claude Code / Cursor / etc. typing-with-user) —
+  tool calls are dwarfed by LLM thinking time (2-30s/turn). A
+  ~15-100ms latency difference per call is invisible. Memory
+  footprint and graph freshness matter more than µs latency.
+- **Batch / scripted** — many tool calls back-to-back, latency floor
+  matters. Per-call spawn cost compounds.
+
+Spawn mode wins on freshness + isolation + simplicity; daemon wins
+on raw latency. Letting the operator pick at install time avoids
+forcing one trade-off on everyone.
+
+### Latency comparison (predicted)
+
+Verified against README's measured CLI end-to-end latencies:
+
+| Tool | CLI alone | Daemon mode | Spawn mode (Linux) |
+|---|---|---|---|
+| `context` | 9 ms | ~12 ms | ~24 ms |
+| `impact` | 5-6 ms | ~8 ms | ~20 ms |
+| `route_map` | 13 ms | ~16 ms | ~28 ms |
+| `query` (BM25) | 24 ms | ~27 ms | ~39 ms |
+| `detect_changes` | 230 ms | ~233 ms | ~245 ms |
+
+Spawn-mode overhead is 10-15 ms on Linux per call, 15-30 ms on macOS,
+30-80 ms on Windows (process creation costs). All are negligible
+beside LLM thinking time.
+
+### Daemon-mode stale-graph mitigation (mtime-remap)
+
+POSIX file replacement (write-tmp + atomic rename, which `gnx
+analyze` uses — see `crates/graph-nexus-core/src/registry/io.rs:17-35`)
+swaps the dentry but the daemon's existing mmap still points at the
+unlinked old inode. Without mitigation, daemon serves stale data
+after every `gnx analyze` until restart.
+
+Solution (~30 LOC): stat the graph file's mtime before each
+dispatch; remap if changed:
+
+```rust
+// graph-nexus-mcp/src/daemon.rs
+fn ensure_fresh(engine: &mut Engine, path: &Path) -> Result<()> {
+    let mtime = fs::metadata(path)?.modified()?;
+    if mtime > engine.loaded_at {
+        *engine = Engine::load(path)?;       // new fd → new inode
+        // old Engine drops → old mmap released → old inode finally freed
+    }
+    Ok(())
+}
+```
+
+Stat is <0.1 ms (one syscall); cost is dwarfed by mmap-load when
+remap is actually needed (~1-5 ms). Daemon mode is therefore
+"fresh by next call after analyze".
+
+Host config writes one of:
+```json
+// Fresh (default)
+{"mcpServers":{"gnx":{"command":"gnx","args":["mcp","serve"]}}}
+
+// Fast (opt-in)
+{"mcpServers":{"gnx":{"command":"gnx","args":["mcp","serve","--daemon"]}}}
+```
+
+One binary, two modes, no separate `gnx-mcp` install step.
 
 ### Shared business-logic refactor (precondition)
 
@@ -133,33 +207,97 @@ token-cheapest-output principle. **Zero hardcoding** of which tools
 exist: each command self-registers via the `inventory` crate at link
 time; the MCP crate is tool-agnostic.
 
-### MCP crate infrastructure (~80 LOC, written once)
+### MCP crate infrastructure — registry shared by both modes (~100 LOC)
 
 ```rust
 // graph-nexus-mcp/src/registry.rs
 
+/// Single registration captures everything both modes need.
 pub struct GnxMcpTool {
     pub name: &'static str,
     pub description: &'static str,
     pub schema: fn() -> schemars::schema::RootSchema,
+
+    /// Daemon-mode dispatch — call `run_inner` in-process.
     pub handler: fn(serde_json::Value, &Engine)
         -> Result<serde_json::Value, GnxError>,
+
+    /// Spawn-mode dispatch — what subcommand to spawn.
+    /// Auto-derived from `module_path!()` — e.g. "context".
+    pub subcommand: &'static str,
 }
 inventory::collect!(GnxMcpTool);
 
-/// MCP server is completely tool-agnostic — iterate whatever was
-/// submitted at link time.
-pub fn register_all(server: &mut McpServer, engine: &Engine) {
+pub fn register_all(server: &mut McpServer, mode: DispatchMode) {
     for tool in inventory::iter::<GnxMcpTool>() {
         server.register(tool.name, tool.description, (tool.schema)(),
-            move |args| {
-                let value = (tool.handler)(args, engine)?;
-                let body = output::emit_to_string(&value, OutputFormat::Toon)?;
-                Ok(ToolResult::text(body))
+            match mode {
+                DispatchMode::Daemon(ref engine_cell) => {
+                    daemon_handler(tool, engine_cell.clone())
+                }
+                DispatchMode::Spawn => {
+                    spawn_handler(tool)
+                }
             });
     }
 }
 ```
+
+### Daemon-mode handler (~50 LOC)
+
+```rust
+// graph-nexus-mcp/src/daemon.rs
+fn daemon_handler(tool: &'static GnxMcpTool, engine_cell: Arc<Mutex<Engine>>)
+    -> impl Fn(Value) -> Result<ToolResult>
+{
+    move |args| {
+        let mut engine = engine_cell.lock().unwrap();
+        ensure_fresh(&mut engine, &engine.path)?;     // mtime-remap
+        let value = (tool.handler)(args, &engine)?;
+        let body = output::emit_to_string(&value, OutputFormat::Toon)?;
+        Ok(ToolResult::text(body))
+    }
+}
+```
+
+### Spawn-mode handler (~80 LOC)
+
+```rust
+// graph-nexus-mcp/src/spawn.rs
+fn spawn_handler(tool: &'static GnxMcpTool)
+    -> impl Fn(Value) -> Result<ToolResult>
+{
+    move |args| {
+        let argv = json_to_argv(&args)?;
+        let self_exe = std::env::current_exe()?;
+        let output = std::process::Command::new(self_exe)
+            .arg(tool.subcommand)
+            .args(argv)
+            .output()?;
+        if output.status.success() {
+            // CLI already emitted TOON / per-command-default to stdout.
+            Ok(ToolResult::text(String::from_utf8_lossy(&output.stdout).into_owned()))
+        } else {
+            Ok(ToolResult::error(String::from_utf8_lossy(&output.stderr).into_owned()))
+        }
+    }
+}
+```
+
+### `json_to_argv` — the only non-trivial new conversion (~30 LOC)
+
+Translates MCP's JSON args into the clap CLI flag form gnx
+subcommands expect. JsonSchema-driven for type fidelity (bool flags
+vs string opts vs numeric).
+
+```rust
+// {"name": "foo", "uid": null}  →  ["--name", "foo"]
+// {"includeTests": true}        →  ["--include-tests"]
+// {"includeTests": false}       →  []
+```
+
+Vec<T> and nested objects are out of MVP scope; gnx's existing args
+are all flat (no command takes a nested object).
 
 ### Per-command self-registration (one line at the bottom of each `commands/<x>.rs`)
 
@@ -185,6 +323,9 @@ gnx_register_mcp_tool!(ContextArgs, run_inner);
 
 ### The registration macro (one definition, in `graph-nexus-mcp::macros`)
 
+The macro fills both mode fields from one declaration. Daemon mode
+uses `handler`; spawn mode uses `subcommand`. Both auto-derived.
+
 ```rust
 #[macro_export]
 macro_rules! gnx_register_mcp_tool {
@@ -194,10 +335,13 @@ macro_rules! gnx_register_mcp_tool {
                 name: $crate::registry::derive_tool_name(module_path!()),
                 description: <$args as ::schemars::JsonSchema>::schema_name(),
                 schema: || ::schemars::schema_for!($args),
+                // Daemon mode: in-process handler.
                 handler: |raw, engine| {
                     let parsed: $args = ::serde_json::from_value(raw)?;
                     $inner(parsed, engine)
                 },
+                // Spawn mode: subcommand auto-derived from module path.
+                subcommand: $crate::registry::derive_subcommand(module_path!()),
             }
         }
     };
@@ -532,6 +676,10 @@ spec. Its subcommands stay inside the TUI — never exposed as
 | Output helper refactor | Add `output::emit_to_string()` returning String | Split serialization from stdout-write so both CLI (`emit`) and MCP (`ToolResult::text`) consume the same code. Paired with the `run_inner` refactor. |
 | MCP tool discovery | `inventory` crate + per-command self-registration via `gnx_register_mcp_tool!` macro | User-clarified 2026-05-15: zero hardcoded tool list in MCP crate. Adding a command = one macro line in that command's own file. MCP crate iterates `inventory::iter::<GnxMcpTool>()`. Tool name from `module_path!()`, description from `JsonSchema` doc comment — no string literals anywhere. |
 | Self-registration completeness invariant | Test asserts `gnx mcp tools` reports exactly the 8 known commands | Catches "forgot to add the macro line" silent regressions. Adding a 9th command updates the test. |
+| MCP dispatch architecture | Dual-mode: spawn (default) + daemon (opt-in via `--daemon`) | User-clarified 2026-05-15: spawn gives freshness + isolation + simplicity wins on the LLM interactive use case; daemon wins on raw latency for batch/scripted use. Picking either alone forces an unwanted trade-off on the other use case. Shared inventory means dual-mode costs only ~510 LOC vs ~490 spawn-only — minor surcharge for user flexibility. |
+| Default mode | Spawn (Fresh) | Safer defaults — no stale graph, no memory footprint, no mtime-remap edge cases. Power users opt into daemon via the TUI mode picker. |
+| Daemon stale-graph mitigation | mtime-remap before each dispatch (~30 LOC) | POSIX `rename()` (used by `gnx analyze` via `crates/graph-nexus-core/src/registry/io.rs:17-35`) swaps dentry but mmap holds the unlinked old inode. Without mitigation, daemon serves stale data until restart. `fs::metadata().modified()` follows dentry → returns new inode's mtime → daemon detects and remaps. Cost: one syscall per call (<0.1ms). |
+| TUI mode picker | Asked at MCP install time per host | TUI prompts "Fast (daemon) ~12ms/call, 50-500MB resident, auto-refresh on gnx analyze · Fresh (spawn) ~24ms/call, <10MB resident, always 100% fresh". Writes appropriate `args` array into host config. User can re-run install to switch modes later. |
 | Native install automation | Manual (TUI prints patch + steps) | Too easy to corrupt user's git tree. Auto-`git apply` rejected. |
 | MCP install automation | Fully automated (atomic JSON write) | All MCP host config files are well-known JSON; safe to auto-write with read-modify-write atomicity. TUI just asks "which host?" then writes the entry. |
 | Native scope | Codex + Gemini only | User-clarified 2026-05-15: every other host is either closed source (Cursor/Copilot/Windsurf/Claude Code) or open source with too-small user base to justify per-fork maintenance (Cline/Roo/Aider/Continue). MCP catches all of those. |
