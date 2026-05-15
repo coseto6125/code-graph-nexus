@@ -85,7 +85,11 @@ impl GnxMcpServer {
             .ok_or_else(|| anyhow::anyhow!("unknown tool: {name}"))?;
         match self.mode {
             DispatchMode::Spawn => {
-                crate::spawn::run_spawn(&self.self_exe, (tool.subcommand)(), &args)
+                let binary = self.self_exe.clone();
+                let subcommand = (tool.subcommand)().to_string();
+                tokio::task::spawn_blocking(move || crate::spawn::run_spawn(&binary, &subcommand, &args))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("spawn task: {e}"))?
             }
             DispatchMode::Daemon => {
                 let state_arc = self
