@@ -40,26 +40,21 @@ pub fn run(args: McpArgs, root_cmd: Command) -> Result<(), GnxError> {
     match args.action {
         McpAction::Tools { format } => {
             let tools = server.list_tools();
-            let tool_infos: Vec<ToolInfo> = tools
-                .iter()
-                .map(|t| ToolInfo {
-                    name: t.name.clone(),
-                    description: t.description.clone(),
-                })
-                .collect();
 
             match format.as_str() {
-                "json" => {
+                "json" | "toon" => {
+                    if format == "toon" {
+                        eprintln!("warning: toon renderer not yet integrated, falling back to json");
+                    }
+                    let tool_infos: Vec<ToolInfo> = tools
+                        .iter()
+                        .map(|t| ToolInfo {
+                            name: t.name.clone(),
+                            description: t.description.clone(),
+                        })
+                        .collect();
                     let json = serde_json::to_string_pretty(&tool_infos)
                         .map_err(|e| GnxError::Output(format!("json: {e}")))?;
-                    println!("{json}");
-                }
-                "toon" => {
-                    let value = serde_json::to_value(&tool_infos)
-                        .map_err(|e| GnxError::Output(format!("toon serialize: {e}")))?;
-                    // TODO: etoon integration pending; fallback to JSON for now
-                    let json = serde_json::to_string_pretty(&value)
-                        .map_err(|e| GnxError::Output(format!("toon json: {e}")))?;
                     println!("{json}");
                 }
                 _ => {
