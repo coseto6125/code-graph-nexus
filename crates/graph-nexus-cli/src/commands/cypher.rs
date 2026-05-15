@@ -194,14 +194,13 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
             graph_nexus_core::GnxError::InvalidArgument(format!("--repo selector: {e}"))
         })?;
         let cwd = std::env::current_dir().unwrap_or_default();
-        let resolved = repo_selector::resolve(&selector, &registry, cwd.to_str().unwrap_or("."));
-        if let Ok(repos) = resolved {
-            if repos.len() > 1 {
-                return Err(graph_nexus_core::GnxError::InvalidArgument(format!(
-                    "cypher is single-repo only (graph identity); --repo resolved to {} repos. Pick one with --repo <name|path>.",
-                    repos.len()
-                )));
-            }
+        let repos = repo_selector::resolve(&selector, &registry, cwd.to_str().unwrap_or("."))
+            .map_err(|e| graph_nexus_core::GnxError::InvalidArgument(format!("--repo: {e}")))?;
+        if repos.len() > 1 {
+            return Err(graph_nexus_core::GnxError::InvalidArgument(format!(
+                "cypher is single-repo only (graph identity); --repo resolved to {} repos. Pick one with --repo <name|path>.",
+                repos.len()
+            )));
         }
     }
 
