@@ -572,6 +572,61 @@ mod tests {
         f(archived);
     }
 
+    /// Three-node chain: a(0) -[:Calls]-> b(1) -[:Calls]-> c(2)
+    fn build_three_chain() -> Vec<u8> {
+        let mut pool = StringPool::new();
+        let na = pool.add("a");
+        let nb = pool.add("b");
+        let nc = pool.add("c");
+        let fp = pool.add("src/x.ts");
+        let r1 = pool.add("r1");
+        let r2 = pool.add("r2");
+        let ua = pool.add("0:a");
+        let ub = pool.add("0:b");
+        let uc = pool.add("0:c");
+
+        let g = ZeroCopyGraph {
+            magic: GRAPH_MAGIC,
+            version: GRAPH_FORMAT_VERSION,
+            fingerprint: [0; 32],
+            string_pool: pool.bytes,
+            files: vec![File {
+                path: fp,
+                mtime: 0,
+                content_hash: [0u8; 32],
+                category: FileCategory::Source,
+            }],
+            nodes: vec![
+                Node { uid: ua, name: na, file_idx: 0, kind: NodeKind::Function, span: (0, 0, 1, 0), community_id: 0 },
+                Node { uid: ub, name: nb, file_idx: 0, kind: NodeKind::Function, span: (2, 0, 3, 0), community_id: 0 },
+                Node { uid: uc, name: nc, file_idx: 0, kind: NodeKind::Function, span: (4, 0, 5, 0), community_id: 0 },
+            ],
+            edges: vec![
+                Edge { source: 0, target: 1, rel_type: RelType::Calls, confidence: 1.0, reason: r1 },
+                Edge { source: 1, target: 2, rel_type: RelType::Calls, confidence: 1.0, reason: r2 },
+            ],
+            out_offsets: vec![0, 1, 2, 2],
+            in_offsets: vec![0, 0, 1, 2],
+            in_edge_idx: vec![0, 1],
+            name_index: vec![],
+            embeddings: None,
+            process_start: 3,
+            traces_offsets: vec![],
+            traces_data: vec![],
+            blind_spots: vec![],
+            route_shapes: vec![],
+        };
+        rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
+    }
+
+    fn with_three<F: FnOnce(&crate::graph::ArchivedZeroCopyGraph)>(f: F) {
+        let bytes = build_three_chain();
+        let archived =
+            rkyv::access::<crate::graph::ArchivedZeroCopyGraph, rkyv::rancor::Error>(&bytes)
+                .unwrap();
+        f(archived);
+    }
+
     // -----------------------------------------------------------------------
     // C1 – scaffolding compile check
     // -----------------------------------------------------------------------
@@ -622,6 +677,25 @@ mod tests {
             let r = execute(&q, g, Path::new(".")).unwrap();
             assert_eq!(r.columns, vec!["a.name"]);
             assert!(r.rows.is_empty());
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // C3 – multi-hop chain (3 nodes)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn exec_three_hop_chain_returns_one_row() {
+        with_three(|g| {
+            let q = parse(
+                "MATCH (a:Function)-[:Calls]->(b:Function)-[:Calls]->(c:Function) RETURN a.name, b.name, c.name",
+            )
+            .unwrap();
+            let r = execute(&q, g, Path::new(".")).unwrap();
+            assert_eq!(r.rows.len(), 1);
+            assert_eq!(r.rows[0][0], Value::Str("a".into()));
+            assert_eq!(r.rows[0][1], Value::Str("b".into()));
+            assert_eq!(r.rows[0][2], Value::Str("c".into()));
         });
     }
 }
