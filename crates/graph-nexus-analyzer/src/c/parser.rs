@@ -1,6 +1,6 @@
 use super::receiver_types::{collect_receiver_methods, extract_c_calls};
 use graph_nexus_core::analyzer::provider::LanguageProvider;
-use graph_nexus_core::analyzer::types::{LocalGraph, RawImport, RawNode};
+use graph_nexus_core::analyzer::types::{BindingKind, LocalGraph, RawImport, RawNode};
 use graph_nexus_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -173,6 +173,54 @@ fn extract_named_bindings(root: Node<'_>, source: &[u8], imports: &mut Vec<RawIm
     }
 }
 
+/// Classify an object-like `#define` body into a `BindingKind`.
+///
+/// Rules (in priority order):
+/// 1. Empty body → `Flag`
+/// 2. Numeric literal (decimal, hex, float, suffixed) or string literal → `Constant`
+/// 3. Single C identifier → `Alias`
+/// 4. Everything else (operators, parenthesized expressions, etc.) → `Macro`
+fn classify_define_body(body: &str) -> BindingKind {
+    let body = body.trim();
+    if body.is_empty() {
+        return BindingKind::Flag;
+    }
+    // Numeric literal: decimal/float with optional suffix, or hex.
+    let is_numeric = {
+        let s = body.trim_start_matches('-');
+        (s.starts_with("0x") || s.starts_with("0X"))
+            && s[2..].trim_end_matches(['u', 'U', 'l', 'L']).chars().all(|c| c.is_ascii_hexdigit())
+        || {
+            let stripped = s
+                .trim_end_matches(['u', 'U', 'l', 'L', 'f', 'F']);
+            let mut parts = stripped.splitn(2, '.');
+            let integer_part = parts.next().unwrap_or("");
+            let frac_part = parts.next().unwrap_or("");
+            !integer_part.is_empty()
+                && integer_part.chars().all(|c| c.is_ascii_digit())
+                && frac_part.chars().all(|c| c.is_ascii_digit())
+        }
+    };
+    if is_numeric {
+        return BindingKind::Constant;
+    }
+    // String literal.
+    if body.starts_with('"') && body.ends_with('"') && body.len() >= 2 {
+        return BindingKind::Constant;
+    }
+    // Single C identifier.
+    if body
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_alphabetic() || c == '_')
+        .unwrap_or(false)
+        && body.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return BindingKind::Alias;
+    }
+    BindingKind::Macro
+}
+
 fn emit_typedef_binding(td: Node<'_>, source: &[u8], imports: &mut Vec<RawImport>) {
     // Children: `typedef` keyword, type spec(s), declarator (alias), `;`.
     // The alias is the type_identifier nested in the last named child that
@@ -228,6 +276,7 @@ fn emit_typedef_binding(td: Node<'_>, source: &[u8], imports: &mut Vec<RawImport
         alias: Some(alias.to_string()),
         imported_name: alias.to_string(),
         source: underlying,
+        binding_kind: Some(BindingKind::Alias),
     });
 }
 
@@ -252,10 +301,13 @@ fn emit_object_macro_binding(def: Node<'_>, source: &[u8], imports: &mut Vec<Raw
     if is_include_guard(name, body) {
         return;
     }
+    let body_str = body.unwrap_or("");
+    let kind = classify_define_body(body_str);
     imports.push(RawImport {
         alias: Some(name.to_string()),
         imported_name: name.to_string(),
-        source: body.unwrap_or("").to_string(),
+        source: body_str.to_string(),
+        binding_kind: Some(kind),
     });
 }
 
@@ -293,6 +345,7 @@ fn emit_function_macro_binding(def: Node<'_>, source: &[u8], imports: &mut Vec<R
         alias: Some(name.to_string()),
         imported_name: name.to_string(),
         source: combined,
+        binding_kind: Some(BindingKind::Macro),
     });
 }
 
@@ -310,6 +363,7 @@ fn emit_extern_binding(decl: Node<'_>, source: &[u8], imports: &mut Vec<RawImpor
         alias: Some(name.to_string()),
         imported_name: name.to_string(),
         source: "external".to_string(),
+        binding_kind: Some(BindingKind::Alias),
     });
 }
 
@@ -520,6 +574,7 @@ impl LanguageProvider for CProvider {
                         alias: None,
                         imported_name: "*".to_string(),
                         source: src_str.to_string(),
+                        binding_kind: None,
                     });
                 }
             }

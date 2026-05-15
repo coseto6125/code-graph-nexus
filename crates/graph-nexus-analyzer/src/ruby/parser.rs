@@ -298,6 +298,7 @@ impl LanguageProvider for RubyProvider {
                         alias: None,
                         imported_name: name_str.to_string(),
                         source: name_str.to_string(),
+                        binding_kind: None,
                     });
                 }
             }
