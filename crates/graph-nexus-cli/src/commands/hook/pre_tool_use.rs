@@ -7,9 +7,18 @@ use super::common::{emit_additional_context, gitnexus_dir, strip_shell_quotes, H
 use crate::commands::search::{compute_hits, Hit, SearchArgs, SearchMode};
 use crate::engine::Engine;
 use graph_nexus_core::GnxError;
+use std::sync::OnceLock;
 
 const MAX_HITS: usize = 5;
 const MAX_BYTES: usize = 2048;
+const HITS_HEADER: &str = "gnx graph hits:\n";
+
+/// Glob-stem extractor. Compiled once per process — PreToolUse fires
+/// on every Grep / Glob / Bash so amortising the regex build matters.
+fn glob_stem_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"[*/]([a-zA-Z][a-zA-Z0-9_-]{2,})").unwrap())
+}
 
 pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     let pattern = match extract_pattern(&input.tool_name, &input.tool_input) {
@@ -40,7 +49,7 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
         return Ok(());
     }
     let lines = format_hits(&hits);
-    if lines.trim().is_empty() {
+    if lines.is_empty() {
         return Ok(());
     }
     emit_additional_context("PreToolUse", &lines);
@@ -48,8 +57,7 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
 }
 
 fn format_hits(hits: &[Hit]) -> String {
-    let mut out = String::from("gnx graph hits:\n");
-    let mut count = 0usize;
+    let mut out = String::from(HITS_HEADER);
     for h in hits.iter().take(MAX_HITS) {
         let line = format!(
             "  [{}] {}:{} {} (callers:{}) score:{:.3}\n",
@@ -59,12 +67,14 @@ fn format_hits(hits: &[Hit]) -> String {
             break;
         }
         out.push_str(&line);
-        count += 1;
     }
-    if count == 0 {
-        return String::new();
+    // If no row was appended, the buffer still equals the header — caller
+    // treats an empty return as "no hits".
+    if out.len() == HITS_HEADER.len() {
+        String::new()
+    } else {
+        out
     }
-    out
 }
 
 fn extract_pattern(tool: &str, tool_input: &serde_json::Value) -> Option<String> {
@@ -78,8 +88,7 @@ fn extract_pattern(tool: &str, tool_input: &serde_json::Value) -> Option<String>
                 .get("pattern")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let re = regex::Regex::new(r"[*/]([a-zA-Z][a-zA-Z0-9_-]{2,})").ok()?;
-            re.captures(raw).map(|c| c[1].to_string())
+            glob_stem_re().captures(raw).map(|c| c[1].to_string())
         }
         "Bash" => {
             let cmd = tool_input
@@ -93,11 +102,11 @@ fn extract_pattern(tool: &str, tool_input: &serde_json::Value) -> Option<String>
     }
 }
 
+/// Single-pass scan: locate `rg` / `grep`, then walk subsequent tokens
+/// to find the first ≥3-char non-flag positional. Returns `None` if
+/// `rg` / `grep` is absent or every token after it is a flag / flag
+/// value / too short.
 fn extract_from_shell(cmd: &str) -> Option<String> {
-    let has_rg_or_grep = cmd.split_whitespace().any(|t| t == "rg" || t == "grep");
-    if !has_rg_or_grep {
-        return None;
-    }
     let flags_with_values = [
         "-e",
         "-f",

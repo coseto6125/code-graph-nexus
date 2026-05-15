@@ -4,10 +4,10 @@
 //! `cwd` is a git worktree without an index.
 
 use super::common::{emit_additional_context, gitnexus_dir, HookInput};
+use crate::git::safe_exec;
 use graph_nexus_core::GnxError;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     if input.cwd.is_empty() {
@@ -94,7 +94,7 @@ fn read_stats(gnx_dir: &Path, repo_root: &Path) -> (String, String, String) {
 }
 
 fn git_head_short(repo_root: &Path) -> Option<String> {
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["rev-parse", "--short", "HEAD"])
         .current_dir(repo_root)
         .output()
@@ -148,11 +148,7 @@ fn detect_worktree_needing_index(cwd: &Path) -> Option<String> {
 }
 
 fn git_rev_parse(cwd: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .ok()?;
+    let out = safe_exec::git().args(args).current_dir(cwd).output().ok()?;
     if !out.status.success() {
         return None;
     }

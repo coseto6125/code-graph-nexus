@@ -53,7 +53,7 @@ pub fn run_install_claude_code(
     let mut settings = read_or_init(&settings_path)?;
     let exe = self_exe()?;
     for ev in &events {
-        merge_entry(&mut settings, ev, &exe);
+        merge_entry(&mut settings, ev, &exe)?;
     }
     write_atomic(&settings_path, &settings)?;
     println!(
@@ -195,31 +195,42 @@ fn timeout_for(ev: &str) -> u64 {
     }
 }
 
-fn merge_entry(settings: &mut Value, ev: &str, exe: &str) {
+/// Extract the first hook command string from a settings.json hook
+/// entry. Returns `""` when the entry is malformed in any of the five
+/// expected layers (missing `hooks`, empty array, missing `command`,
+/// non-string `command`). The empty default is safe because callers
+/// only ever use `contains()` on the result.
+fn command_of_entry(entry: &Value) -> &str {
+    entry
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .and_then(|hs| hs.first())
+        .and_then(|h0| h0.get("command"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+fn merge_entry(settings: &mut Value, ev: &str, exe: &str) -> Result<(), GnxError> {
     let camel = event_kebab_to_camel(ev);
     let cmd = format!("\"{exe}\" hook {ev} --claude-code");
 
-    let hooks_obj = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("hooks")
-        .or_insert_with(|| json!({}));
-    let arr = hooks_obj
-        .as_object_mut()
-        .unwrap()
+    let root = settings.as_object_mut().ok_or_else(|| {
+        GnxError::InvalidArgument("settings.json root is not a JSON object".into())
+    })?;
+    let hooks_obj = root.entry("hooks").or_insert_with(|| json!({}));
+    let hooks_map = hooks_obj.as_object_mut().ok_or_else(|| {
+        GnxError::InvalidArgument("settings.json `hooks` field is not an object".into())
+    })?;
+    let arr_val = hooks_map
         .entry(camel.to_string())
         .or_insert_with(|| json!([]));
-    let arr = arr.as_array_mut().unwrap();
+    let arr = arr_val.as_array_mut().ok_or_else(|| {
+        GnxError::InvalidArgument(format!("settings.json `hooks.{camel}` is not an array"))
+    })?;
 
     // Idempotence: drop any existing entry pointing at `gnx hook <ev>`.
     arr.retain(|e| {
-        let c = e
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .and_then(|hs| hs.first())
-            .and_then(|h0| h0.get("command"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let c = command_of_entry(e);
         !(c.contains(&format!("hook {ev}")) && c.contains("--claude-code"))
     });
 
@@ -242,6 +253,7 @@ fn merge_entry(settings: &mut Value, ev: &str, exe: &str) {
     }
     entry.insert("hooks".into(), Value::Array(vec![Value::Object(h)]));
     arr.push(Value::Object(entry));
+    Ok(())
 }
 
 fn remove_entry(settings: &mut Value, ev: &str) {
@@ -253,13 +265,7 @@ fn remove_entry(settings: &mut Value, ev: &str) {
         return;
     };
     arr.retain(|e| {
-        let c = e
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .and_then(|hs| hs.first())
-            .and_then(|h0| h0.get("command"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let c = command_of_entry(e);
         !(c.contains(&format!("hook {ev}")) && c.contains("--claude-code"))
     });
 }
@@ -272,13 +278,7 @@ fn is_installed(settings: &Value, ev: &str) -> bool {
         .and_then(|a| a.as_array())
         .map(|arr| {
             arr.iter().any(|e| {
-                let c = e
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .and_then(|hs| hs.first())
-                    .and_then(|h0| h0.get("command"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let c = command_of_entry(e);
                 c.contains(&format!("hook {ev}")) && c.contains("--claude-code")
             })
         })
@@ -292,17 +292,9 @@ fn write_atomic(path: &Path, value: &Value) -> Result<(), GnxError> {
                 .map_err(|e| GnxError::Output(format!("mkdir {}: {e}", parent.display())))?;
         }
     }
-    let tmp = path.with_extension("json.tmp");
     let serialized = serde_json::to_string_pretty(value)
         .map_err(|e| GnxError::Output(format!("serialize: {e}")))?;
-    fs::write(&tmp, serialized)
-        .map_err(|e| GnxError::Output(format!("write {}: {e}", tmp.display())))?;
-    fs::rename(&tmp, path).map_err(|e| {
-        GnxError::Output(format!(
-            "rename {} → {}: {e}",
-            tmp.display(),
-            path.display()
-        ))
-    })?;
+    graph_nexus_core::registry::atomic_write_bytes(path, serialized.as_bytes())
+        .map_err(|e| GnxError::Output(format!("atomic write {}: {e}", path.display())))?;
     Ok(())
 }

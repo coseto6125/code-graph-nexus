@@ -6,6 +6,16 @@ use crate::auto_ensure::{ensure_index, EnsureResult};
 use graph_nexus_core::GnxError;
 use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// Git-mutation matcher. Compiled once per process — PostToolUse fires
+/// on every Bash tool call so amortising the regex build matters.
+fn git_mutation_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"\bgit\s+(commit|merge|rebase|cherry-pick|pull)(\s|$)").unwrap()
+    })
+}
 
 pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     if input.tool_name != "Bash" {
@@ -58,9 +68,7 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
 }
 
 fn is_git_mutation(cmd: &str) -> bool {
-    let stripped = strip_shell_quotes(cmd);
-    let re = regex::Regex::new(r"\bgit\s+(commit|merge|rebase|cherry-pick|pull)(\s|$)").unwrap();
-    re.is_match(&stripped)
+    git_mutation_re().is_match(&strip_shell_quotes(cmd))
 }
 
 /// Detached background `gnx admin index` under flock at
