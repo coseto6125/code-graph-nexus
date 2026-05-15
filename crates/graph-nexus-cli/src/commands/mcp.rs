@@ -39,7 +39,11 @@ pub fn run(args: McpArgs) -> Result<(), GnxError> {
             Ok(())
         }
         McpAction::Serve { daemon, graph: _ } => {
-            let mode = if daemon { DispatchMode::Daemon } else { DispatchMode::Spawn };
+            let mode = if daemon {
+                DispatchMode::Daemon
+            } else {
+                DispatchMode::Spawn
+            };
             let server = GnxMcpServer::new(mode)
                 .map_err(|e| GnxError::Output(format!("server init: {e}")))?;
             if daemon {

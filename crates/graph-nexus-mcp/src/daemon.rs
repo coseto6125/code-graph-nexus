@@ -14,8 +14,8 @@ use std::time::SystemTime;
 /// Returns Err if the file is missing or unreadable (caller decides
 /// whether to abort or retry).
 pub fn needs_remap(path: &Path, loaded_at: SystemTime) -> Result<bool> {
-    let meta = std::fs::metadata(path)
-        .with_context(|| format!("stat {path:?} for mtime-remap check"))?;
+    let meta =
+        std::fs::metadata(path).with_context(|| format!("stat {path:?} for mtime-remap check"))?;
     let mtime = meta
         .modified()
         .with_context(|| format!("modified() for {path:?}"))?;

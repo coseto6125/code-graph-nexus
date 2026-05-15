@@ -52,8 +52,8 @@ pub struct GnxMcpServer {
 
 impl GnxMcpServer {
     pub fn new(mode: DispatchMode) -> Result<Self> {
-        let self_exe = std::env::current_exe()
-            .context("locating current_exe for spawn dispatch")?;
+        let self_exe =
+            std::env::current_exe().context("locating current_exe for spawn dispatch")?;
         Ok(Self {
             mode,
             daemon_state: None,
@@ -121,24 +121,18 @@ struct RmcpHandler(Arc<GnxMcpServer>);
 impl rmcp::ServerHandler for RmcpHandler {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(
+            Implementation::new("graph-nexus-mcp", env!("CARGO_PKG_VERSION")),
         )
-        .with_server_info(Implementation::new(
-            "graph-nexus-mcp",
-            env!("CARGO_PKG_VERSION"),
-        ))
     }
 
     fn list_tools(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl std::future::Future<
-        Output = Result<rmcp::model::ListToolsResult, rmcp::ErrorData>,
-    > + rmcp::service::MaybeSendFuture + '_ {
+    ) -> impl std::future::Future<Output = Result<rmcp::model::ListToolsResult, rmcp::ErrorData>>
+           + rmcp::service::MaybeSendFuture
+           + '_ {
         let tools = build_rmcp_tools(&self.0);
         std::future::ready(Ok(rmcp::model::ListToolsResult::with_all_items(tools)))
     }
@@ -147,9 +141,9 @@ impl rmcp::ServerHandler for RmcpHandler {
         &self,
         request: rmcp::model::CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl std::future::Future<
-        Output = Result<rmcp::model::CallToolResult, rmcp::ErrorData>,
-    > + rmcp::service::MaybeSendFuture + '_ {
+    ) -> impl std::future::Future<Output = Result<rmcp::model::CallToolResult, rmcp::ErrorData>>
+           + rmcp::service::MaybeSendFuture
+           + '_ {
         let server = Arc::clone(&self.0);
         async move {
             let args = match request.arguments {

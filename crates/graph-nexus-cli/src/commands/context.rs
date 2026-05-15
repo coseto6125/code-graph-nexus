@@ -70,7 +70,10 @@ fn parse_csv_lower(s: Option<&str>) -> Option<Vec<String>> {
     }
 }
 
-pub fn run_inner(args: ContextArgs, engine: &dyn graph_nexus_mcp::registry::EngineRef) -> Result<serde_json::Value, GnxError> {
+pub fn run_inner(
+    args: ContextArgs,
+    engine: &dyn graph_nexus_mcp::registry::EngineRef,
+) -> Result<serde_json::Value, GnxError> {
     let engine = engine
         .as_any()
         .and_then(|a| a.downcast_ref::<crate::engine::Engine>())
@@ -275,8 +278,10 @@ mod inner_tests {
         // Compile-only signature check. Behaviour is verified by the
         // command's existing integration tests when called via run().
         fn _accepts(
-            _f: fn(ContextArgs, &dyn graph_nexus_mcp::registry::EngineRef)
-                -> Result<serde_json::Value, graph_nexus_core::GnxError>,
+            _f: fn(
+                ContextArgs,
+                &dyn graph_nexus_mcp::registry::EngineRef,
+            ) -> Result<serde_json::Value, graph_nexus_core::GnxError>,
         ) {
         }
         _accepts(run_inner);

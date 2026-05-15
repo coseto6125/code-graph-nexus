@@ -19,10 +19,7 @@ fn write_stub(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
 #[test]
 fn spawn_invokes_subcommand_and_captures_stdout() {
     let dir = TempDir::new().unwrap();
-    let stub = write_stub(
-        dir.path(),
-        "#!/bin/sh\necho \"sub=$1 arg1=$2 arg2=$3\"\n",
-    );
+    let stub = write_stub(dir.path(), "#!/bin/sh\necho \"sub=$1 arg1=$2 arg2=$3\"\n");
     let out = run_spawn(&stub, "context", &json!({"name": "foo"})).unwrap();
     assert!(out.contains("sub=context"));
     assert!(out.contains("arg1=--name"));

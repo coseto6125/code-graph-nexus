@@ -48,7 +48,9 @@ pub fn json_to_argv(args: &Value) -> Result<Vec<String>> {
                 out.push(n.to_string());
             }
             Value::Array(_) | Value::Object(_) => {
-                bail!("nested array/object args not supported (key={k}); flatten or use daemon mode");
+                bail!(
+                    "nested array/object args not supported (key={k}); flatten or use daemon mode"
+                );
             }
         }
     }

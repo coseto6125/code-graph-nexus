@@ -30,8 +30,7 @@ pub fn emit_to_string(value: &Value, format: OutputFormat) -> Result<String, Gnx
         OutputFormat::Toon => {
             let bytes = serde_json::to_vec(value)
                 .map_err(|e| GnxError::Output(format!("json serialize: {e}")))?;
-            _etoon::toon::encode(&bytes)
-                .map_err(|e| GnxError::Output(format!("toon encode: {e}")))
+            _etoon::toon::encode(&bytes).map_err(|e| GnxError::Output(format!("toon encode: {e}")))
         }
         OutputFormat::Json => serde_json::to_string(value)
             .map_err(|e| GnxError::Output(format!("json serialize: {e}"))),

@@ -251,9 +251,12 @@ mod inner_tests {
     #[test]
     fn run_inner_returns_structured_value_not_unit() {
         fn _accepts(
-            _f: fn(MultiQueryArgs, &dyn graph_nexus_mcp::registry::EngineRef)
-                -> Result<serde_json::Value, graph_nexus_core::GnxError>,
-        ) {}
+            _f: fn(
+                MultiQueryArgs,
+                &dyn graph_nexus_mcp::registry::EngineRef,
+            ) -> Result<serde_json::Value, graph_nexus_core::GnxError>,
+        ) {
+        }
         _accepts(run_inner);
     }
 }

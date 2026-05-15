@@ -67,7 +67,10 @@ pub struct DetectChangesArgs {
     pub high_trust_only: bool,
 }
 
-pub fn run_inner(args: DetectChangesArgs, engine: &dyn graph_nexus_mcp::registry::EngineRef) -> Result<serde_json::Value, GnxError> {
+pub fn run_inner(
+    args: DetectChangesArgs,
+    engine: &dyn graph_nexus_mcp::registry::EngineRef,
+) -> Result<serde_json::Value, GnxError> {
     let engine = engine
         .as_any()
         .and_then(|a| a.downcast_ref::<crate::engine::Engine>())
@@ -359,9 +362,10 @@ pub fn run_inner(args: DetectChangesArgs, engine: &dyn graph_nexus_mcp::registry
     Ok(result)
 }
 
-pub fn run(args: DetectChangesArgs, engine: &crate::engine::Engine)
-    -> Result<(), graph_nexus_core::GnxError>
-{
+pub fn run(
+    args: DetectChangesArgs,
+    engine: &crate::engine::Engine,
+) -> Result<(), graph_nexus_core::GnxError> {
     let format = crate::output::OutputFormat::parse(args.format.as_deref());
     let value = run_inner(args, engine)?;
     if format == OutputFormat::Toon {
@@ -378,9 +382,12 @@ mod inner_tests {
     #[test]
     fn run_inner_returns_structured_value_not_unit() {
         fn _accepts(
-            _f: fn(DetectChangesArgs, &dyn graph_nexus_mcp::registry::EngineRef)
-                -> Result<serde_json::Value, graph_nexus_core::GnxError>
-        ) {}
+            _f: fn(
+                DetectChangesArgs,
+                &dyn graph_nexus_mcp::registry::EngineRef,
+            ) -> Result<serde_json::Value, graph_nexus_core::GnxError>,
+        ) {
+        }
         _accepts(run_inner);
     }
 }

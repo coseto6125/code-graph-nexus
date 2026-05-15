@@ -22,7 +22,10 @@ pub struct QueryArgs {
     pub format: Option<String>,
 }
 
-pub fn run_inner(args: QueryArgs, engine: &dyn graph_nexus_mcp::registry::EngineRef) -> Result<serde_json::Value, GnxError> {
+pub fn run_inner(
+    args: QueryArgs,
+    engine: &dyn graph_nexus_mcp::registry::EngineRef,
+) -> Result<serde_json::Value, GnxError> {
     let engine = engine
         .as_any()
         .and_then(|a| a.downcast_ref::<crate::engine::Engine>())
@@ -120,9 +123,10 @@ pub fn run_inner(args: QueryArgs, engine: &dyn graph_nexus_mcp::registry::Engine
     Ok(result)
 }
 
-pub fn run(args: QueryArgs, engine: &crate::engine::Engine)
-    -> Result<(), graph_nexus_core::GnxError>
-{
+pub fn run(
+    args: QueryArgs,
+    engine: &crate::engine::Engine,
+) -> Result<(), graph_nexus_core::GnxError> {
     let format = crate::output::OutputFormat::parse(args.format.as_deref());
     let value = run_inner(args, engine)?;
     crate::output::emit(&value, format)
@@ -134,9 +138,12 @@ mod inner_tests {
     #[test]
     fn run_inner_returns_structured_value_not_unit() {
         fn _accepts(
-            _f: fn(QueryArgs, &dyn graph_nexus_mcp::registry::EngineRef)
-                -> Result<serde_json::Value, graph_nexus_core::GnxError>
-        ) {}
+            _f: fn(
+                QueryArgs,
+                &dyn graph_nexus_mcp::registry::EngineRef,
+            ) -> Result<serde_json::Value, graph_nexus_core::GnxError>,
+        ) {
+        }
         _accepts(run_inner);
     }
 }

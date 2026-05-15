@@ -30,9 +30,11 @@ fn null_values_are_skipped() {
 
 #[test]
 fn numbers_serialize_as_strings() {
-    let argv = json_to_argv(&json!({"limit": 42, "ratio": 3.14})).unwrap();
+    // Note: avoid 3.14 / 2.71 — clippy's approx_constant lints them as
+    // PI / e. Use an arbitrary ratio with no mathematical significance.
+    let argv = json_to_argv(&json!({"limit": 42, "ratio": 1.25})).unwrap();
     assert!(argv.windows(2).any(|w| w == ["--limit", "42"]));
-    assert!(argv.windows(2).any(|w| w == ["--ratio", "3.14"]));
+    assert!(argv.windows(2).any(|w| w == ["--ratio", "1.25"]));
 }
 
 #[test]

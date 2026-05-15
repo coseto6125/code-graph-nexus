@@ -14,8 +14,9 @@ fn expected_eight_tools_present() {
     let _ = graph_nexus_cli::commands::multi_query::run_inner;
 
     use graph_nexus_mcp::registry::GnxMcpTool;
-    let names: std::collections::BTreeSet<&str> =
-        inventory::iter::<GnxMcpTool>().map(|t| (t.name)()).collect();
+    let names: std::collections::BTreeSet<&str> = inventory::iter::<GnxMcpTool>()
+        .map(|t| (t.name)())
+        .collect();
     let expected = [
         "gnx_context",
         "gnx_detect_changes",
@@ -27,6 +28,9 @@ fn expected_eight_tools_present() {
         "gnx_shape_check",
     ];
     for tool in expected {
-        assert!(names.contains(tool), "missing {tool} in registry; got {names:?}");
+        assert!(
+            names.contains(tool),
+            "missing {tool} in registry; got {names:?}"
+        );
     }
 }
