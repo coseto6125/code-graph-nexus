@@ -868,8 +868,7 @@ fn node_matches(
     graph: &ArchivedZeroCopyGraph,
 ) -> bool {
     // Deserialize once; reused by both label filter and `kind` prop filter below.
-    let kind: NodeKind =
-        rkyv::deserialize::<NodeKind, rkyv::rancor::Error>(&node.kind).unwrap();
+    let kind: NodeKind = rkyv::deserialize::<NodeKind, rkyv::rancor::Error>(&node.kind).unwrap();
     if !np.kinds.is_empty() && !np.kinds.contains(&kind) {
         return false;
     }
