@@ -156,8 +156,14 @@ fn distinct_callees() {
     assert_eq!(rows.len(), 2, "expected 2 distinct callees: {out}");
 
     let callee_names: Vec<&str> = rows.iter().map(|r| r[b_col].as_str().unwrap()).collect();
-    assert!(callee_names.contains(&"b"), "b should be a callee: {callee_names:?}");
-    assert!(callee_names.contains(&"c"), "c should be a callee: {callee_names:?}");
+    assert!(
+        callee_names.contains(&"b"),
+        "b should be a callee: {callee_names:?}"
+    );
+    assert!(
+        callee_names.contains(&"c"),
+        "c should be a callee: {callee_names:?}"
+    );
 }
 
 /// COUNT(DISTINCT a.name): 3 distinct callers (a, a2, b) → single row with n=3.

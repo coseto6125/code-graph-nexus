@@ -102,7 +102,10 @@ fn cypher_returns_node_content_when_requested() {
     let rows = out["rows"]
         .as_array()
         .unwrap_or_else(|| panic!("expected rows array, got {out}"));
-    assert!(!rows.is_empty(), "cypher should return at least one row: {out}");
+    assert!(
+        !rows.is_empty(),
+        "cypher should return at least one row: {out}"
+    );
 
     // Locate the column indices.
     let col_names: Vec<&str> = columns.iter().map(|c| c.as_str().unwrap()).collect();

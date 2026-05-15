@@ -132,10 +132,7 @@ fn error_includes_caret_pointer() {
     // `MATCH` alone triggers a parse error which includes an offset → caret.
     let (status, stderr) = run_expect_failure(tmp.path(), "MATCH");
 
-    assert!(
-        !status.success(),
-        "expected non-zero exit; stderr={stderr}"
-    );
+    assert!(!status.success(), "expected non-zero exit; stderr={stderr}");
     assert!(
         stderr.contains('^'),
         "stderr should contain a caret '^' pointing at the error offset:\n{stderr}"

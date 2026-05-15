@@ -144,18 +144,16 @@ fn variable_length_path() {
     // Collect (a.name, b.name) pairs.
     let pairs: Vec<(&str, &str)> = rows
         .iter()
-        .map(|r| {
-            (
-                r[a_col].as_str().unwrap(),
-                r[b_col].as_str().unwrap(),
-            )
-        })
+        .map(|r| (r[a_col].as_str().unwrap(), r[b_col].as_str().unwrap()))
         .collect();
 
     // Must contain direct edges and the depth-2 hop a->c.
     assert!(pairs.contains(&("a", "b")), "missing a->b: {pairs:?}");
     assert!(pairs.contains(&("b", "c")), "missing b->c: {pairs:?}");
-    assert!(pairs.contains(&("a", "c")), "missing a->c (depth-2): {pairs:?}");
+    assert!(
+        pairs.contains(&("a", "c")),
+        "missing a->c (depth-2): {pairs:?}"
+    );
     assert_eq!(pairs.len(), 3, "expected 3 distinct pairs: {pairs:?}");
 }
 
@@ -194,10 +192,21 @@ fn reverse_arrow() {
 
     let pairs: Vec<(&str, &str)> = rows
         .iter()
-        .map(|r| (r[callee_col].as_str().unwrap(), r[caller_col].as_str().unwrap()))
+        .map(|r| {
+            (
+                r[callee_col].as_str().unwrap(),
+                r[caller_col].as_str().unwrap(),
+            )
+        })
         .collect();
 
     // a is called by nobody (a is the root); b is called by a; c is called by b.
-    assert!(pairs.contains(&("b", "a")), "b should be called by a: {pairs:?}");
-    assert!(pairs.contains(&("c", "b")), "c should be called by b: {pairs:?}");
+    assert!(
+        pairs.contains(&("b", "a")),
+        "b should be called by a: {pairs:?}"
+    );
+    assert!(
+        pairs.contains(&("c", "b")),
+        "c should be called by b: {pairs:?}"
+    );
 }

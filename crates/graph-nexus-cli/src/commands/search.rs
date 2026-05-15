@@ -497,7 +497,8 @@ fn emit_hits(hits: &[Hit], format: OutputFormat, summary: Option<String>) -> Res
         // renders as a blank line on stdout, which agents can't tell apart
         // from "command crashed silently". Surface the same hint json/toon
         // already include.
-        let hint = "No matches found. Try a shorter pattern or `gnx search --mode bm25 <fragment>`.";
+        let hint =
+            "No matches found. Try a shorter pattern or `gnx search --mode bm25 <fragment>`.";
         if matches!(format, OutputFormat::Text) {
             return emit(
                 &serde_json::json!({ "results": [serde_json::Value::String(hint.into())] }),
