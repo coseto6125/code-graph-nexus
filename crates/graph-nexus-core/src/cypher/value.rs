@@ -10,8 +10,19 @@ pub enum Value {
     List(Vec<Value>),
     /// Reference to a graph node. CLI side resolves `.name`/`.kind`/`.filePath`
     /// for human-readable serialization.
-    NodeRef { idx: u32, name: String, kind: String, file_path: String },
-    EdgeRef { src: u32, tgt: u32, rel_type: RelType, confidence: f32, reason: String },
+    NodeRef {
+        idx: u32,
+        name: String,
+        kind: String,
+        file_path: String,
+    },
+    EdgeRef {
+        src: u32,
+        tgt: u32,
+        rel_type: RelType,
+        confidence: f32,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
