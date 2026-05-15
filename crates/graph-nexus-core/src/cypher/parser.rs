@@ -202,6 +202,11 @@ fn parse_rel_type(c: &mut Cursor) -> Result<RelType, CypherError> {
         .map_err(|_| CypherError::Semantic { msg: format!("unknown RelType '{name}'") })
 }
 
+pub fn parse_where(c: &mut Cursor) -> Result<Expr, CypherError> {
+    c.expect(&Token::Where)?;
+    parse_expr(c)
+}
+
 pub fn parse_expr(c: &mut Cursor) -> Result<Expr, CypherError> {
     parse_or(c)
 }
@@ -501,6 +506,14 @@ mod tests {
     fn match_optional() {
         let m = mc("OPTIONAL MATCH (a)-[:Calls]->(b)");
         assert!(m.optional);
+    }
+
+    #[test]
+    fn where_clause_simple() {
+        let toks = tokenize("WHERE a.name = 'foo'").unwrap();
+        let mut c = Cursor::new(&toks);
+        let e = parse_where(&mut c).unwrap();
+        assert!(matches!(e, Expr::BinOp(Op::Eq, ..)));
     }
 
     fn ex(s: &str) -> Expr {
