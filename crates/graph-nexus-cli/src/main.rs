@@ -53,6 +53,8 @@ enum Commands {
     Scan(commands::scan::ScanArgs),
     /// Cross-repo API contracts inventory (routes / queue / RPC)
     Contracts(commands::contracts::ContractsArgs),
+    /// Cross-commit graph diff (bindings / routes / contracts).
+    Diff(commands::diff::DiffArgs),
 
     /// Administrative operations. With no subcommand: launches the interactive
     /// TUI for host-integration management. With a subcommand: runs that
@@ -118,6 +120,7 @@ fn main() {
             run_no_graph!(commands::coverage::run(args.clone(), &cli.graph))
         }
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
+        Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
         _ => {} // fall through to graph-loading path
     }
@@ -134,6 +137,7 @@ fn main() {
         Commands::ShapeCheck(args) => args.repo.as_deref(),
         Commands::Coverage(_)
         | Commands::Contracts(_)
+        | Commands::Diff(_)
         | Commands::Admin { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
@@ -169,6 +173,7 @@ fn main() {
         Commands::ShapeCheck(args) => commands::shape_check::run(args, &engine),
         Commands::Coverage(_)
         | Commands::Contracts(_)
+        | Commands::Diff(_)
         | Commands::Admin { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
