@@ -12,3 +12,20 @@ fn derive_subcommand_returns_last_segment_raw() {
     assert_eq!(derive_subcommand("graph_nexus_cli::commands::context"), "context");
     assert_eq!(derive_subcommand("graph_nexus_cli::commands::detect_changes"), "detect_changes");
 }
+
+#[test]
+fn derive_tool_name_handles_module_path_without_colons() {
+    // module_path!() in a top-level test crate yields no `::` separator.
+    assert_eq!(derive_tool_name("just_a_name"), "gnx_just_a_name");
+}
+
+#[test]
+fn derive_tool_name_handles_empty_module_path() {
+    // Pathological — included for completeness.
+    assert_eq!(derive_tool_name(""), "gnx_");
+}
+
+#[test]
+fn derive_subcommand_handles_module_path_without_colons() {
+    assert_eq!(derive_subcommand("standalone"), "standalone");
+}

@@ -43,7 +43,12 @@ inventory::collect!(GnxMcpTool);
 /// prepend `gnx_`. The last `::` segment IS the subcommand identifier
 /// in snake_case, which matches both the CLI subcommand name and the
 /// desired MCP tool name (with prefix).
-pub fn derive_tool_name(module_path: &str) -> &'static str {
+///
+/// Callers should pass `module_path!()` or another `&'static str`; this
+/// signature documents the calling convention. The output is leaked once
+/// per registered tool — bounded by the finite set of MCP-exposed commands
+/// (≤30).
+pub fn derive_tool_name(module_path: &'static str) -> &'static str {
     let last = module_path.rsplit("::").next().unwrap_or(module_path);
     // Leak to 'static — module_path is itself 'static so this is sound.
     // We can't avoid the allocation entirely because we need a
