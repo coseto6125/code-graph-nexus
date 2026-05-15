@@ -35,5 +35,6 @@ pub fn rel_to_str(rel: &ArchivedRelType) -> &'static str {
         ArchivedRelType::HandlesRoute => "handles_route",
         ArchivedRelType::StepInProcess => "step_in_process",
         ArchivedRelType::References => "references",
+        ArchivedRelType::Fetches => "fetches",
     }
 }
