@@ -32,6 +32,6 @@ pub fn stale_warning(repo_name: &str, age: &str) -> String {
 pub fn collision_warning(new_name: &str, existing_locations: &[String]) -> String {
     let locs = existing_locations.join("\n  - ");
     format!(
-        "⚠️ COLLISION: \"{new_name}\" already exists at:\n  - {locs}\n→ Choose a different new name, or inspect: gnx inspect {new_name}"
+        "⚠ COLLISION: \"{new_name}\" already exists at:\n  - {locs}\n→ Choose a different new name, or inspect: gnx inspect {new_name}"
     )
 }

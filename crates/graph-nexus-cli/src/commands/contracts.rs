@@ -16,5 +16,5 @@ pub struct ContractsArgs {
 }
 
 pub fn run(_args: ContractsArgs, _engine: &Engine) -> Result<(), GnxError> {
-    Err(GnxError::Output("contracts command stub — implement in Task 3.2".into()))
+    Err(GnxError::Output("contracts: not yet implemented".into()))
 }

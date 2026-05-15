@@ -35,37 +35,58 @@ pub fn ensure_index(graph_path: &Path, worktree_root: &Path) -> io::Result<Ensur
         Err(e) => return Err(e),
     };
 
-    if let Some(src_mtime) = newest_source_mtime(graph_path, worktree_root)? {
-        if src_mtime > graph_mtime {
-            let age = SystemTime::now()
-                .duration_since(graph_mtime)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            return Ok(EnsureResult::Stale { age_seconds: age });
-        }
+    if any_source_newer_than(graph_path, worktree_root, graph_mtime)? {
+        let age = SystemTime::now()
+            .duration_since(graph_mtime)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        return Ok(EnsureResult::Stale { age_seconds: age });
     }
     Ok(EnsureResult::Ready)
 }
 
-fn newest_source_mtime(graph_path: &Path, root: &Path) -> io::Result<Option<SystemTime>> {
+/// Build artifacts, vendor dirs, and language-specific caches: walking
+/// these is wasted work, and their mtimes are noisy (touched by tools,
+/// not source changes), so excluding them avoids false-positive Stale.
+const SKIP_DIRS: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    ".gitnexus-rs",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".cache",
+];
+
+/// Short-circuits on the first source file newer than `graph_mtime`.
+/// Walking the full tree only happens when the graph is genuinely
+/// fresh — Stale repos exit early at first hit.
+fn any_source_newer_than(
+    graph_path: &Path,
+    root: &Path,
+    graph_mtime: SystemTime,
+) -> io::Result<bool> {
     let graph_canonical = fs::canonicalize(graph_path).ok();
-    let mut newest: Option<SystemTime> = None;
 
     for entry in WalkBuilder::new(root)
         .hidden(false)
         .git_ignore(false)
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !matches!(
-                name.as_ref(),
-                ".git" | "target" | "node_modules" | ".gitnexus-rs"
-            )
+            !SKIP_DIRS.contains(&name.as_ref())
         })
         .build()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
     {
-        // Skip graph.bin itself to avoid self-comparison
         let skip = graph_canonical.as_deref().map_or(false, |gc| {
             fs::canonicalize(entry.path()).ok().as_deref() == Some(gc)
         });
@@ -75,13 +96,11 @@ fn newest_source_mtime(graph_path: &Path, root: &Path) -> io::Result<Option<Syst
 
         if let Ok(meta) = entry.metadata() {
             if let Ok(mtime) = meta.modified() {
-                newest = match newest {
-                    None => Some(mtime),
-                    Some(curr) if mtime > curr => Some(mtime),
-                    _ => newest,
-                };
+                if mtime > graph_mtime {
+                    return Ok(true);
+                }
             }
         }
     }
-    Ok(newest)
+    Ok(false)
 }

@@ -155,7 +155,13 @@ fn main() {
         Commands::Scan(args) => commands::scan::run(args, &engine),
         Commands::Contracts(args) => commands::contracts::run(args, &engine),
         Commands::ShapeCheck(args) => commands::shape_check::run(args, &engine),
-        _ => Ok(()), // unreachable: Coverage/Admin/Hook*/VerifyResolver handled above
+        Commands::Coverage(_)
+        | Commands::Admin { .. }
+        | Commands::HookHandle(_)
+        | Commands::HookWatcher(_)
+        | Commands::VerifyResolver(_) => {
+            unreachable!("handled before graph load")
+        }
     };
     if let Err(e) = result {
         eprintln!("Command failed: {e}");

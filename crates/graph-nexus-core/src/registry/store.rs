@@ -24,8 +24,8 @@ pub struct RepoEntry {
     pub worktree_path: String,
     pub index_dir_root: String,
     pub branches: Vec<BranchEntry>,
-    /// Group memberships. Multi-group support added 2026-05-15.
-    /// Legacy `group: Option<String>` auto-migrates via RepoEntryRaw.
+    /// Group memberships. Legacy `group: Option<String>` auto-migrates
+    /// to a one-element Vec via `RepoEntryRaw`.
     pub groups: Vec<String>,
 }
 
