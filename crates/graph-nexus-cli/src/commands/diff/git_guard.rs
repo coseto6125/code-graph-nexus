@@ -9,10 +9,12 @@
 //!   4. `git stash pop` if a stash was created in step 1.
 //!
 //! Errors during drop are logged to stderr (we cannot return from Drop).
+//!
+//! All git invocations go through `safe_exec::git()` per security spec §8 H4.
 
+use crate::git::safe_exec;
 use graph_nexus_core::GnxError;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub struct GitGuard {
     repo_dir: PathBuf,
@@ -25,7 +27,7 @@ impl GitGuard {
         let original_ref = current_head_ref(repo_dir)?;
         let stash_created = stash_if_dirty(repo_dir)?;
 
-        let out = Command::new("git")
+        let out = safe_exec::git()
             .args(["checkout", "--detach", target_sha])
             .current_dir(repo_dir)
             .output()
@@ -33,7 +35,7 @@ impl GitGuard {
         if !out.status.success() {
             // Best-effort restore stash before bailing.
             if stash_created {
-                let _ = Command::new("git")
+                let _ = safe_exec::git()
                     .args(["stash", "pop"])
                     .current_dir(repo_dir)
                     .output();
@@ -54,7 +56,7 @@ impl GitGuard {
 
 impl Drop for GitGuard {
     fn drop(&mut self) {
-        let restore = Command::new("git")
+        let restore = safe_exec::git()
             .args(["checkout", &self.original_ref])
             .current_dir(&self.repo_dir)
             .output();
@@ -68,7 +70,7 @@ impl Drop for GitGuard {
             Ok(_) => {}
         }
         if self.stash_created {
-            let pop = Command::new("git")
+            let pop = safe_exec::git()
                 .args(["stash", "pop"])
                 .current_dir(&self.repo_dir)
                 .output();
@@ -80,7 +82,7 @@ impl Drop for GitGuard {
 }
 
 fn current_head_ref(repo_dir: &Path) -> Result<String, GnxError> {
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["symbolic-ref", "--short", "HEAD"])
         .current_dir(repo_dir)
         .output()
@@ -88,7 +90,7 @@ fn current_head_ref(repo_dir: &Path) -> Result<String, GnxError> {
     if out.status.success() {
         return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
     }
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)
         .output()
@@ -97,7 +99,7 @@ fn current_head_ref(repo_dir: &Path) -> Result<String, GnxError> {
 }
 
 fn stash_if_dirty(repo_dir: &Path) -> Result<bool, GnxError> {
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["status", "--porcelain"])
         .current_dir(repo_dir)
         .output()
@@ -105,7 +107,7 @@ fn stash_if_dirty(repo_dir: &Path) -> Result<bool, GnxError> {
     if out.stdout.is_empty() {
         return Ok(false);
     }
-    let stash = Command::new("git")
+    let stash = safe_exec::git()
         .args(["stash", "push", "-u", "-m", "gnx-diff-auto-stash"])
         .current_dir(repo_dir)
         .output()

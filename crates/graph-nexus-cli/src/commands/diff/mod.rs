@@ -97,91 +97,54 @@ pub fn run(args: DiffArgs) -> Result<(), GnxError> {
     let mut routes_diff: Option<routes::RoutesDiff> = None;
     let mut contracts_diff: Option<contracts::ContractsDiff> = None;
 
-    // Perf note: when both bindings and routes are requested, we call
-    // `gnx admin index` twice per state (current + baseline) because bindings
-    // uses a temp JSONL dump while routes needs graph.bin directly. A future
-    // optimization could share the single index run across sections.
+    // Single admin index per state (current + baseline). The dump writes
+    // both the resolver JSONL (for bindings) and graph.bin (for routes /
+    // contracts) as side effects of one analyze pass — so we run it ONCE
+    // per state regardless of which sections are requested.
+    let current_jsonl = std::env::temp_dir()
+        .join(format!("gnx-diff-current-{}.jsonl", std::process::id()));
+    let baseline_jsonl = std::env::temp_dir()
+        .join(format!("gnx-diff-baseline-{baseline_sha}.jsonl"));
+    let baseline_graph_tmp = std::env::temp_dir()
+        .join(format!("gnx-diff-graph-baseline-{baseline_sha}.bin"));
+    let legacy_default = std::path::Path::new(".gnx/graph.bin");
+
+    bindings::dump(&repo_dir, &current_jsonl)?;
+    let current_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
+
+    {
+        let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
+        bindings::dump(&repo_dir, &baseline_jsonl)?;
+        let baseline_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
+        std::fs::copy(&baseline_graph, &baseline_graph_tmp).map_err(|e| {
+            GnxError::Output(format!(
+                "copy baseline graph {}: {e}",
+                baseline_graph.display()
+            ))
+        })?;
+    } // _guard drops — branch + stash restored
+
     if want_bindings {
-        let baseline_jsonl = std::env::temp_dir()
-            .join(format!("gnx-diff-bindings-baseline-{baseline_sha}.jsonl"));
-        let current_jsonl = std::env::temp_dir().join(format!(
-            "gnx-diff-bindings-current-{}.jsonl",
-            std::process::id()
-        ));
-
-        bindings::dump(&repo_dir, &current_jsonl)?;
-
-        {
-            let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
-            bindings::dump(&repo_dir, &baseline_jsonl)?;
-        } // _guard dropped here — restores branch + stash
-
         let baseline_map = bindings::load_jsonl(&baseline_jsonl)?;
         let current_map = bindings::load_jsonl(&current_jsonl)?;
         bindings_diff = Some(bindings::diff(&baseline_map, &current_map));
-
-        let _ = std::fs::remove_file(&baseline_jsonl);
-        let _ = std::fs::remove_file(&current_jsonl);
     }
 
-    if want_routes || want_contracts {
-        // `bindings::dump` invokes `gnx admin index --repo <dir>` which writes
-        // graph.bin as a side effect. We reuse that invocation pattern here via
-        // a throwaway JSONL path so we can resolve graph.bin from the registry.
-        //
-        // Performance concern (surfaced per CLAUDE.md §perf):
-        // This re-runs admin index twice (baseline + current), each of which is
-        // a full re-analyze. When `want_bindings` is also true that means 4 total
-        // admin index runs. A future shared-index refactor would halve this cost.
-        //
-        // Optimization: routes and contracts share the same graph.bin, so when
-        // both are requested we do a single baseline capture for both sections.
-        let scratch_current = std::env::temp_dir().join(format!(
-            "gnx-diff-graph-scratch-current-{}.jsonl",
-            std::process::id()
-        ));
-        // Build current graph.bin via admin index; ignore the JSONL output.
-        bindings::dump(&repo_dir, &scratch_current)?;
-        let _ = std::fs::remove_file(&scratch_current);
-
-        // Resolve graph.bin path from registry after indexing current state.
-        let legacy_default = std::path::Path::new(".gnx/graph.bin");
-        let current_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
-
-        let baseline_graph_tmp = std::env::temp_dir()
-            .join(format!("gnx-diff-graph-baseline-{baseline_sha}.bin"));
-
-        {
-            let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
-            let scratch_baseline = std::env::temp_dir().join(format!(
-                "gnx-diff-graph-scratch-baseline-{baseline_sha}.jsonl"
-            ));
-            bindings::dump(&repo_dir, &scratch_baseline)?;
-            let _ = std::fs::remove_file(&scratch_baseline);
-
-            let baseline_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
-            std::fs::copy(&baseline_graph, &baseline_graph_tmp).map_err(|e| {
-                GnxError::Output(format!(
-                    "copy baseline graph {}: {e}",
-                    baseline_graph.display()
-                ))
-            })?;
-        } // _guard dropped — restores branch + stash
-
-        if want_routes {
-            let current_routes = routes::extract(&current_graph)?;
-            let baseline_routes = routes::extract(&baseline_graph_tmp)?;
-            routes_diff = Some(routes::diff(&baseline_routes, &current_routes));
-        }
-
-        if want_contracts {
-            let current_contracts = contracts::extract(&current_graph)?;
-            let baseline_contracts = contracts::extract(&baseline_graph_tmp)?;
-            contracts_diff = Some(contracts::diff(&baseline_contracts, &current_contracts));
-        }
-
-        let _ = std::fs::remove_file(&baseline_graph_tmp);
+    if want_routes {
+        let current_routes = routes::extract(&current_graph)?;
+        let baseline_routes = routes::extract(&baseline_graph_tmp)?;
+        routes_diff = Some(routes::diff(&baseline_routes, &current_routes));
     }
+
+    if want_contracts {
+        let current_contracts = contracts::extract(&current_graph)?;
+        let baseline_contracts = contracts::extract(&baseline_graph_tmp)?;
+        contracts_diff = Some(contracts::diff(&baseline_contracts, &current_contracts));
+    }
+
+    let _ = std::fs::remove_file(&current_jsonl);
+    let _ = std::fs::remove_file(&baseline_jsonl);
+    let _ = std::fs::remove_file(&baseline_graph_tmp);
 
     output::emit(
         &output::DiffEnvelope {

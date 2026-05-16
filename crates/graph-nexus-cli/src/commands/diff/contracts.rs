@@ -134,5 +134,13 @@ pub fn diff(baseline: &[ContractEntry], current: &[ContractEntry]) -> ContractsD
             out.added.push((*c).clone());
         }
     }
+    // Sort for deterministic output (HashMap iteration is non-deterministic).
+    out.added
+        .sort_by(|a, b| (&a.kind, &a.identifier).cmp(&(&b.kind, &b.identifier)));
+    out.removed
+        .sort_by(|a, b| (&a.kind, &a.identifier).cmp(&(&b.kind, &b.identifier)));
+    out.modified.sort_by(|a, b| {
+        (&a.after.kind, &a.after.identifier).cmp(&(&b.after.kind, &b.after.identifier))
+    });
     out
 }

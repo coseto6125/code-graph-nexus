@@ -45,15 +45,20 @@ pub struct BindingChange {
 pub fn dump(repo_dir: &Path, out_path: &Path) -> Result<(), GnxError> {
     let self_exe = std::env::current_exe()
         .map_err(|e| GnxError::Output(format!("current_exe: {e}")))?;
+    let repo_str = repo_dir.to_str().ok_or_else(|| {
+        GnxError::Output(format!(
+            "repo path contains non-UTF-8: {}",
+            repo_dir.display()
+        ))
+    })?;
+    let out_str = out_path.to_str().ok_or_else(|| {
+        GnxError::Output(format!(
+            "out path contains non-UTF-8: {}",
+            out_path.display()
+        ))
+    })?;
     let out = Command::new(&self_exe)
-        .args([
-            "admin",
-            "index",
-            "--repo",
-            repo_dir.to_str().expect("repo path utf8"),
-            "--dump-resolver",
-            out_path.to_str().expect("out path utf8"),
-        ])
+        .args(["admin", "index", "--repo", repo_str, "--dump-resolver", out_str])
         .output()
         .map_err(|e| GnxError::Output(format!("gnx admin index spawn: {e}")))?;
     if !out.status.success() {

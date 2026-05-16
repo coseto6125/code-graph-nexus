@@ -1,11 +1,14 @@
 //! Format diff result envelope as text / json / toon.
 //!
-//! `toon` falls back to compact JSON until the `etoon` crate is integrated.
-//! The JSON output retains the "baseline"/"sections" keys that tests assert on.
+//! json/toon delegate to `crate::output::emit_to_string` so toon goes through
+//! the real `etoon` encoder and json formatting matches the rest of gnx.
+//! `text` keeps a custom renderer because the diff envelope's per-section
+//! structure doesn't map onto the generic `results`-array text path.
 
 use crate::commands::diff::bindings::BindingsDiff;
 use crate::commands::diff::contracts::ContractsDiff;
 use crate::commands::diff::routes::RoutesDiff;
+use crate::output::{emit_to_string, OutputFormat};
 use graph_nexus_core::GnxError;
 use serde_json::Value;
 
@@ -21,26 +24,13 @@ pub struct DiffEnvelope<'a> {
 }
 
 pub fn emit(envelope: &DiffEnvelope, format: &str) -> Result<(), GnxError> {
-    let json_value = build_json(envelope);
-    match format {
-        "json" => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json_value)
-                    .map_err(|e| GnxError::Output(format!("json: {e}")))?
-            );
+    let fmt = OutputFormat::parse(Some(format));
+    match fmt {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let json_value = build_json(envelope);
+            println!("{}", emit_to_string(&json_value, fmt)?);
         }
-        "toon" => {
-            // `etoon` crate not yet wired — emit compact JSON so the
-            // "baseline"/"sections" labels remain accessible to consumers.
-            eprintln!("warning: toon renderer not yet integrated, emitting JSON");
-            println!(
-                "{}",
-                serde_json::to_string(&json_value)
-                    .map_err(|e| GnxError::Output(format!("toon fallback: {e}")))?
-            );
-        }
-        _ => emit_text(envelope),
+        OutputFormat::Text => emit_text(envelope),
     }
     Ok(())
 }

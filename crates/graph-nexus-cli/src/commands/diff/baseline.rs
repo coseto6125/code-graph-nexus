@@ -7,6 +7,7 @@
 //! - Relative:     `HEAD~5`
 //! - PR number:    `PR/13` (requires `gh` CLI authenticated to the repo)
 
+use crate::git::safe_exec;
 use graph_nexus_core::GnxError;
 use std::path::Path;
 use std::process::Command;
@@ -50,7 +51,7 @@ fn warn_if_local_diverges_from_remote(ref_str: &str, local_sha: &str, repo_dir: 
 }
 
 fn resolve_via_git(ref_str: &str, repo_dir: &Path) -> Result<String, GnxError> {
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["rev-parse", "--verify", &format!("{ref_str}^{{commit}}")])
         .current_dir(repo_dir)
         .output()
