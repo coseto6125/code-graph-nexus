@@ -1,0 +1,111 @@
+//! Concurrency invariant 4.5 — hook spawn flock serialises.
+//!
+//! Two concurrent `gnx` hook invocations must converge to exactly ONE
+//! reindex side-effect (the second flock acquirer no-ops cleanly).
+//! Mirrors the production shell template at
+//! `crates/graph-nexus-cli/src/background.rs:73-91` (markerless branch).
+
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+fn slow_noop_path() -> PathBuf {
+    let target_dir = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent().unwrap()
+                .parent().unwrap()
+                .join("target")
+        });
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    target_dir.join(profile).join("examples").join("slow_noop")
+}
+
+/// Replicates the production flock pattern from background.rs:73-91
+/// without depending on a real `gnx` binary.
+fn flock_shell(lock: &PathBuf, inner: &str) -> String {
+    format!(
+        r#"exec 9>'{lock}' || exit 0
+flock -n 9 || exit 0
+{inner}
+"#,
+        lock = lock.display(),
+    )
+}
+
+#[test]
+fn hook_concurrent_spawn_flock_serializes() {
+    let bin = slow_noop_path();
+    assert!(
+        bin.exists(),
+        "slow_noop not built — run `cargo build -p graph-nexus-cli --example slow_noop`"
+    );
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lock = tmp.path().join("reindex.lock");
+    let marker = tmp.path().join("marker.txt");
+    let inner = format!("'{}' '{}'", bin.display(), marker.display());
+    let shell = flock_shell(&lock, &inner);
+
+    let mut handles = Vec::new();
+    for _ in 0..2 {
+        let shell = shell.clone();
+        handles.push(std::thread::spawn(move || {
+            let mut child = Command::new("sh")
+                .arg("-c")
+                .arg(&shell)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn shell");
+            child.wait().expect("wait shell")
+        }));
+    }
+
+    let statuses: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    for (i, s) in statuses.iter().enumerate() {
+        assert!(s.success(), "shell wrapper #{i} exited non-zero: {s:?}");
+    }
+
+    let content = std::fs::read_to_string(&marker).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "expected exactly 1 reindex side-effect, got {}: {:?}",
+        lines.len(),
+        lines,
+    );
+
+    assert!(lock.exists(), "lock file not created");
+}
+
+#[test]
+fn hook_serial_spawn_runs_each_time() {
+    let bin = slow_noop_path();
+    assert!(bin.exists());
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lock = tmp.path().join("reindex.lock");
+    let marker = tmp.path().join("marker.txt");
+    let inner = format!("'{}' '{}'", bin.display(), marker.display());
+    let shell = flock_shell(&lock, &inner);
+
+    for _ in 0..2 {
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(&shell)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("status");
+        assert!(status.success());
+    }
+
+    let content = std::fs::read_to_string(&marker).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 2, "serial calls should each run; got {lines:?}");
+}

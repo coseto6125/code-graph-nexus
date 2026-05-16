@@ -160,6 +160,17 @@
 
 **Audit cross-check of pass2 production path:** `crates/graph-nexus-analyzer/src/resolution/builder.rs:620-740` parallel path pre-interns all reasons serially BEFORE entering `par_iter`, then shares only `&StrRef`. No `StringPool` mutation in worker. ✓ safe by construction.
 
+### 4.5 Hook spawn flock serialisation
+
+| Sub-test | default | --test-threads=1 | --test-threads=N |
+|----------|---------|------------------|-------------------|
+| `hook_concurrent_spawn_flock_serializes` | PASS | PASS | PASS |
+| `hook_serial_spawn_runs_each_time` | PASS | PASS | PASS |
+
+**Invariant pinned:** Two concurrent shell invocations of the `spawn_bg` template MUST produce exactly ONE reindex side-effect (second hits `flock -n` failure and exits 0). Sequential invocations each run.
+
+**Audit cross-check:** Mirrors production template at `crates/graph-nexus-cli/src/background.rs:73-91`. Non-blocking `flock` means no deadlock risk even if a holding process panics — file descriptor closes on exit, releasing the lock.
+
 ## §5 TSan results
 (populated by Phase 7)
 
