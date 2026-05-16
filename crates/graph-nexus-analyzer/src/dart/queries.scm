@@ -57,8 +57,13 @@
   (initialized_identifier_list
     (initialized_identifier name: (identifier) @var.name))) @var
 
-;; Imports
-(library_import
-  (_)
-  (_) @import.source
-  (_) @import.alias ?) @import
+;; Imports — Dart `import 'pkg.dart';`. tree-sitter-dart wraps imports
+;; three levels deep: `import_or_export > library_import >
+;; import_specification > configurable_uri`. Mirrors upstream gitnexus's
+;; query (see `_source_code/.../tree-sitter-queries.ts`). Double-tagged
+;; @import.name/@import.source because Dart basic-form imports have no
+;; separately-named symbol part.
+(import_or_export
+  (library_import
+    (import_specification
+      (configurable_uri) @import.name @import.source))) @import

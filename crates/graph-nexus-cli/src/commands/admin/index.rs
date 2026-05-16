@@ -10,7 +10,7 @@ use graph_nexus_analyzer::{
     lua::parser::LuaProvider, markdown::parser::MarkdownProvider, move_lang::parser::MoveProvider,
     nim::parser::NimProvider, php::parser::PhpProvider, python::parser::PythonProvider,
     ruby::parser::RubyProvider, rust::parser::RustProvider, solidity::parser::SolidityProvider,
-    sql::parser::SqlProvider, typescript::parser::TypeScriptProvider,
+    sql::parser::SqlProvider, swift::parser::SwiftProvider, typescript::parser::TypeScriptProvider,
     verilog::parser::VerilogProvider, vyper::parser::VyperProvider, yaml::parser::YamlProvider,
     zig::parser::ZigProvider,
 };
@@ -185,6 +185,9 @@ pub fn run_analyzer_for_paths(
     if needed.cpp {
         pipeline.register_provider(Box::new(CppProvider::new().map_err(std::io::Error::other)?));
     }
+    if needed.swift {
+        pipeline.register_provider(Box::new(SwiftProvider::new().unwrap()));
+    }
     if needed.dart {
         pipeline.register_provider(Box::new(
             DartProvider::new().map_err(std::io::Error::other)?,
@@ -338,6 +341,7 @@ struct NeededProviders {
     csharp: bool,
     c: bool,
     cpp: bool,
+    swift: bool,
     dart: bool,
     markdown: bool,
     yaml: bool,
@@ -404,6 +408,7 @@ fn detect_needed_providers(files: &[(std::path::PathBuf, std::path::PathBuf)]) -
             "cs" => n.csharp = true,
             "c" | "h" => n.c = true,
             "cpp" | "hpp" | "cc" | "hh" | "cxx" | "hxx" => n.cpp = true,
+            "swift" => n.swift = true,
             "dart" => n.dart = true,
             "md" | "txt" | "rst" => n.markdown = true,
             "sh" | "bash" => n.bash = true,
