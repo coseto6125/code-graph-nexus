@@ -500,6 +500,29 @@ fn vector_hits_from_graph(
         .collect()
 }
 
+/// Hybrid path: run BM25 and vector, then fuse via RRF. Short-circuits
+/// to BM25 when the graph has no embeddings — vector_hits_from_graph
+/// would also do this, but skipping the duplicate BM25 call saves a
+/// Tantivy round-trip when we know the vector half can't contribute.
+fn hybrid_hits_from_graph(
+    graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph,
+    pattern: &str,
+    kind_set: &Option<Vec<String>>,
+    repo_label: &Option<String>,
+    index_dir: Option<&std::path::Path>,
+) -> Vec<Hit> {
+    if graph.embeddings.is_none() {
+        eprintln!(
+            "→ hybrid: graph has no embeddings — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
+        );
+        return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    }
+
+    let bm25 = bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    let vec = vector_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    rrf_merge(bm25, vec)
+}
+
 /// Reciprocal Rank Fusion constant. k=60 is the Cormack et al. 2009
 /// default — the parameter used by Elasticsearch / Vespa / Weaviate
 /// for hybrid retrieval. Hard-wired; add a flag if we ever need to
