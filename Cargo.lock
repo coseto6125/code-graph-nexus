@@ -1507,6 +1507,7 @@ dependencies = [
  "graph-nexus-mcp",
  "hex",
  "ignore",
+ "libc",
  "memmap2",
  "ratatui",
  "rayon",
