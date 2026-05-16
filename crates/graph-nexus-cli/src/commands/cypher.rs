@@ -98,15 +98,32 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), graph_nexus_core::Gn
             graph_nexus_core::GnxError::InvalidArgument(format_cypher_error(query_str, &e))
         })?;
 
-    let rows_json: Vec<serde_json::Value> = result
-        .rows
-        .iter()
-        .map(|row| serde_json::Value::Array(row.iter().map(value_to_json_value).collect()))
-        .collect();
-    let payload = serde_json::json!({
-        "columns": result.columns,
-        "rows": rows_json,
-    });
+    // Single-column projection collapses `rows: [[a], [b], [c]]` into
+    // `rows: [a, b, c]`. The shape stays unambiguous because the reader can
+    // tell from `columns.len()` whether each row is a scalar or a tuple,
+    // and we save one nesting level (~3 chars per row in toon, plus a
+    // disorienting `[1]:` prefix the LLM has to mentally strip).
+    let payload = if result.columns.len() == 1 {
+        let rows_json: Vec<serde_json::Value> = result
+            .rows
+            .iter()
+            .map(|row| row.first().map(value_to_json_value).unwrap_or(serde_json::Value::Null))
+            .collect();
+        serde_json::json!({
+            "columns": result.columns,
+            "rows": rows_json,
+        })
+    } else {
+        let rows_json: Vec<serde_json::Value> = result
+            .rows
+            .iter()
+            .map(|row| serde_json::Value::Array(row.iter().map(value_to_json_value).collect()))
+            .collect();
+        serde_json::json!({
+            "columns": result.columns,
+            "rows": rows_json,
+        })
+    };
     emit(&payload, OutputFormat::parse(args.format.as_deref()))?;
     Ok(())
 }
