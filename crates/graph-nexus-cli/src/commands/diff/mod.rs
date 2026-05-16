@@ -34,9 +34,10 @@ pub struct DiffArgs {
     #[arg(long, required = true)]
     pub baseline: String,
 
-    /// Output format: text (default) | json | toon
-    #[arg(long, default_value = "text")]
-    pub format: String,
+    /// Output format. Omit for the LLM-tuned default; pass
+    /// `--format text|json|toon` for the alternative renderings.
+    #[arg(long)]
+    pub format: Option<String>,
 
     /// List every change (text format only). Default truncates to top-10 per section.
     #[arg(long, default_value_t = false)]
@@ -87,7 +88,7 @@ pub fn run(args: DiffArgs) -> Result<(), GnxError> {
                 contracts: contracts_empty.as_ref(),
                 verbose: args.verbose,
             },
-            &args.format,
+            args.format.as_deref().unwrap_or(""),
         )?;
         return Ok(());
     }
@@ -156,7 +157,7 @@ pub fn run(args: DiffArgs) -> Result<(), GnxError> {
             contracts: contracts_diff.as_ref(),
             verbose: args.verbose,
         },
-        &args.format,
+        args.format.as_deref().unwrap_or(""),
     )?;
     Ok(())
 }

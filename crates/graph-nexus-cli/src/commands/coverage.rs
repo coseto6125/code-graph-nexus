@@ -33,8 +33,11 @@ pub struct CoverageArgs {
     #[arg(long, default_value_t = false)]
     pub detailed: bool,
 
-    /// Output format: toon (default) | json.
-    #[arg(long, default_value = "toon")]
+    /// Output format. Omit for the LLM-tuned default (toon-encoded, lossy
+    /// confidence rounding + compact timestamps). `--format toon` is the
+    /// neutral toon encoding of the full payload; `--format json` is the
+    /// full-fidelity JSON; `--format text` is the human-friendly fallback.
+    #[arg(long)]
     pub format: Option<String>,
 }
 
@@ -62,7 +65,10 @@ pub fn run(args: CoverageArgs, _graph_arg: &Path) -> Result<(), GnxError> {
             // doesn't blow up integration tests.
             GnxError::Output(format!("selector: {e}"))
         })?;
-        let per_repo: Vec<Value> = resolved.iter().map(build_repo_health).collect();
+        let per_repo: Vec<Value> = resolved
+            .iter()
+            .map(|r| build_repo_health(r, args.detailed))
+            .collect();
         sections.insert("per_repo".into(), Value::Array(per_repo));
     } else {
         sections.insert(
@@ -108,7 +114,7 @@ fn build_groups_overview(reg: &RegistryFile) -> Value {
 
 // ── Per-repo health ──────────────────────────────────────────────────────────
 
-fn build_repo_health(r: &crate::repo_selector::ResolvedRepo) -> Value {
+fn build_repo_health(r: &crate::repo_selector::ResolvedRepo, detailed: bool) -> Value {
     // Load the graph once per repo and share it between framework + blind-spot
     // sections. Without this, each section would mmap+validate independently
     // — wasteful when `--repo @all` spans many repos.
@@ -125,7 +131,8 @@ fn build_repo_health(r: &crate::repo_selector::ResolvedRepo) -> Value {
         "repo": display_name,
         "dir_name": r.dir_name,
         "frameworks": fetch_frameworks(graph, status),
-        "freshness": fetch_freshness(r),
+        "freshness": fetch_freshness(r, detailed),
+        "metrics": fetch_metrics(graph, status),
         "blind_spots": fetch_blind_spots(graph, status),
     })
 }
@@ -163,7 +170,7 @@ fn try_load_engine(r: &crate::repo_selector::ResolvedRepo) -> Option<Engine> {
 
 /// Freshness check: compare the latest graph.bin mtime to newest source file.
 /// Uses `common_dir` as a proxy for the worktree root (parent of `.git`).
-fn fetch_freshness(r: &crate::repo_selector::ResolvedRepo) -> Value {
+fn fetch_freshness(r: &crate::repo_selector::ResolvedRepo, detailed: bool) -> Value {
     use crate::auto_ensure::{ensure_index, EnsureResult};
 
     let Some(graph_path) = latest_graph_path(r) else {
@@ -173,13 +180,70 @@ fn fetch_freshness(r: &crate::repo_selector::ResolvedRepo) -> Value {
     let common = Path::new(&r.common_dir);
     let worktree = common.parent().unwrap_or(common);
 
-    match ensure_index(&graph_path, worktree) {
+    let mut out = match ensure_index(&graph_path, worktree) {
         Ok(EnsureResult::Ready) => json!({ "status": "ready" }),
         Ok(EnsureResult::Stale { age_seconds }) => {
             json!({ "status": "stale", "age_seconds": age_seconds })
         }
         Ok(EnsureResult::Missing) => json!({ "status": "missing" }),
         Err(e) => json!({ "status": "error", "error": e.to_string() }),
+    };
+
+    let Some(map) = out.as_object_mut() else {
+        return out;
+    };
+
+    map.insert(
+        "current_head_short".into(),
+        match crate::git::safe_exec::head_short(worktree) {
+            Some(sha) => json!(sha),
+            None => Value::Null,
+        },
+    );
+
+    let _ = detailed;
+    out
+}
+
+/// Four post-index metrics surfaced inline so an LLM doesn't have to run a
+/// follow-up Cypher to learn "how big is this graph". Matches the gitnexus
+/// precedent of shipping a quantitative summary right after indexing.
+///
+/// - `nodes`: total node count (includes Process / synthetic nodes)
+/// - `edges`: total edge count
+/// - `files`: distinct source files indexed
+/// - `symbols`: callable / type-bearing nodes (Function, Method, Class,
+///   Interface) — the things the LLM is most likely to ask about
+fn fetch_metrics(graph: Option<&ArchivedZeroCopyGraph>, status: Option<&'static str>) -> Value {
+    match graph {
+        Some(g) => {
+            let nodes = g.nodes.len();
+            let edges = g.edges.len();
+            let files = g.files.len();
+            // NodeKind derives `#[rkyv(compare(PartialEq))]`, so the archived
+            // value can be compared against the owned enum directly — no
+            // per-node deserialize. Skipping the deserialize avoids a heap
+            // alloc per node for large graphs (`--repo @all` × ~10k nodes).
+            use graph_nexus_core::graph::NodeKind;
+            let mut symbols: u32 = 0;
+            for node in g.nodes.iter() {
+                if node.kind == NodeKind::Function
+                    || node.kind == NodeKind::Method
+                    || node.kind == NodeKind::Class
+                    || node.kind == NodeKind::Interface
+                {
+                    symbols += 1;
+                }
+            }
+            json!({ "nodes": nodes, "edges": edges, "files": files, "symbols": symbols })
+        }
+        None => json!({
+            "nodes": 0,
+            "edges": 0,
+            "files": 0,
+            "symbols": 0,
+            "status": status.unwrap_or("graph_unavailable"),
+        }),
     }
 }
 
@@ -355,7 +419,6 @@ mod tests {
             in_offsets: vec![0],
             in_edge_idx: vec![],
             name_index: vec![],
-            embeddings: None,
             process_start: 0,
             traces_offsets: vec![],
             traces_data: vec![],
@@ -583,5 +646,125 @@ mod tests {
             let v = count_detected_frameworks(archived);
             assert_eq!(v, json!([]));
         });
+    }
+
+    #[test]
+    fn fetch_metrics_counts_nodes_edges_files_and_symbols() {
+        let mut pool = StringPool::new();
+        let name_f = pool.add("f");
+        let name_c = pool.add("C");
+        let name_v = pool.add("v");
+        let path = pool.add("src/x.py");
+        let uid_f = pool.add("0:f");
+        let uid_c = pool.add("0:C");
+        let uid_v = pool.add("0:v");
+
+        let mut g = empty_graph(pool);
+        g.files = vec![File {
+            path,
+            mtime: 0,
+            content_hash: [0; 32],
+            category: FileCategory::Source,
+        }];
+        // Three nodes: one symbol-eligible (Function), one symbol-eligible
+        // (Class), one ineligible (Variable). Expect symbols = 2.
+        g.nodes = vec![
+            Node {
+                uid: uid_f,
+                name: name_f,
+                file_idx: 0,
+                kind: NodeKind::Function,
+                span: (0, 0, 1, 0),
+                community_id: 0,
+            },
+            Node {
+                uid: uid_c,
+                name: name_c,
+                file_idx: 0,
+                kind: NodeKind::Class,
+                span: (2, 0, 3, 0),
+                community_id: 0,
+            },
+            Node {
+                uid: uid_v,
+                name: name_v,
+                file_idx: 0,
+                kind: NodeKind::Variable,
+                span: (4, 0, 5, 0),
+                community_id: 0,
+            },
+        ];
+        g.edges = vec![Edge {
+            source: 0,
+            target: 1,
+            rel_type: RelType::Calls,
+            confidence: 1.0,
+            reason: name_f,
+        }];
+        g.out_offsets = vec![0, 1, 1, 1];
+        g.in_offsets = vec![0, 0, 1, 1];
+        g.in_edge_idx = vec![0];
+        g.process_start = 3;
+
+        with_archived(g, |archived| {
+            let v = fetch_metrics(Some(archived), None);
+            assert_eq!(v["nodes"], json!(3));
+            assert_eq!(v["edges"], json!(1));
+            assert_eq!(v["files"], json!(1));
+            assert_eq!(v["symbols"], json!(2));
+            assert!(v.get("status").is_none());
+        });
+    }
+
+    #[test]
+    fn fetch_metrics_no_graph_returns_zeros_with_status_note() {
+        let v = fetch_metrics(None, Some("graph_unavailable"));
+        assert_eq!(v["nodes"], json!(0));
+        assert_eq!(v["edges"], json!(0));
+        assert_eq!(v["files"], json!(0));
+        assert_eq!(v["symbols"], json!(0));
+        assert_eq!(v["status"], json!("graph_unavailable"));
+    }
+
+    #[test]
+    fn fetch_freshness_returns_status_for_missing_graph() {
+        use crate::repo_selector::ResolvedRepo;
+        // common_dir points nowhere → no graph → status: missing
+        let r = ResolvedRepo {
+            dir_name: "demo__aabbccdd".into(),
+            common_dir: "/nope/not-a-real-path/.git".into(),
+            aliases: vec!["demo".into()],
+        };
+        let v = fetch_freshness(&r, false);
+        // graph_path will be None (no commits dir) → status: missing
+        assert!(v.get("status").is_some());
+    }
+
+    #[test]
+    fn build_repo_health_payload_has_metrics_alongside_freshness() {
+        // Locks the per_repo payload contract that LLM consumers depend on:
+        // {repo, frameworks, freshness, metrics, blind_spots}. The path
+        // points nowhere, so the graph load fails and we hit the
+        // graph_unavailable status; we still assert the keys exist (with
+        // zeros) so a future refactor that drops `metrics` or renames a
+        // section fails the test instead of silently breaking the contract.
+        use crate::repo_selector::ResolvedRepo;
+        let r = ResolvedRepo {
+            dir_name: "demo__aabbccdd".into(),
+            common_dir: "/nope/not-a-real-path/.git".into(),
+            aliases: vec!["demo".into()],
+        };
+        let v = build_repo_health(&r, true);
+        assert_eq!(v["repo"], json!("demo"));
+        assert!(v.get("frameworks").is_some(), "frameworks section missing");
+        assert!(v.get("freshness").is_some(), "freshness section missing");
+        assert!(v.get("metrics").is_some(), "metrics section missing");
+        assert!(v.get("blind_spots").is_some(), "blind_spots section missing");
+        let metrics = &v["metrics"];
+        assert_eq!(metrics["nodes"], json!(0));
+        assert_eq!(metrics["edges"], json!(0));
+        assert_eq!(metrics["files"], json!(0));
+        assert_eq!(metrics["symbols"], json!(0));
+        assert_eq!(metrics["status"], json!("graph_unavailable"));
     }
 }

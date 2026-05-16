@@ -22,13 +22,6 @@ pub struct IndexArgs {
     #[arg(long)]
     pub repo: String,
 
-    #[arg(long, default_value_t = false)]
-    pub embeddings: bool,
-
-    /// Drop the existing embeddings cache entirely during analysis.
-    #[arg(long, default_value_t = false)]
-    pub drop_embeddings: bool,
-
     /// Force full analysis even if the graph seems up to date.
     #[arg(long, default_value_t = false)]
     pub force: bool,
@@ -308,14 +301,9 @@ pub fn run_analyzer_for_paths(
 }
 
 pub fn run(args: IndexArgs) -> Result<(), String> {
-    if args.force
-        || args.embeddings
-        || args.drop_embeddings
-        || args.no_cache
-        || args.dump_resolver.is_some()
-    {
+    if args.force || args.no_cache || args.dump_resolver.is_some() {
         eprintln!(
-            "warning: --force / --embeddings / --drop-embeddings / --no-cache / --dump-resolver \
+            "warning: --force / --no-cache / --dump-resolver \
              flags accepted but currently no-op in v2 layout; will be wired in Phase 5+"
         );
     }

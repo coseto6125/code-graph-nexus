@@ -1,18 +1,18 @@
 //! Index maintenance workflows for `gnx admin`.
 
-use crate::admin::menu::select;
+use crate::admin::menu::{self, select};
 use crate::commands::admin::{drop, index, prune};
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 use graph_nexus_core::registry::{resolve_home_gnx, Registry, RegistryFile};
 use graph_nexus_core::GnxError;
 use std::path::PathBuf;
 
-const MENU: &[&str] = &[
-    "Build / refresh index",
-    "Inspect indexed repos",
-    "Prune stale indexes",
-    "Drop index",
-    "← Back",
+const MENU: &[menu::Item<'_>] = &[
+    ("Build / refresh index", "(re)scan a repo and write graph.bin"),
+    ("Inspect indexed repos", "list every repo + branch in the registry"),
+    ("Prune stale indexes", "delete one branch or all orphan index dirs"),
+    ("Drop index", "remove a repo's index data and registry entry"),
+    ("← Back", ""),
 ];
 
 pub fn run(theme: &ColorfulTheme) -> Result<(), GnxError> {
@@ -31,11 +31,6 @@ pub fn run(theme: &ColorfulTheme) -> Result<(), GnxError> {
 
 fn build_refresh_wizard(theme: &ColorfulTheme) -> Result<(), GnxError> {
     let repo = input(theme, "Repo path", ".")?;
-    let embeddings = Confirm::with_theme(theme)
-        .with_prompt("Build embeddings")
-        .default(false)
-        .interact()
-        .map_err(dialoguer_err)?;
     let force = Confirm::with_theme(theme)
         .with_prompt("Force full refresh")
         .default(false)
@@ -44,8 +39,6 @@ fn build_refresh_wizard(theme: &ColorfulTheme) -> Result<(), GnxError> {
 
     index::run(index::IndexArgs {
         repo,
-        embeddings,
-        drop_embeddings: false,
         force,
         dump_resolver: None,
         no_cache: false,
@@ -157,9 +150,10 @@ mod tests {
 
     #[test]
     fn indexes_menu_matches_target_order() {
+        let labels: Vec<&str> = MENU.iter().map(|(label, _)| *label).collect();
         assert_eq!(
-            MENU,
-            &[
+            labels,
+            vec![
                 "Build / refresh index",
                 "Inspect indexed repos",
                 "Prune stale indexes",

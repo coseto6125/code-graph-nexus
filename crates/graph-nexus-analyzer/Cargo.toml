@@ -37,8 +37,6 @@ tree-sitter-cpp = "*"
 tree-sitter-swift = { path = "../vendor/tree-sitter-swift" }
 tree-sitter-dart = "*"
 tree-sitter-md = "*"
-fastembed = "5"
-hf-hub = "0.5.0"
 tree-sitter-yaml = "0.7.2"
 tree-sitter-lua = "0.5.0"
 tree-sitter-bash = "0.25.1"
@@ -59,6 +57,7 @@ rustc-hash = "2"
 
 [dev-dependencies]
 tempfile = "3.27"
+blake3 = "1.5"
 
 [lints]
 workspace = true
