@@ -61,17 +61,20 @@ fn handles_multiple_commit_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     let commits = tmp.path().join("commits");
     std::fs::create_dir(&commits).unwrap();
-    let dir1 = "branch_main__abc123def4567890abc123def4567890abc123de";
-    let dir2 = "tag_v1.0__def456789abc123def456789abc123def456789ab";
-    let dir3 = "commit__789abc123def456789abc123def456789abc1234a";
-    std::fs::create_dir(commits.join(dir1)).unwrap();
-    std::fs::create_dir(commits.join(dir2)).unwrap();
-    std::fs::create_dir(commits.join(dir3)).unwrap();
+    let sha1_hex = "abc123def4567890abc123def4567890abc123de";
+    let sha2_hex = "def4567890abc123def4567890abc123def45678";
+    let sha3_hex = "1234567890abcdef1234567890abcdef12345678";
+    let dir1 = format!("branch_main__{sha1_hex}");
+    let dir2 = format!("tag_v1.0__{sha2_hex}");
+    let dir3 = format!("commit__{sha3_hex}");
+    std::fs::create_dir(commits.join(&dir1)).unwrap();
+    std::fs::create_dir(commits.join(&dir2)).unwrap();
+    std::fs::create_dir(commits.join(&dir3)).unwrap();
 
     let idx = CommitIndex::scan(&commits).unwrap();
     assert_eq!(idx.len(), 3);
 
     let mut sha2 = [0u8; 20];
-    hex::decode_to_slice("def456789abc123def456789abc123def456789ab", &mut sha2).unwrap();
-    assert_eq!(idx.find(&sha2), Some(dir2));
+    hex::decode_to_slice(sha2_hex, &mut sha2).unwrap();
+    assert_eq!(idx.find(&sha2), Some(dir2.as_str()));
 }

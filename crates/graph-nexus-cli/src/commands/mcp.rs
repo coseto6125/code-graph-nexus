@@ -44,7 +44,9 @@ pub fn run(args: McpArgs, root_cmd: Command) -> Result<(), GnxError> {
             match format.as_str() {
                 "json" | "toon" => {
                     if format == "toon" {
-                        eprintln!("warning: toon renderer not yet integrated, falling back to json");
+                        eprintln!(
+                            "warning: toon renderer not yet integrated, falling back to json"
+                        );
                     }
                     let tool_infos: Vec<ToolInfo> = tools
                         .iter()
