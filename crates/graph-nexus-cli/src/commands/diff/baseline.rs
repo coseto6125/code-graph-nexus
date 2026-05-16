@@ -16,7 +16,34 @@ pub fn resolve(ref_str: &str, repo_dir: &Path) -> Result<String, GnxError> {
     if let Some(pr_num) = ref_str.strip_prefix("PR/") {
         return resolve_pr(pr_num, repo_dir);
     }
-    resolve_via_git(ref_str, repo_dir)
+    let sha = resolve_via_git(ref_str, repo_dir)?;
+    warn_if_local_diverges_from_remote(ref_str, &sha, repo_dir);
+    Ok(sha)
+}
+
+/// When `ref_str` is a short branch name (no `/`), check whether the local
+/// ref differs from `origin/<ref_str>` and warn on divergence. Silent when:
+///   - ref contains `/` (already qualified)
+///   - `origin/<ref_str>` doesn't exist (local-only branch)
+///   - SHAs match
+fn warn_if_local_diverges_from_remote(ref_str: &str, local_sha: &str, repo_dir: &Path) {
+    if ref_str.contains('/') {
+        return;
+    }
+    let remote_ref = format!("origin/{ref_str}");
+    let Ok(remote_sha) = resolve_via_git(&remote_ref, repo_dir) else {
+        return; // no such remote ref — silent
+    };
+    if remote_sha == local_sha {
+        return;
+    }
+    eprintln!(
+        "warning: local `{ref_str}` ({}) differs from `{remote_ref}` ({}).\n\
+         gnx is using local. Sync with `git pull --ff-only origin {ref_str}`,\n\
+         or pass `--baseline {remote_ref}` explicitly.",
+        &local_sha[..7.min(local_sha.len())],
+        &remote_sha[..7.min(remote_sha.len())]
+    );
 }
 
 fn resolve_via_git(ref_str: &str, repo_dir: &Path) -> Result<String, GnxError> {

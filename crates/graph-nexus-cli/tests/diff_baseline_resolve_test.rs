@@ -110,3 +110,104 @@ fn git_guard_restores_branch_on_drop() {
         "branch must be restored after diff"
     );
 }
+
+#[test]
+fn diff_baseline_short_name_warns_on_remote_divergence() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+
+    // git init + commit on main
+    let out = Command::new("git")
+        .args(["init", "-q", "-b", "main"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    std::fs::write(repo.join("a.txt"), "hello").unwrap();
+    let _ = Command::new("git").args(["add", "-A"]).current_dir(repo).output();
+    let _ = Command::new("git")
+        .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "main commit"])
+        .current_dir(repo)
+        .output();
+
+    // Create a fake `origin/main` ref pointing at a DIFFERENT commit by:
+    //   - branching off, committing, then writing the resulting SHA into
+    //     refs/remotes/origin/main directly.
+    let _ = Command::new("git")
+        .args(["checkout", "-q", "-b", "tmp"])
+        .current_dir(repo)
+        .output();
+    std::fs::write(repo.join("b.txt"), "world").unwrap();
+    let _ = Command::new("git").args(["add", "-A"]).current_dir(repo).output();
+    let _ = Command::new("git")
+        .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fake remote commit"])
+        .current_dir(repo)
+        .output();
+    let remote_sha_out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    let remote_sha = String::from_utf8_lossy(&remote_sha_out.stdout).trim().to_string();
+
+    // Switch back to main and forge refs/remotes/origin/main.
+    let _ = Command::new("git").args(["checkout", "-q", "main"]).current_dir(repo).output();
+    let _ = Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/main", &remote_sha])
+        .current_dir(repo)
+        .output();
+
+    // Run gnx diff with --baseline main; expect warning on stderr.
+    let output = Command::new(env!("CARGO_BIN_EXE_gnx"))
+        .args(["diff", "--section", "bindings", "--baseline", "main"])
+        .current_dir(repo)
+        .env("HOME", repo)
+        .output()
+        .expect("run gnx diff");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("local `main`") && stderr.contains("origin/main") && stderr.contains("differs"),
+        "expected divergence warning in stderr, got: {stderr}"
+    );
+}
+
+#[test]
+fn diff_baseline_qualified_ref_no_warning() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = tmp.path();
+    let _ = Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(repo).output();
+    std::fs::write(repo.join("a.txt"), "hello").unwrap();
+    let _ = Command::new("git").args(["add", "-A"]).current_dir(repo).output();
+    let _ = Command::new("git")
+        .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"])
+        .current_dir(repo)
+        .output();
+
+    let head_sha = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    // Pass full SHA — should NOT trigger divergence check.
+    let output = Command::new(env!("CARGO_BIN_EXE_gnx"))
+        .args(["diff", "--section", "bindings", "--baseline", &head_sha])
+        .current_dir(repo)
+        .env("HOME", repo)
+        .output()
+        .expect("run gnx diff");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("differs from"),
+        "qualified ref must not emit divergence warning, got: {stderr}"
+    );
+}
