@@ -20,7 +20,7 @@ pub use io::atomic_write_bytes;
 pub use lock::FileLock;
 pub use path::{derive_repo_name, resolve_home_gnx, sanitize_segment, uid_path, PathError};
 pub use repo_meta::RepoMeta;
-pub use store::{strip_credentials, BranchEntry, GroupEntry, RegistryFile, RepoEntry};
+pub use store::{strip_credentials, GroupEntry, RegistryFile, RepoAlias, CURRENT_VERSION};
 
 use std::path::{Path, PathBuf};
 
@@ -56,9 +56,9 @@ impl Registry {
         &self.in_memory
     }
 
-    /// Insert or update a repo entry. Holds exclusive flock for
+    /// Insert or update a repo alias entry. Holds exclusive flock for
     /// the entire read-modify-write cycle.
-    pub fn upsert_repo(&mut self, entry: RepoEntry) -> std::io::Result<()> {
+    pub fn upsert_repo(&mut self, entry: RepoAlias) -> std::io::Result<()> {
         let lock_path = self.home_gnx.join("registry.json.lock");
         let _lock = FileLock::acquire_exclusive(&lock_path)?;
 
@@ -66,11 +66,7 @@ impl Registry {
         let registry_path = self.home_gnx.join("registry.json");
         let mut current = RegistryFile::read_or_empty(&registry_path)?;
 
-        if let Some(existing) = current.repos.iter_mut().find(|r| r.name == entry.name) {
-            *existing = entry;
-        } else {
-            current.repos.push(entry);
-        }
+        current.repos.insert(entry.dir_name.clone(), entry);
 
         RegistryFile::write_atomic(&registry_path, &current)?;
         self.in_memory = current;
