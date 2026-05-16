@@ -35,6 +35,23 @@ Comparison to gitnexus is **not** a strict over/under judgement — gitnexus's f
 - Not adding new framework support in this PR beyond what existing parsers already attempt (Express, FastAPI, Flask, Django, NestJS basics, Laravel). New frameworks land in follow-up PRs.
 - Not removing the `RawRoute` plumbing — only tightening the gates.
 
+## What this PR ships (vs. what the original design proposed)
+
+Implementation iteration revealed that the FP class can be eliminated with a much smaller change than the full multi-signal design first sketched below. Self-corpus measurement: 49 routes → 7 routes, 86% → 0% FP rate. All 10 precision-suite tests pass. The shipped surface is:
+
+1. **Path-shape filter (`route_detector::clean_route_path`)** applied at parser-emit time. Only literals starting with `/` survive. This kills the dominant FP class (`Map.get("k")` / `headers.get("x")` / `dict.get("key")`) universally because none of those keys start with a slash.
+2. **Python-only framework-presence gate**. The Python parser additionally requires the file to import one of `{fastapi, flask, django, starlette, aiohttp, tornado, sanic, bottle, falcon, pyramid, quart, litestar}` before emitting any generic route. This handles the edge case where a slash-prefixed string is passed to a non-HTTP method (e.g. `FakeApp.get("/users")` in code without any web-framework import).
+3. **JS/TS skip the framework gate intentionally** because their parsers don't capture CommonJS `require('express')` as an import — gating would regress Node.js codebases. Path-shape filter alone reaches 0% FP on the JS/TS fixtures, and `Map.get("/literal-slash-key")` style residual-FP cases are mathematically possible but practically vanishing.
+
+Deferred to follow-ups (kept here for traceability):
+
+- **Removing the generic route block from 5 `queries.scm` files** — the path-shape filter renders the generic query effectively inert for non-routes, so wholesale removal is no longer load-bearing. Revisit if a measurable FP class survives.
+- **Confidence stratification + `--route-confidence` CLI flag** — would let the user dial precision/recall. PR 1 ships with a single implicit "default" mode that hits 100% precision on self-corpus; the flag becomes useful when we have a real recall-leaning use case driving it.
+- **Framework-constructor tracking (S7 in the original design)** — turns out unnecessary in PR 1 because existing framework-presence gates (`has_fastapi` / `has_express` / `has_flask` via import inspection) already authorise the `@router.get` / `@bp.route` patterns implicitly.
+- **CommonJS `require()` recognition in the JS parser** — would tighten JS/TS to match Python's defense-in-depth. Independent change.
+
+The rest of this document describes the original (now superseded) full design and is kept for future reference / extension.
+
 ## Approach: stratified-confidence + multi-signal voting
 
 ### Signal inventory
