@@ -4,11 +4,11 @@
 mod audit;
 pub mod commit_meta;
 pub mod dirname;
-pub mod repo_meta;
-mod io;
+pub(crate) mod io;
 mod lock;
 mod meta;
 mod path;
+pub mod repo_meta;
 mod store;
 
 pub use audit::{AuditEvent, AuditLog};
@@ -20,11 +20,11 @@ pub use io::atomic_write_bytes;
 #[doc(hidden)]
 pub use lock::FileLock;
 pub use meta::BranchMeta;
-pub use repo_meta::RepoMeta;
 pub use path::{
     derive_repo_name, resolve_home_gnx, sanitize_branch, sanitize_segment, uid_path, IndexLayout,
     PathError,
 };
+pub use repo_meta::RepoMeta;
 pub use store::{strip_credentials, BranchEntry, GroupEntry, RegistryFile, RepoEntry};
 
 use std::path::{Path, PathBuf};
