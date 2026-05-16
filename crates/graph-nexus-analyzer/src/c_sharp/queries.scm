@@ -61,9 +61,21 @@
   name: (identifier) @name.function
 ) @function
 
-;; Using directives (Imports)
+;; Using directives (Imports). Three patterns:
+;; - `using X;` / `using X.Y;` — plain
+;; - `using static X.Alpha;` — static-member import (the `static` modifier
+;;   is anonymous; the actual qualified-name child holds the path)
+;; - `using A = X.Alpha;` — alias
+;;
+;; The `name:` field is unreliable across c_sharp grammar versions for
+;; non-alias forms, so the plain/static patterns match the unnamed
+;; qualified-name / identifier child directly.
 (using_directive
-  name: (_) @import.name @import.source
+  (qualified_name) @import.name @import.source
+) @import
+
+(using_directive
+  (identifier) @import.name @import.source
 ) @import
 
 (using_directive
