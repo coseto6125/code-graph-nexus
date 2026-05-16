@@ -16,9 +16,9 @@
 use graph_nexus_analyzer::fetch_shape::response_shapes::{extract, Lang};
 
 /// Build a string whose prefix is `prefix_len` bytes of box-drawing chars
-/// (`─`, 3 bytes each) padded with spaces, followed by `suffix`. The prefix
-/// fills the lookback window so that a `saturating_sub(200)` boundary lands
-/// mid-codepoint.
+/// (`─`, 3 bytes each), followed by `suffix`. May overshoot `prefix_len` by
+/// up to 2 bytes — that overshoot is the point, since it forces a downstream
+/// `saturating_sub(N)` boundary to land mid-codepoint.
 fn with_box_drawing_prefix(prefix_len: usize, suffix: &str) -> String {
     // Fill with '─' (3 bytes) groups. We may overshoot by up to 2 bytes,
     // which is the point: the window boundary will land inside a codepoint.
