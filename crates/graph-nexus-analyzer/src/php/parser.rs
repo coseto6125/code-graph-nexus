@@ -16,6 +16,22 @@ use tree_sitter::{Parser, Query, QueryCursor};
 /// codebase shouldn't surface as a Laravel route.
 const LARAVEL_REQUIRED: &[&str] = &["Illuminate"];
 
+/// PHP HTTP-framework namespace allowlist. Generic Route emission
+/// (`Route::get('/x')`, `Slim::get(...)`, etc.) requires the file to
+/// import from one of these — without this gate, a user-defined
+/// `class Route { static get($k) {...} }` would fire route emission
+/// just by matching the scope-name allowlist. P1 review finding on
+/// PR #50; see `2026-05-17-route-precision-design.md`.
+const PHP_HTTP_FRAMEWORK_NAMESPACES: &[&str] = &[
+    "Illuminate", // Laravel
+    "Laravel",    // Lumen (Laravel\Lumen\...) and other Laravel-flavored
+    "Slim",       // Slim
+    "Symfony",    // Symfony
+    "Laminas",    // Laminas
+    "Zend",       // Zend Framework
+    "CodeIgniter",
+];
+
 /// Walk an `array_creation_expression` of shape `[Controller::class, 'action']`
 /// and produce `"Controller@action"` matching Laravel's `@`-routing syntax.
 /// Returns `None` for any array that doesn't match this exact shape.
@@ -442,11 +458,16 @@ impl LanguageProvider for PhpProvider {
             }
         }
 
-        // No path-shape filter here. The PHP query gates on a router-class
-        // allowlist (`route.scope`) which is a stronger discriminator than
-        // path shape — Laravel paths are often bare (`'register'`,
-        // `'forgot-password'`) and would be wrongly rejected by
-        // `starts_with('/')`. Spec: 2026-05-17-route-precision-design.md.
+        // Framework-presence gate (P1 review fix). Scope-name allowlist
+        // alone isn't enough — a user-defined `class Route { static function
+        // get($k) {...} }` in a non-framework PHP project would still pass
+        // (reviewer's regression test confirmed). Require the file to
+        // import from a known PHP web-framework namespace before any Route
+        // is emitted. No path-shape filter (Laravel uses bare paths like
+        // `'register'`). Spec: 2026-05-17-route-precision-design.md.
+        if !has_import_from(&imports, PHP_HTTP_FRAMEWORK_NAMESPACES) {
+            routes.clear();
+        }
 
         Ok(LocalGraph {
             content_hash: [0; 32],

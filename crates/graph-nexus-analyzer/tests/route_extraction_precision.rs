@@ -194,15 +194,61 @@ def login():
 def health():
     pass
 "#;
-    // `@app.route(path, methods=[METHOD])` is translated to `(GET, path)` by
-    // the python parser — the `methods=[...]` kwarg is not yet parsed, so
-    // the second route here is mis-labeled GET (would ideally be POST).
-    // Documented as a known limitation; recall is preferable to silently
-    // dropping `@app.route` entirely. `@app.get` shortcut is captured
-    // accurately.
+    // `@app.route(path, methods=[METHOD])` is now parsed: the kwarg list
+    // drives the emitted method per route, not a blanket GET default.
+    // P1 review fix — previously this test pinned the broken behavior.
     assert_routes(
         &py_routes(src),
-        &[("GET", "/"), ("GET", "/login"), ("GET", "/health")],
+        &[("GET", "/"), ("POST", "/login"), ("GET", "/health")],
+    );
+}
+
+// ─── Python — Flask methods=[GET, POST] emits both ───────────────────
+
+#[test]
+fn python_flask_route_with_multiple_methods_emits_one_per_method() {
+    let src = r#"
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/api/items", methods=["GET", "POST"])
+def items():
+    pass
+"#;
+    assert_routes(
+        &py_routes(src),
+        &[("GET", "/api/items"), ("POST", "/api/items")],
+    );
+}
+
+// ─── Python — Flask @app.route methods= unparseable → skip ───────────
+
+#[test]
+fn python_flask_route_with_dynamic_methods_skips_emission() {
+    // When `methods=` is present but isn't a literal list of strings
+    // (e.g. a variable, a function call, a constant reference), the
+    // parser can't determine the HTTP method statically. Skipping
+    // emission is the correct behavior — fabricating GET would
+    // mis-classify the endpoint.
+    let src = r#"
+from flask import Flask
+
+app = Flask(__name__)
+
+ALLOWED = ["POST", "PUT"]
+
+@app.route("/api/dynamic", methods=ALLOWED)
+def dynamic_handler():
+    pass
+"#;
+    // The only emission should be from the @app.get/post/... shortcut
+    // form below. The @app.route above is dropped.
+    let routes = py_routes(src);
+    assert!(
+        routes.is_empty(),
+        "expected no routes when methods= is non-literal, got: {:?}",
+        pairs(&routes)
     );
 }
 
@@ -457,6 +503,25 @@ fn php_laravel_routes_extract_bare_and_slash_paths() {
             ("DELETE", "users/{id}"),
         ],
     );
+}
+
+// ─── PHP — Route::get without Illuminate import NEGATIVE (P1 review) ─
+
+#[test]
+fn php_route_get_without_illuminate_import_emits_zero() {
+    // Reviewer-supplied regression case. A user-defined `class Route` or
+    // any non-Laravel `Route::method(...)` pattern matched the scope-name
+    // allowlist alone, producing fake routes. The framework-presence
+    // gate (must import from Illuminate / Slim / Symfony / etc.) blocks
+    // these.
+    let src = r#"<?php
+        // No `use Illuminate\...;` — bare `Route::` is a user class call.
+        class Route {
+            public static function get($key, $default = null) { return $default; }
+        }
+        $value = Route::get('cache-key');
+    "#;
+    assert_no_routes(&php_routes(src), "Route::get without Illuminate import");
 }
 
 // ─── PHP — facade .get() NEGATIVE ────────────────────────────────────

@@ -71,6 +71,56 @@ const BLIND_SPEC: &[(&str, &str)] = &[
     ),
 ];
 
+/// Walk a route-registration call node (`@app.route(...)`, `app.add_url_rule(...)`,
+/// `app.add_api_route(...)`) for the optional `methods=[...]` kwarg.
+///
+/// Return value semantics (matches caller's three-state handling):
+/// - `None` — no `methods=` kwarg at all → caller defaults to `["GET"]`
+///   per Flask / Sanic / FastAPI semantics.
+/// - `Some(empty)` — kwarg present but value isn't a list of string literals
+///   we can parse → caller skips emit (don't fabricate a method).
+/// - `Some(non-empty)` — parsed methods, caller emits one Route per method.
+///
+/// P1 review fix for PR #50: previously `@app.route("/x", methods=["POST"])`
+/// silently translated to `GET /x`, producing fake GET routes and missing
+/// real POSTs.
+fn extract_methods_kwarg(call_node: Node, source: &[u8]) -> Option<Vec<String>> {
+    let args = call_node.child_by_field_name("arguments")?;
+    let mut cursor = args.walk();
+    for child in args.children(&mut cursor) {
+        if child.kind() != "keyword_argument" {
+            continue;
+        }
+        let name_node = child.child_by_field_name("name")?;
+        let name =
+            std::str::from_utf8(&source[name_node.start_byte()..name_node.end_byte()]).ok()?;
+        if name != "methods" {
+            continue;
+        }
+        let value = child.child_by_field_name("value")?;
+        if value.kind() != "list" {
+            return Some(Vec::new()); // present but unparseable
+        }
+        let mut methods = Vec::new();
+        let mut list_cursor = value.walk();
+        for el in value.children(&mut list_cursor) {
+            if el.kind() != "string" {
+                continue;
+            }
+            if let Ok(text) = std::str::from_utf8(&source[el.start_byte()..el.end_byte()]) {
+                let cleaned = text
+                    .trim_matches(|c: char| c == '\'' || c == '"' || c == '`')
+                    .to_ascii_uppercase();
+                if !cleaned.is_empty() {
+                    methods.push(cleaned);
+                }
+            }
+        }
+        return Some(methods);
+    }
+    None
+}
+
 /// Push a Django signal RawFrameworkRef when both `sig_node` (signal name) and
 /// `handler_node` (handler identifier) decode as UTF-8. Shared by `@receiver`
 /// decorator and `signal.connect(handler)` capture sites — only `reason` differs.
@@ -289,6 +339,7 @@ impl LanguageProvider for PythonProvider {
 
             let mut route_method = None;
             let mut route_path = None;
+            let mut route_call_node: Option<Node> = None;
             let mut is_route = false;
 
             let mut fa_route_app_node = None;
@@ -336,6 +387,7 @@ impl LanguageProvider for PythonProvider {
                 } else if cap_idx == idx.route_call {
                     is_route = true;
                     root_span_node = Some(cap.node);
+                    route_call_node = Some(cap.node);
                 } else if cap_idx == idx.function || cap_idx == idx.class {
                     root_span_node = Some(cap.node);
                 } else if cap_idx == idx.fastapi_depends_target {
@@ -539,23 +591,39 @@ impl LanguageProvider for PythonProvider {
                     ) {
                         if let Some(clean_path) = crate::route_detector::clean_route_path(path_str)
                         {
-                            // Flask `@app.route("/x")` defaults to GET when no
-                            // `methods=[...]` kwarg is provided. Translating
-                            // `route` → `GET` here recovers the common case
-                            // (~80% of Flask code) at the cost of mis-labeling
-                            // `@app.route("/x", methods=["POST"])` as GET. The
-                            // kwarg parse is a follow-up.
-                            let normalized_method = if method_str.eq_ignore_ascii_case("route") {
-                                "GET"
-                            } else {
-                                method_str
-                            };
-                            routes.push(RawRoute {
-                                method: normalized_method.to_string(),
-                                path: clean_path,
-                                handler: None,
-                                span: node_span(&root),
-                            });
+                            // Route-registration methods (`route`, `add_route`,
+                            // `add_url_rule`, `add_api_route`) don't encode an
+                            // HTTP verb in the name. They default to GET when
+                            // no `methods=[...]` kwarg is supplied; otherwise
+                            // the kwarg specifies the verb(s). Parse the kwarg
+                            // (P1 review fix for PR #50: previously translated
+                            // unconditionally to GET, fabricating data when
+                            // `methods=["POST"]` was present).
+                            let methods_to_emit: Vec<String> =
+                                match method_str.to_ascii_lowercase().as_str() {
+                                    "route" | "add_route" | "add_url_rule" | "add_api_route" => {
+                                        match route_call_node
+                                            .and_then(|n| extract_methods_kwarg(n, source))
+                                        {
+                                            None => vec!["GET".to_string()],
+                                            Some(methods) if !methods.is_empty() => methods,
+                                            Some(_) => {
+                                                // kwarg present but unparseable — skip
+                                                // rather than fabricate a method.
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    _ => vec![method_str.to_string()],
+                                };
+                            for method in methods_to_emit {
+                                routes.push(RawRoute {
+                                    method,
+                                    path: clean_path.clone(),
+                                    handler: None,
+                                    span: node_span(&root),
+                                });
+                            }
                         }
                     }
                 }
