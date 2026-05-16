@@ -40,10 +40,16 @@
     (_) @import.source
     alias: (use_as_clause (_) @import.alias)?)) @import
 
-;; Routes
+;; Routes — capture scope (class name) + first string argument so the parser
+;; can both gate emission on a router-class allowlist (skip `Cache::get`,
+;; `Config::get`, `Auth::get`, etc.) and store a clean path string rather
+;; than the entire arguments node. Laravel paths can be bare (`'register'`),
+;; absolute (`'/users'`), or contain params (`'users/{id}'`); all valid
+;; structurally — the scope gate is what filters out non-route facades.
 (scoped_call_expression
-  name: (_) @route.method (#match? @route.method "(?i)^(get|post|put|delete|patch)$")
-  arguments: (_) @route.path
+  scope: (name) @route.scope
+  name: (name) @route.method (#match? @route.method "(?i)^(get|post|put|delete|patch)$")
+  arguments: (arguments . (argument [(string) (encapsed_string)] @route.path))
 ) @route.call
 
 ;; ---- Laravel ----

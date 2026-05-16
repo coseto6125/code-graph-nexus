@@ -128,8 +128,16 @@ impl LanguageProvider for PhpProvider {
         let idx_method = self.query.capture_index_for_name("method");
 
         let idx_route_call = self.query.capture_index_for_name("route.call");
+        let idx_route_scope = self.query.capture_index_for_name("route.scope");
         let idx_route_method = self.query.capture_index_for_name("route.method");
         let idx_route_path = self.query.capture_index_for_name("route.path");
+
+        // Router-class allowlist gates generic Route emission. Without it,
+        // `Cache::get('key')` / `Config::get('app.name')` / `Auth::get(...)`
+        // all match the regex and surface as fake routes. List covers
+        // mainstream PHP routers and is short enough that adding a new one
+        // is a one-liner. Spec: 2026-05-17-route-precision-design.md.
+        const PHP_ROUTER_SCOPES: &[&str] = &["Route", "Router", "Slim", "App", "Symfony", "Lumen"];
 
         // Laravel `Route::method('/path', <handler>)`. The outer call
         // anchors the match; the parser walks the `arguments` node to
@@ -157,6 +165,7 @@ impl LanguageProvider for PhpProvider {
             let mut route_method = None;
             let mut route_path = None;
             let mut route_span_node = None;
+            let mut route_scope: Option<String> = None;
 
             // Per-match Laravel route captures. `laravel_call_span` is
             // the whole `Route::method(...)` expression; `laravel_args_node`
@@ -218,6 +227,12 @@ impl LanguageProvider for PhpProvider {
                     if root_span_node.is_none() {
                         root_span_node = Some(cap.node);
                     }
+                } else if Some(cap_idx) == idx_route_scope {
+                    if let Ok(s_str) =
+                        std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
+                    {
+                        route_scope = Some(s_str.to_string());
+                    }
                 } else if Some(cap_idx) == idx_route_method {
                     if let Ok(m_str) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
@@ -272,7 +287,16 @@ impl LanguageProvider for PhpProvider {
                 }
             }
 
-            if let (Some(rm), Some(rp), Some(rs_node)) = (route_method, route_path, route_span_node)
+            // Router-class allowlist gate — drop matches where the scope
+            // doesn't belong to a known PHP router class. This is the
+            // primary FP filter for PHP (replaces the path-shape filter
+            // that would mis-reject Laravel bare paths like 'register').
+            let scope_ok = route_scope
+                .as_deref()
+                .map(|s| PHP_ROUTER_SCOPES.contains(&s))
+                .unwrap_or(false);
+            if let (true, Some(rm), Some(rp), Some(rs_node)) =
+                (scope_ok, route_method, route_path, route_span_node)
             {
                 let start = rs_node.start_position();
                 let end = rs_node.end_position();
@@ -418,14 +442,11 @@ impl LanguageProvider for PhpProvider {
             }
         }
 
-        // Path-shape filter for generic Route emission — spec:
-        // `docs/superpowers/specs/2026-05-17-route-precision-design.md`.
-        routes.retain(|r| crate::route_detector::clean_route_path(&r.path).is_some());
-        for r in routes.iter_mut() {
-            if let Some(clean) = crate::route_detector::clean_route_path(&r.path) {
-                r.path = clean;
-            }
-        }
+        // No path-shape filter here. The PHP query gates on a router-class
+        // allowlist (`route.scope`) which is a stronger discriminator than
+        // path shape — Laravel paths are often bare (`'register'`,
+        // `'forgot-password'`) and would be wrongly rejected by
+        // `starts_with('/')`. Spec: 2026-05-17-route-precision-design.md.
 
         Ok(LocalGraph {
             content_hash: [0; 32],

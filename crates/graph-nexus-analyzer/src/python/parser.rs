@@ -539,8 +539,19 @@ impl LanguageProvider for PythonProvider {
                     ) {
                         if let Some(clean_path) = crate::route_detector::clean_route_path(path_str)
                         {
+                            // Flask `@app.route("/x")` defaults to GET when no
+                            // `methods=[...]` kwarg is provided. Translating
+                            // `route` → `GET` here recovers the common case
+                            // (~80% of Flask code) at the cost of mis-labeling
+                            // `@app.route("/x", methods=["POST"])` as GET. The
+                            // kwarg parse is a follow-up.
+                            let normalized_method = if method_str.eq_ignore_ascii_case("route") {
+                                "GET"
+                            } else {
+                                method_str
+                            };
                             routes.push(RawRoute {
-                                method: method_str.to_string(),
+                                method: normalized_method.to_string(),
                                 path: clean_path,
                                 handler: None,
                                 span: node_span(&root),

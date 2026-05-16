@@ -12,6 +12,7 @@
 //! Design rationale: `docs/superpowers/specs/2026-05-17-route-precision-design.md`.
 
 use graph_nexus_analyzer::javascript::parser::JavaScriptProvider;
+use graph_nexus_analyzer::php::parser::PhpProvider;
 use graph_nexus_analyzer::python::parser::PythonProvider;
 use graph_nexus_analyzer::typescript::parser::TypeScriptProvider;
 use graph_nexus_core::analyzer::provider::LanguageProvider;
@@ -39,6 +40,14 @@ fn ts_routes(src: &str) -> Vec<RawRoute> {
     TypeScriptProvider::new()
         .unwrap()
         .parse_file("test.ts".as_ref(), src.as_bytes())
+        .unwrap()
+        .routes
+}
+
+fn php_routes(src: &str) -> Vec<RawRoute> {
+    PhpProvider::new()
+        .unwrap()
+        .parse_file("test.php".as_ref(), src.as_bytes())
         .unwrap()
         .routes
 }
@@ -185,11 +194,16 @@ def login():
 def health():
     pass
 "#;
-    // Flask's `@app.route` uses a methods=[...] kwarg which the current
-    // route_detector does not parse — only `@app.get/.post/...` shortcut
-    // form is reliably extracted. Pin the reliable subset; expand in a
-    // follow-up that adds Flask route(methods=...) parsing.
-    assert_routes(&py_routes(src), &[("GET", "/health")]);
+    // `@app.route(path, methods=[METHOD])` is translated to `(GET, path)` by
+    // the python parser — the `methods=[...]` kwarg is not yet parsed, so
+    // the second route here is mis-labeled GET (would ideally be POST).
+    // Documented as a known limitation; recall is preferable to silently
+    // dropping `@app.route` entirely. `@app.get` shortcut is captured
+    // accurately.
+    assert_routes(
+        &py_routes(src),
+        &[("GET", "/"), ("GET", "/login"), ("GET", "/health")],
+    );
 }
 
 // ─── Python — Flask Blueprint (custom identifier — S7) ───────────────
@@ -331,6 +345,66 @@ function handle(req) {
     assert_no_routes(&js_routes(src), "Map/Headers/cookies .get pattern");
 }
 
+// ─── Python — Sanic (user-requested framework) ───────────────────────
+
+#[test]
+fn python_sanic_app_extracts_routes() {
+    let src = r#"
+from sanic import Sanic
+
+app = Sanic("api")
+
+@app.get("/items")
+async def list_items(request):
+    pass
+
+@app.post("/items")
+async def create_item(request):
+    pass
+
+@app.delete("/items/<item_id>")
+async def delete_item(request, item_id):
+    pass
+
+@app.route("/health")
+async def health(request):
+    pass
+"#;
+    // `@app.route("/health")` (no methods kwarg) translates to GET; same
+    // path-translation rule as Flask. `<item_id>` is Sanic's path-param
+    // syntax — accepted by the path-shape filter because the literal
+    // starts with `/`.
+    assert_routes(
+        &py_routes(src),
+        &[
+            ("GET", "/items"),
+            ("POST", "/items"),
+            ("DELETE", "/items/<item_id>"),
+            ("GET", "/health"),
+        ],
+    );
+}
+
+// ─── Python — Sanic Blueprint (custom identifier) ────────────────────
+
+#[test]
+fn python_sanic_blueprint_extracts_via_framework_gate() {
+    let src = r#"
+from sanic import Blueprint
+
+users_bp = Blueprint("users", url_prefix="/users")
+
+@users_bp.get("/")
+async def list_users(request):
+    pass
+
+@users_bp.post("/")
+async def create_user(request):
+    pass
+"#;
+    assert_routes(&py_routes(src), &[("GET", "/"), ("POST", "/")]);
+}
+
 // ─── TypeScript — object.get without framework import NEGATIVE ───────
 
 #[test]
@@ -352,5 +426,55 @@ const c = s.get('method_name');
     assert_no_routes(
         &ts_routes(src),
         "Store.get / Map.get without framework import",
+    );
+}
+
+// ─── PHP — Laravel routes (bare + slash-prefixed paths) ──────────────
+
+#[test]
+fn php_laravel_routes_extract_bare_and_slash_paths() {
+    // Laravel routes accept paths with OR without a leading slash —
+    // `Route::get('register', ...)` and `Route::get('/users', ...)` are
+    // both valid. The PHP parser uses a `route.scope` allowlist
+    // (Route/Router/Slim/App/Symfony/Lumen) instead of the path-shape
+    // filter so bare paths still extract.
+    let src = r#"<?php
+        use Illuminate\Support\Facades\Route;
+
+        Route::get('/users', [UserController::class, 'index']);
+        Route::post('/users', [UserController::class, 'store']);
+        Route::get('register', [RegisteredUserController::class, 'create']);
+        Route::post('forgot-password', [PasswordResetLinkController::class, 'store']);
+        Route::delete('users/{id}', [UserController::class, 'destroy']);
+    "#;
+    assert_routes(
+        &php_routes(src),
+        &[
+            ("GET", "/users"),
+            ("POST", "/users"),
+            ("GET", "register"),
+            ("POST", "forgot-password"),
+            ("DELETE", "users/{id}"),
+        ],
+    );
+}
+
+// ─── PHP — facade .get() NEGATIVE ────────────────────────────────────
+
+#[test]
+fn php_facade_get_emits_zero_routes() {
+    // `Cache::get / Config::get / Auth::get` are common Laravel facade
+    // calls that match the same `scoped_call_expression` shape as
+    // `Route::get`. The router-class allowlist must filter them out.
+    let src = r#"<?php
+        $value = Cache::get('user-cache-key');
+        $cfg = Config::get('app.name');
+        $user = Auth::get('current');
+        $log = Log::get('channel');
+        $store = Storage::get('file.txt');
+    "#;
+    assert_no_routes(
+        &php_routes(src),
+        "Cache/Config/Auth/Log/Storage::get facades without router scope",
     );
 }
