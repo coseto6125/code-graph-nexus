@@ -122,6 +122,8 @@ pub fn promote_case_b(session_dir: &Path, old_sha: &str, new_sha: &str) -> io::R
         base_sha: new_sha.to_string(),
         source_worktree: prev_worktree,
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     atomic_write_json(&session_dir.join("session_meta.json"), &sm)?;
     atomic_write_json(&session_dir.join("dirty_files.json"), &DirtyFiles::empty())?;

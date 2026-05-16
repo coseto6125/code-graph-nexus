@@ -6,6 +6,7 @@ pub mod daemon;
 pub mod error;
 pub mod graph;
 pub mod graph_query;
+pub mod peer;
 pub mod pool;
 pub mod registry;
 pub mod session;

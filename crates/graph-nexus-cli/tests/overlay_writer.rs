@@ -13,6 +13,8 @@ fn make_session_dir(tmp: &std::path::Path, sid: &str) -> std::path::PathBuf {
         base_sha: "abc123def4567890abc123def4567890abc123de".into(),
         source_worktree: "/work/x".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&session_dir.join("session_meta.json"), &sm).unwrap();
     let df = DirtyFiles::empty();

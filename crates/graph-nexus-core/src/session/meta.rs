@@ -14,6 +14,10 @@ pub struct SessionMeta {
     pub base_sha: String,
     pub source_worktree: String,
     pub overlay_version: u32,
+    #[serde(default)]
+    pub watcher_pid: Option<u32>,
+    #[serde(default)]
+    pub last_drained_offset: u64,
 }
 
 impl SessionMeta {
