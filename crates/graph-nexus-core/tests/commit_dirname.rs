@@ -60,3 +60,25 @@ fn round_trip_format_parse() {
     let parsed = CommitDirName::parse(original).unwrap();
     assert_eq!(parsed.format(), original);
 }
+
+#[test]
+fn reject_no_separator() {
+    assert!(matches!(
+        CommitDirName::parse("branch_main_abc123def4567890abc123def4567890abc1"),
+        Err(ParseError::NoSha)
+    ));
+}
+
+#[test]
+fn parse_tag_simple() {
+    let n = CommitDirName::parse("tag_v1.2.3__789abc123def456789abc123def456789abc1234").unwrap();
+    assert_eq!(n.source_type, SourceType::Tag);
+    assert_eq!(n.source_id.as_deref(), Some("v1.2.3"));
+}
+
+#[test]
+fn parse_pr_simple() {
+    let n = CommitDirName::parse("pr_123__abc123def4567890abc123def4567890abc123de").unwrap();
+    assert_eq!(n.source_type, SourceType::Pr);
+    assert_eq!(n.source_id.as_deref(), Some("123"));
+}

@@ -46,10 +46,7 @@ impl CommitDirName {
             return Err(ParseError::InvalidSha);
         }
         let mut sha = [0u8; 20];
-        for i in 0..20 {
-            sha[i] = u8::from_str_radix(&sha_str[i * 2..i * 2 + 2], 16)
-                .map_err(|_| ParseError::InvalidSha)?;
-        }
+        hex::decode_to_slice(sha_str, &mut sha).map_err(|_| ParseError::InvalidSha)?;
 
         if prefix == "commit" {
             return Ok(Self {
@@ -78,11 +75,14 @@ impl CommitDirName {
         match (&self.source_type, &self.source_id) {
             (SourceType::Commit, _) => format!("commit__{sha_hex}"),
             (t, Some(id)) => format!("{}_{id}__{sha_hex}", t.as_str()),
-            (t, None) => format!("{}__{sha_hex}", t.as_str()),
+            (t, None) => {
+                debug_assert_eq!(*t, SourceType::Commit, "only Commit may have no source_id");
+                format!("{}__{sha_hex}", t.as_str())
+            }
         }
     }
 
     pub fn sha_hex(&self) -> String {
-        self.sha.iter().map(|b| format!("{b:02x}")).collect()
+        hex::encode(self.sha)
     }
 }
