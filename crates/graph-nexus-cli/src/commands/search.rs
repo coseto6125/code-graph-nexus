@@ -188,7 +188,10 @@ fn detect_mode(input: &str, embeddings_available: bool) -> SearchMode {
     if embeddings_available {
         SearchMode::Hybrid
     } else {
-        warn_fallback("auto", "phrase pattern needs embeddings but graph has none");
+        warn_fallback(
+            SearchMode::Auto,
+            "phrase pattern needs embeddings but graph has none",
+        );
         SearchMode::Bm25
     }
 }
@@ -196,9 +199,17 @@ fn detect_mode(input: &str, embeddings_available: bool) -> SearchMode {
 /// Emit the standard "→ {mode}: {reason} — falling back to bm25" stderr
 /// warning shared by detect_mode / vector_hits / hybrid_hits failure
 /// paths. Centralised so the rebuild hint stays in sync across sites.
-fn warn_fallback(mode: &str, reason: &str) {
+/// Taking `SearchMode` (not a raw `&str`) keeps the mode label
+/// typo-proof across the 4 call sites.
+fn warn_fallback(mode: SearchMode, reason: &str) {
+    let mode_str = match mode {
+        SearchMode::Auto => "auto",
+        SearchMode::Vector => "vector",
+        SearchMode::Hybrid => "hybrid",
+        SearchMode::Bm25 => "bm25",
+    };
     eprintln!(
-        "→ {mode}: {reason} — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
+        "→ {mode_str}: {reason} — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
     );
 }
 
@@ -613,14 +624,14 @@ fn vector_hits_from_graph(
     index_dir: Option<&std::path::Path>,
 ) -> Vec<Hit> {
     let Some(archived_embs) = graph.embeddings.as_ref() else {
-        warn_fallback("vector", "graph has no embeddings");
+        warn_fallback(SearchMode::Vector, "graph has no embeddings");
         return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
     };
 
     let embedder = match crate::embedder::get_embedder() {
         Ok(e) => e,
         Err(e) => {
-            warn_fallback("vector", &format!("embedder unavailable ({e})"));
+            warn_fallback(SearchMode::Vector, &format!("embedder unavailable ({e})"));
             return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
         }
     };
@@ -628,7 +639,7 @@ fn vector_hits_from_graph(
     let query_vec = match embedder.embed(vec![pattern.to_string()]) {
         Ok(mut vs) if !vs.is_empty() => vs.swap_remove(0),
         _ => {
-            warn_fallback("vector", "query embed failed");
+            warn_fallback(SearchMode::Vector, "query embed failed");
             return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
         }
     };
@@ -666,7 +677,7 @@ fn hybrid_hits_from_graph(
     index_dir: Option<&std::path::Path>,
 ) -> Vec<Hit> {
     if graph.embeddings.is_none() {
-        warn_fallback("hybrid", "graph has no embeddings");
+        warn_fallback(SearchMode::Hybrid, "graph has no embeddings");
         return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
     }
 
@@ -799,7 +810,7 @@ pub fn compute_multi_with_engines(
     let mut repos_with_hits = 0usize;
     let mut repos_failed = 0usize;
 
-    for (_repo_name, outcome) in &worker_results {
+    for (_repo_name, outcome) in worker_results {
         match outcome {
             Err(_) => repos_failed += 1,
             Ok(hits) => {
@@ -807,7 +818,7 @@ pub fn compute_multi_with_engines(
                     repos_with_hits += 1;
                 }
                 for h in hits {
-                    heap.push(Reverse(OrderedHit::from(h.clone())));
+                    heap.push(Reverse(OrderedHit::from(h)));
                     if heap.len() > TOP_K {
                         heap.pop();
                     }
