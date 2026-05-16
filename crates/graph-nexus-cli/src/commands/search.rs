@@ -447,6 +447,59 @@ pub(crate) fn cosine_top_k_indices(
     out
 }
 
+/// Vector path: embed the query, score every node embedding by cosine,
+/// materialise `Hit` rows for the top-K survivors. All failure modes
+/// degrade to BM25 + a stderr hint — the hook contract requires that
+/// search NEVER errors out.
+fn vector_hits_from_graph(
+    graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph,
+    pattern: &str,
+    kind_set: &Option<Vec<String>>,
+    repo_label: &Option<String>,
+    index_dir: Option<&std::path::Path>,
+) -> Vec<Hit> {
+    let Some(archived_embs) = graph.embeddings.as_ref() else {
+        eprintln!(
+            "→ vector: graph has no embeddings — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
+        );
+        return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    };
+
+    let embedder = match crate::embedder::get_embedder() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("→ vector: embedder unavailable ({e}) — falling back to bm25");
+            return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+        }
+    };
+
+    let query_vec = match embedder.embed(vec![pattern.to_string()]) {
+        Ok(mut vs) if !vs.is_empty() => vs.swap_remove(0),
+        _ => {
+            eprintln!("→ vector: query embed failed — falling back to bm25");
+            return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+        }
+    };
+
+    tracing::debug!(query_norm = l2_norm(&query_vec), "vector query embedded");
+
+    // Materialise archived → owned so the rayon-based ranking helper
+    // (which expects `&[Vec<f32>]`) sees a contiguous slice. Cost:
+    // ~5k × 1024 × 4 B ≈ 20 MB per call; allocator-light vs the
+    // model inference that just happened.
+    let owned_embs: Vec<Vec<f32>> = archived_embs
+        .iter()
+        .map(|v| v.iter().map(|x| x.to_native()).collect())
+        .collect();
+
+    let ranked = cosine_top_k_indices(&owned_embs, &query_vec, TOP_K);
+
+    ranked
+        .into_iter()
+        .filter_map(|(idx, score)| build_hit(graph, idx, score, kind_set, repo_label))
+        .collect()
+}
+
 /// Reciprocal Rank Fusion constant. k=60 is the Cormack et al. 2009
 /// default — the parameter used by Elasticsearch / Vespa / Weaviate
 /// for hybrid retrieval. Hard-wired; add a flag if we ever need to

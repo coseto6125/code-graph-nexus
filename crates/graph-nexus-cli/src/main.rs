@@ -6,6 +6,7 @@ mod auto_ensure;
 mod background;
 mod commands;
 mod config_parser;
+mod embedder;
 mod engine;
 mod git;
 mod git_state;
