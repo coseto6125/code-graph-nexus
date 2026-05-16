@@ -101,7 +101,7 @@ impl PeerHarness {
             },
         );
         DirtyFiles::write_atomic(
-            &sdir.join("dirty.json"),
+            &sdir.join("dirty_files.json"),
             &DirtyFiles {
                 version: 1,
                 entries,

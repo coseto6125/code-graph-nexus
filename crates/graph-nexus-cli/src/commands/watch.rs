@@ -8,6 +8,12 @@ use graph_nexus_core::session::SessionMeta;
 use graph_nexus_core::GnxError;
 use std::path::PathBuf;
 
+fn default_repo_root() -> std::io::Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    let repo_dir = crate::repo_identity::repo_dir_name_for_cwd(&cwd)?;
+    Ok(graph_nexus_core::registry::resolve_home_gnx().join(repo_dir))
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct WatchArgs {
     #[arg(long)]
@@ -27,7 +33,7 @@ pub struct WatchArgs {
 pub fn run(args: WatchArgs) -> Result<(), GnxError> {
     let repo_root = match args.repo.clone() {
         Some(p) => p,
-        None => graph_nexus_core::registry::resolve_home_gnx().join("graph-nexus/main"),
+        None => default_repo_root()?,
     };
     let session_id = resolve_session_id(None);
     let session_dir = repo_root.join("sessions").join(&session_id);
@@ -88,10 +94,20 @@ fn start_background(repo_root: PathBuf, sid: String, session_dir: PathBuf) -> Re
     };
     let pid = child.id();
     let meta_path = session_dir.join("meta.json");
-    if let Ok(mut meta) = SessionMeta::read(&meta_path) {
-        meta.watcher_pid = Some(pid);
-        SessionMeta::write_atomic(&meta_path, &meta)?;
-    }
+    let mut meta = SessionMeta::read(&meta_path).unwrap_or_else(|_| SessionMeta {
+        version: 1,
+        session_id: sid.clone(),
+        pid: None,
+        started_at: chrono::Utc::now().to_rfc3339(),
+        last_touched: chrono::Utc::now().to_rfc3339(),
+        base_sha: "0".repeat(40),
+        source_worktree: String::new(),
+        overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
+    });
+    meta.watcher_pid = Some(pid);
+    SessionMeta::write_atomic(&meta_path, &meta)?;
     eprintln!("[gnx watch] forked watcher pid={pid}, sid={sid}");
     Ok(())
 }

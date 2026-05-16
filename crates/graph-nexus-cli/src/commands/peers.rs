@@ -5,6 +5,12 @@ use clap::{Args, Subcommand};
 use graph_nexus_core::peer::registry::alive_peers;
 use std::path::PathBuf;
 
+fn default_repo_root() -> std::io::Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    let repo_dir = crate::repo_identity::repo_dir_name_for_cwd(&cwd)?;
+    Ok(graph_nexus_core::registry::resolve_home_gnx().join(repo_dir))
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct PeersArgs {
     #[command(subcommand)]
@@ -53,10 +59,10 @@ pub enum PeersCmd {
 }
 
 pub fn run(args: PeersArgs) -> std::io::Result<()> {
-    let repo_root = args
-        .repo
-        .clone()
-        .unwrap_or_else(|| graph_nexus_core::registry::resolve_home_gnx().join("graph-nexus/main"));
+    let repo_root = match args.repo.clone() {
+        Some(p) => p,
+        None => default_repo_root()?,
+    };
     match args.cmd {
         PeersCmd::Status => cmd_status(&repo_root),
         PeersCmd::Diff { peer, symbol } => cmd_diff(&repo_root, &peer, symbol.as_deref()),
@@ -102,7 +108,10 @@ fn cmd_status(repo_root: &std::path::Path) -> std::io::Result<()> {
 
 fn cmd_diff(repo_root: &std::path::Path, peer: &str, symbol: Option<&str>) -> std::io::Result<()> {
     use graph_nexus_core::session::overlay::DirtyFiles;
-    let path = repo_root.join("sessions").join(peer).join("dirty.json");
+    let path = repo_root
+        .join("sessions")
+        .join(peer)
+        .join("dirty_files.json");
     let peer_dirty = DirtyFiles::read(&path)?;
     for (path_key, entry) in &peer_dirty.entries {
         if let Some(sym) = symbol {

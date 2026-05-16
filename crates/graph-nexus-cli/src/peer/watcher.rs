@@ -91,7 +91,7 @@ fn handle_event(
         return Ok(());
     }
     for path in &ev.paths {
-        if !path.ends_with("dirty.json") {
+        if !path.ends_with("dirty_files.json") {
             continue;
         }
         let Some(sid) = path
@@ -118,7 +118,7 @@ fn dispatch_peer(
     peer_dirty_path: &Path,
 ) -> std::io::Result<()> {
     let peer_dirty = DirtyFiles::read(peer_dirty_path)?;
-    let my_dirty: Vec<_> = DirtyFiles::read(&cfg.my_session_dir.join("dirty.json"))
+    let my_dirty: Vec<_> = DirtyFiles::read(&cfg.my_session_dir.join("dirty_files.json"))
         .map(|d| {
             d.entries
                 .into_values()
