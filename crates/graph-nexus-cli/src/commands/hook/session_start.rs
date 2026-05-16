@@ -28,6 +28,21 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     if !rendered.trim().is_empty() {
         emit_additional_context("SessionStart", &rendered);
     }
+    // Auto-spawn peer watcher if opt-in marker present.
+    // Fire-and-forget — failures don't block session_start.
+    if std::path::Path::new(&input.cwd)
+        .join(".gnx/auto-watch")
+        .exists()
+    {
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe)
+                .args(["watch", "--start"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+    }
     Ok(())
 }
 
