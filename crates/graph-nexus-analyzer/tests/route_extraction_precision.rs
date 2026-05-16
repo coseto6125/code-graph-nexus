@@ -252,6 +252,101 @@ def dynamic_handler():
     );
 }
 
+// ─── Python — custom CustomRouter class without imports NEGATIVE ─────
+
+#[test]
+fn python_custom_router_class_without_imports_emits_zero() {
+    // FP regression guard for the route-method gate relaxation. A
+    // self-contained script that defines its OWN class with a `.route`
+    // method must NOT pass the gate — `.route(string)` calls in such
+    // files are user code, not framework registration.
+    //
+    // The defensive gate `!imports.is_empty()` short-circuits because
+    // a real Flask Blueprint usage always imports the blueprint
+    // identifier (e.g. `from app.api import bp`). A bare class
+    // definition with zero imports is a sufficient negative signal.
+    let src = r#"
+class CustomRouter:
+    def route(self, path, methods=None):
+        return None
+
+    def add_url_rule(self, path, endpoint, view_func):
+        return None
+
+r = CustomRouter()
+r.route("/api/foo", methods=["POST"])
+r.add_url_rule("/api/bar", "bar", lambda: None)
+"#;
+    assert_no_routes(
+        &py_routes(src),
+        "CustomRouter class with route/add_url_rule methods, no imports",
+    );
+}
+
+// ─── PHP — chained call with router-DSL intermediates POSITIVE ───────
+
+#[test]
+fn php_laravel_chain_with_router_dsl_intermediates_extracts() {
+    // Defensive: validate that the walker handles real Laravel router
+    // DSL chains where intermediate methods are router-builder methods
+    // (`middleware`, `name`, `prefix`, `where`, `domain`, `controller`)
+    // rather than the verb-method directly off `Route::middleware`. The
+    // chain depth doesn't matter — the walker recurses through every
+    // `member_call_expression` until it reaches the scoped_call root.
+    let src = r#"<?php
+        use Illuminate\Support\Facades\Route;
+
+        Route::middleware(['auth'])->name('admin.')->get('/admin/users', [AdminController::class, 'index']);
+        Route::prefix('api')->middleware(['auth:sanctum'])->name('api.')->post('/items', [ItemController::class, 'store']);
+        Route::domain('admin.example.com')->controller(AdminController::class)->get('/dashboard', 'show');
+    "#;
+    assert_routes(
+        &php_routes(src),
+        &[
+            ("GET", "/admin/users"),
+            ("POST", "/items"),
+            ("GET", "/dashboard"),
+        ],
+    );
+}
+
+// ─── Sanic test-client URLs (documented FP, mitigated by --include-tests) ──
+
+#[test]
+fn python_sanic_test_client_request_at_parser_level_emits_route() {
+    // INTENTIONAL parser-level behavior — tree-sitter sees `client.get(...)`
+    // and `app.get(...)` as the same call shape, so the parser can't
+    // distinguish a test-client REQUEST from a route DEFINITION. This is
+    // a known FP class for routes declared inside test files. The PR #52
+    // `gnx routes --include-tests` flag is the mitigation: production
+    // routes default-filter out test-file entries via the existing
+    // `FileCategory::Test` classification at index time.
+    //
+    // This test pins the parser-level behavior so that anyone changing
+    // the gate is forced to consider the test-file filter alongside.
+    let src = r#"
+from sanic_testing.testing import SanicTestClient
+from sanic import Sanic
+
+app = Sanic("api")
+client = SanicTestClient(app)
+
+# Real test-client REQUESTS, not route definitions.
+client.get("/api/foo")
+client.post("/api/items", json={"name": "x"})
+client.delete("/api/items/42")
+"#;
+    let routes = py_routes(src);
+    let pairs_set: std::collections::BTreeSet<_> = pairs(&routes).into_iter().collect();
+    // Parser emits these — production-vs-test discrimination happens at
+    // index/query time via `FileCategory::Test`, not in the parser.
+    assert!(
+        pairs_set.contains(&("GET".to_string(), "/api/foo".to_string())),
+        "expected parser to emit test-client GET (mitigated at query time): {:?}",
+        pairs_set
+    );
+}
+
 // ─── Python — Sanic raw-string + bare-path + frozenset methods ───────
 
 #[test]
@@ -601,10 +696,7 @@ fn php_laravel_chained_middleware_then_verb_extracts() {
 
         Route::middleware(['auth'])->prefix('admin')->post('/users', [AdminController::class, 'create']);
     "#;
-    assert_routes(
-        &php_routes(src),
-        &[("GET", "/user"), ("POST", "/users")],
-    );
+    assert_routes(&php_routes(src), &[("GET", "/user"), ("POST", "/users")]);
 }
 
 // ─── PHP — chained .get() on non-router object NEGATIVE ──────────────

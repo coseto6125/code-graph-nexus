@@ -608,9 +608,15 @@ impl LanguageProvider for PythonProvider {
             // (transitive Flask Blueprint — common pattern in real Flask apps,
             // e.g. miguelgrinberg/microblog `app/api/tokens.py`) still gets
             // emitted even though gnx can't statically follow the chain to
-            // confirm `bp` is a `Blueprint`. Risk: a user-defined `class Foo
-            // { def route(self, ...) }` could FP, but `.route(string)` calls
-            // outside web frameworks are rare in practice.
+            // confirm `bp` is a `Blueprint`.
+            //
+            // Defense-in-depth: the relaxation also requires the file to have
+            // AT LEAST ONE import. A self-contained script that defines its
+            // own `class CustomRouter { def route(...) }` and calls it inline
+            // has zero imports — that's almost certainly not a web framework
+            // and the relaxation would FP. Files using a Blueprint always
+            // import the blueprint identifier, so the recall path is
+            // preserved.
             let route_method_is_framework_specific = route_method
                 .and_then(|n| std::str::from_utf8(&source[n.start_byte()..n.end_byte()]).ok())
                 .map(|s| {
@@ -619,7 +625,8 @@ impl LanguageProvider for PythonProvider {
                         "route" | "add_route" | "add_url_rule" | "add_api_route"
                     )
                 })
-                .unwrap_or(false);
+                .unwrap_or(false)
+                && !imports.is_empty();
             if is_route && (has_any_http_framework || route_method_is_framework_specific) {
                 if let (Some(r_method), Some(r_path), Some(root)) =
                     (route_method, route_path, root_span_node)
