@@ -50,7 +50,12 @@ fn git_common_dir(cwd: &Path) -> io::Result<std::path::PathBuf> {
     }
 }
 
-fn sha256_hex8(bytes: &[u8]) -> String {
+/// First 8 hex chars of `sha256(bytes)` — short, filesystem-safe digest.
+/// Used by `repo_dir_name_for_cwd` to disambiguate repos by canonical
+/// git common-dir, and by `parse_cache` to scope cache entries by
+/// `BUILDER_FINGERPRINT`. Shared so a future hash-collision tweak lands
+/// in one place.
+pub(crate) fn sha256_hex8(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     hex::encode(&digest[..4])
 }

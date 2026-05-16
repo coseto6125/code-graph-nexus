@@ -15,22 +15,18 @@
 //! live. The fingerprint subdir is the only invalidation lever; LRU /
 //! quota / orphan sweep belong to a separate GC pass.
 
+use crate::repo_identity::sha256_hex8;
 use graph_nexus_core::analyzer::types::LocalGraph;
-use graph_nexus_core::registry::BUILDER_FINGERPRINT;
-use sha2::{Digest, Sha256};
+use graph_nexus_core::registry::{atomic_write_bytes, BUILDER_FINGERPRINT};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// First 8 hex chars of `sha256(BUILDER_FINGERPRINT)` — short, filesystem-
-/// safe, stable for the life of the process.
+/// safe, stable for the life of the process. Memoised because
+/// `BUILDER_FINGERPRINT` is a compile-time constant.
 fn fingerprint_dir_name() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        let mut h = Sha256::new();
-        h.update(BUILDER_FINGERPRINT.as_bytes());
-        let d = h.finalize();
-        hex::encode(&d[..4])
-    })
+    CACHE.get_or_init(|| sha256_hex8(BUILDER_FINGERPRINT.as_bytes()))
 }
 
 pub struct ParseCache {
@@ -75,16 +71,13 @@ impl ParseCache {
         }
     }
 
-    /// Persist a freshly parsed `LocalGraph`. Atomic via tmp + rename so
-    /// a concurrent reader either sees the previous version or the new
-    /// one — never a torn write.
+    /// Persist a freshly parsed `LocalGraph`. Delegates to the registry's
+    /// `atomic_write_bytes` for tmp + `sync_all` + rename — the explicit
+    /// fsync matters here because a torn parse-cache blob would survive
+    /// a crash and read back as garbage on the next miss path.
     pub fn put(&self, graph: &LocalGraph) -> std::io::Result<()> {
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(graph)
             .map_err(std::io::Error::other)?;
-        let path = self.path_for(&graph.content_hash);
-        let tmp = path.with_extension("rkyv.tmp");
-        std::fs::write(&tmp, &bytes)?;
-        std::fs::rename(&tmp, &path)?;
-        Ok(())
+        atomic_write_bytes(&self.path_for(&graph.content_hash), &bytes)
     }
 }
