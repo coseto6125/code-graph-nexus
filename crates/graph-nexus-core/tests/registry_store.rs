@@ -71,7 +71,7 @@ fn missing_repos_field_defaults_to_empty() {
 }
 
 #[test]
-fn write_atomic_creates_bak_when_path_exists() {
+fn write_atomic_does_not_create_bak() {
     let tmp = NamedTempFile::new().unwrap();
     let path = tmp.path();
     std::fs::write(path, r#"{"version":2,"repos":{},"groups":[]}"#).unwrap();
@@ -83,10 +83,9 @@ fn write_atomic_creates_bak_when_path_exists() {
     let reg = RegistryFile::empty();
     RegistryFile::write_atomic(path, &reg).unwrap();
     assert!(
-        bak.exists(),
-        ".bak should be created on write when path exists"
+        !bak.exists(),
+        ".bak must NOT be created — spec §3 layout has no .bak; recovery goes through rebuild_from_disk"
     );
-    let _ = std::fs::remove_file(&bak);
 }
 
 #[test]

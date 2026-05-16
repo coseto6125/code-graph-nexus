@@ -46,10 +46,6 @@ impl RegistryFile {
     }
 
     pub fn write_atomic(path: &Path, value: &RegistryFile) -> io::Result<()> {
-        if path.exists() {
-            let bak = bak_path(path);
-            fs::copy(path, &bak)?;
-        }
         atomic_write_json(path, value)
     }
 
@@ -122,12 +118,6 @@ impl RegistryFile {
             groups: vec![],
         })
     }
-}
-
-fn bak_path(path: &Path) -> std::path::PathBuf {
-    let mut s = path.as_os_str().to_owned();
-    s.push(".bak");
-    std::path::PathBuf::from(s)
 }
 
 /// Remove user:pass from a remote URL.
