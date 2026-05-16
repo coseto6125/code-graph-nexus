@@ -6,7 +6,16 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
+    /// Default output: per-command LLM-tuned payload (token compression,
+    /// rounded floats, trimmed timestamps, etc.) rendered through the toon
+    /// encoder. Commands without command-specific tuning fall through to the
+    /// same output as `Toon`.
+    Llm,
+    /// Neutral toon: the json payload encoded as toon, no lossy compression.
+    /// Use when you want round-trippable structure but tighter than JSON.
     Toon,
+    /// Full-fidelity JSON. Always round-trippable; pick this when piping to
+    /// another tool / asserting in tests.
     Json,
     Text,
 }
@@ -15,8 +24,9 @@ impl OutputFormat {
     pub fn parse(s: Option<&str>) -> Self {
         match s {
             Some("json") => OutputFormat::Json,
+            Some("toon") => OutputFormat::Toon,
             Some("text") => OutputFormat::Text,
-            _ => OutputFormat::Toon, // default
+            _ => OutputFormat::Llm, // default
         }
     }
 }
@@ -27,7 +37,10 @@ impl OutputFormat {
 /// `ToolResult::text`).
 pub fn emit_to_string(value: &Value, format: OutputFormat) -> Result<String, GnxError> {
     match format {
-        OutputFormat::Toon => {
+        // Llm and Toon share the toon encoder. The Llm/Toon split lives at
+        // the caller: Llm-mode callers compress the payload before emit;
+        // Toon-mode callers do not.
+        OutputFormat::Llm | OutputFormat::Toon => {
             let bytes = serde_json::to_vec(value)
                 .map_err(|e| GnxError::Output(format!("json serialize: {e}")))?;
             _etoon::toon::encode(&bytes).map_err(|e| GnxError::Output(format!("toon encode: {e}")))

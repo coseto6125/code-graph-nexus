@@ -1027,7 +1027,7 @@ fn emit_hits(hits: &[Hit], format: OutputFormat, summary: Option<String>) -> Res
             }
             emit(&serde_json::json!({ "results": lines }), format)
         }
-        OutputFormat::Json | OutputFormat::Toon => {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Llm => {
             let results: Vec<serde_json::Value> = hits
                 .iter()
                 .map(|h| {
