@@ -396,6 +396,57 @@ fn build_hit(
     })
 }
 
+// ── Vector scoring primitives ────────────────────────────────────────────────
+
+/// Plain L2 norm. Returns 0.0 for empty input or an all-zero vector.
+pub(crate) fn l2_norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+/// Score `embeddings[i]` against `query` via cosine similarity, drop
+/// zero-norm and non-positive entries, return the top-`k` as
+/// `(node_idx, similarity)` sorted descending. Skip-marker zero
+/// embeddings produced at build time get filtered here.
+pub(crate) fn cosine_top_k_indices(
+    embeddings: &[Vec<f32>],
+    query: &[f32],
+    k: usize,
+) -> Vec<(usize, f32)> {
+    let q_norm = l2_norm(query);
+    if q_norm == 0.0 {
+        return Vec::new();
+    }
+
+    let scored: Vec<(usize, f32)> = embeddings
+        .par_iter()
+        .enumerate()
+        .filter_map(|(idx, emb)| {
+            let dot: f32 = emb.iter().zip(query.iter()).map(|(a, b)| a * b).sum();
+            let denom = l2_norm(emb) * q_norm;
+            if denom == 0.0 {
+                return None;
+            }
+            let sim = dot / denom;
+            (sim > 0.0).then_some((idx, sim))
+        })
+        .collect();
+
+    let mut heap: BinaryHeap<Reverse<(u32, usize)>> = BinaryHeap::with_capacity(k + 1);
+    for (idx, sim) in scored {
+        heap.push(Reverse((sim.to_bits(), idx)));
+        if heap.len() > k {
+            heap.pop();
+        }
+    }
+
+    let mut out: Vec<(usize, f32)> = heap
+        .into_iter()
+        .map(|r| (r.0 .1, f32::from_bits(r.0 .0)))
+        .collect();
+    out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    out
+}
+
 // ── Multi-repo fan-out ────────────────────────────────────────────────────────
 
 fn run_multi(
@@ -747,5 +798,32 @@ mod tests {
     fn compute_hits_signature_check() {
         fn _check(_: fn(SearchArgs, &Engine) -> Result<Vec<Hit>, GnxError>) {}
         _check(compute_hits);
+    }
+
+    #[test]
+    fn l2_norm_handles_zero_vec() {
+        assert_eq!(super::l2_norm(&[]), 0.0);
+        assert_eq!(super::l2_norm(&[0.0, 0.0, 0.0]), 0.0);
+    }
+
+    #[test]
+    fn l2_norm_unit_vec_is_one() {
+        let v = [1.0_f32 / 3.0_f32.sqrt(); 3];
+        assert!((super::l2_norm(&v) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cosine_top_k_indices_ranks_by_similarity() {
+        let embs = vec![
+            vec![1.0, 0.0, 0.0], // node 0 — orthogonal
+            vec![0.0, 1.0, 0.0], // node 1 — identical direction
+            vec![0.0, 0.7, 0.7], // node 2 — partially aligned
+            vec![0.0, 0.0, 0.0], // node 3 — skip-marker
+        ];
+        let query = vec![0.0, 1.0, 0.0];
+        let ranked = super::cosine_top_k_indices(&embs, &query, 3);
+        assert_eq!(ranked[0].0, 1, "node 1 should rank first");
+        assert_eq!(ranked[1].0, 2, "node 2 should rank second");
+        assert!(ranked.iter().all(|(idx, _)| *idx != 3));
     }
 }
