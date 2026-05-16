@@ -72,14 +72,7 @@ impl RegistryFile {
                 )));
             }
         }
-        let parsed: RegistryFile = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-        if parsed.version != CURRENT_VERSION {
-            return Err(io::Error::other(format!(
-                "registry schema v{} (expected v{CURRENT_VERSION}); run `gnx admin reset` to wipe and rebuild",
-                parsed.version
-            )));
-        }
-        Ok(parsed)
+        serde_json::from_slice(&bytes).map_err(io::Error::other)
     }
 }
 

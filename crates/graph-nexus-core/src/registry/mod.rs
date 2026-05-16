@@ -32,8 +32,10 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Open / lazily create `~/.gnx/registry.json`. Reads with .bak
-    /// fallback (spec §2.1).
+    /// Open / lazily create `~/.gnx/registry.json`. On parse failure,
+    /// callers should invoke `RegistryFile::rebuild_from_disk` for recovery
+    /// (walks per-repo meta.json files; spec §12 Error Handling).
+    /// `.bak` is written by `write_atomic` as a snapshot but never read back.
     pub fn open(home_gnx: &Path) -> std::io::Result<Self> {
         std::fs::create_dir_all(home_gnx)?;
         #[cfg(unix)]
