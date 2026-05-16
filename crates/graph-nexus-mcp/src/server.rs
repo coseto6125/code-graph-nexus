@@ -24,7 +24,11 @@ impl GnxMcpServer {
     pub fn new(root: &Command) -> Result<Self> {
         let self_exe =
             std::env::current_exe().context("locating current_exe for spawn dispatch")?;
-        let tools = enumerate_tools(root);
+        let mut tools = enumerate_tools(root);
+        // Replace the opaque `gnx_peers` entry (which exposes no useful args)
+        // with the three explicit peer sub-subcommand tools.
+        tools.retain(|t| t.name != "gnx_peers");
+        tools.extend(crate::peers::peer_tools());
         let rmcp_tools = build_rmcp_tools(&tools);
         Ok(Self {
             self_exe,

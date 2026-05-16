@@ -69,6 +69,8 @@ fn make_session(
         base_sha: base_sha.to_string(),
         source_worktree: source_wt.to_string_lossy().into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sid.join("session_meta.json"), &sm).unwrap();
     DirtyFiles::write_atomic(&sid.join("dirty_files.json"), &DirtyFiles::empty()).unwrap();
@@ -168,6 +170,7 @@ fn case_a_drops_fragment_when_content_matches_new_l2() {
             fragment_id: frag_id,
             tantivy_delta_segment: None,
             parse_failed: false,
+            dirty_symbols: vec![],
         },
     );
     DirtyFiles::write_atomic(&sid_dir.join("dirty_files.json"), &df).unwrap();
@@ -220,6 +223,7 @@ fn case_a_keeps_fragment_when_content_diverges() {
             fragment_id: frag_id.into(),
             tantivy_delta_segment: None,
             parse_failed: false,
+            dirty_symbols: vec![],
         },
     );
     DirtyFiles::write_atomic(&sid_dir.join("dirty_files.json"), &df).unwrap();

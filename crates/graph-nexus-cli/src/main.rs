@@ -15,6 +15,7 @@ mod graph_path;
 mod hint;
 mod output;
 mod parse_cache;
+mod peer;
 pub mod reanalyze;
 mod repo_identity;
 mod repo_selector;
@@ -86,6 +87,10 @@ enum Commands {
     /// Internal: Claude Code / Codex / Gemini agent hook dispatch.
     #[command(hide = true)]
     Hook(commands::hook::HookArgs),
+    /// Watch peer sessions for dirty events; inject into hook context.
+    Watch(commands::watch::WatchArgs),
+    /// Multi-session peer collaboration (status / diff / log / gc + Ƀ messaging)
+    Peers(commands::peers::PeersArgs),
 }
 
 fn main() {
@@ -135,6 +140,8 @@ fn main() {
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
         Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
+        Commands::Watch(args) => run_no_graph!(commands::watch::run(args.clone())),
+        Commands::Peers(args) => run_no_graph!(commands::peers::run(args.clone())),
         _ => {} // fall through to graph-loading path
     }
 
@@ -156,7 +163,9 @@ fn main() {
         | Commands::Admin { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
-        | Commands::Hook(_) => None,
+        | Commands::Hook(_)
+        | Commands::Watch(_)
+        | Commands::Peers(_) => None,
     };
     let cwd = repo_opt
         .map(std::path::PathBuf::from)
@@ -194,7 +203,9 @@ fn main() {
         | Commands::Admin { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
-        | Commands::Hook(_) => unreachable!("handled before graph load"),
+        | Commands::Hook(_)
+        | Commands::Watch(_)
+        | Commands::Peers(_) => unreachable!("handled before graph load"),
     };
     if let Err(e) = result {
         eprintln!("Command failed: {e}");

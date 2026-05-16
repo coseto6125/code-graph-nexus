@@ -27,6 +27,7 @@ fn dummy_tool(subcommand: &str) -> DerivedTool {
         schema: Arc::new(json!({})),
         flag_args: HashSet::new(),
         positional_args: Vec::new(),
+        prefix_args: Vec::new(),
     }
 }
 
