@@ -88,6 +88,23 @@ impl<'a> Resolver<'a> {
         self.decisions.take().map(RefCell::into_inner)
     }
 
+    /// Enumerate candidate target file paths for an import specifier, walking
+    /// the same expansion rules used internally by Tier 2 resolution
+    /// (path-alias expansion, relative-resolution, Python-style dotted,
+    /// extension/index suffix probing). The visitor is called once per
+    /// candidate path string and may return `false` to stop early.
+    ///
+    /// Exposed for `post_process::imports_edges`, which needs to resolve
+    /// module-style imports (e.g. Ruby `require_relative 'alpha'`, Go
+    /// `import "x/pkg"`) to a File node target when no named symbol
+    /// matches `RawImport.imported_name`.
+    pub fn enumerate_candidates<F>(&self, source_file: &std::path::Path, specifier: &str, visit: F)
+    where
+        F: FnMut(&str) -> bool,
+    {
+        for_each_specifier_candidate(source_file, specifier, &self.path_aliases, visit);
+    }
+
     /// Resolves a symbol name to possible target nodes with confidence scores.
     ///
     /// `target` constrains Tier-3 (Global) fallback so a bare `format()` /

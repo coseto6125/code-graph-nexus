@@ -199,6 +199,13 @@ impl GraphBuilder {
         let mut string_pool = StringPool::new();
         let mut nodes = Vec::new();
         let mut files = Vec::new();
+        // Maps forward-slashed file_path → File node index. Populated in
+        // Pass 1, consumed by `post_process::imports_edges` to wire
+        // (File)-[:Imports]->(symbol) edges. File nodes are deliberately
+        // NOT registered in SymbolTable — File is metadata, not a symbol,
+        // and a SymbolTable hit on a File node would create spurious
+        // Calls/Accesses edges in the resolver tiers.
+        let mut file_node_idx: FxHashMap<String, u32> = FxHashMap::default();
 
         // Pass 1: Register all nodes into SymbolTable and StringPool
         let mut current_node_idx = 0;
@@ -937,6 +944,64 @@ impl GraphBuilder {
         crate::post_process::class_membership::emit_edges(
             &self.local_graphs,
             &symbol_table,
+            &mut string_pool,
+            &mut edges,
+        );
+
+        // Append one `NodeKind::File` node per LocalGraph at the tail of
+        // `nodes` (idx >= raw-node count). Doing it here — AFTER all passes
+        // that index symbols by SymbolTable + use raw node idx ranges —
+        // keeps raw node ids dense [0..N) for the SymbolTable's monotonic-
+        // dense invariant (`index.rs::register_node` debug_assert). File
+        // nodes don't enter SymbolTable; they're metadata reachable only
+        // via `file_node_idx` for module-level edges (Imports today).
+        for local_graph in &self.local_graphs {
+            let path_str = local_graph.file_path.to_string_lossy().replace('\\', "/");
+            let basename = std::path::Path::new(&path_str)
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path_str.clone());
+            let file_uid = format!("File:{}", path_str);
+            let uid_ref = string_pool.add(&file_uid);
+            let name_ref = string_pool.add(&basename);
+            // `Node.file_idx` points into `files: Vec<File>`. Pass 1 pushed
+            // `files` in the same `self.local_graphs` enumeration order, so
+            // the i-th LocalGraph's File node references `files[i]`.
+            let node_file_idx = file_node_idx.len() as u32;
+            // `nodes.len()` is the authoritative index because Passes 1.5
+            // (Routes), 1.6/2 (EntryPoint), and Pass 4 (Process) all push
+            // into `nodes` AFTER Pass 1 without keeping `current_node_idx`
+            // in sync — using `current_node_idx` here pointed `file_node_idx`
+            // at stale raw-node indices, which would silently make
+            // `(File)-[:Imports]->()` edges originate from random Route /
+            // EntryPoint / Process nodes instead of File.
+            let file_node_id = nodes.len() as u32;
+            nodes.push(Node {
+                uid: uid_ref,
+                name: name_ref,
+                file_idx: node_file_idx,
+                kind: NodeKind::File,
+                span: (0, 0, 0, 0),
+                community_id: 0,
+            });
+            if self.generate_embeddings {
+                final_embeddings.push(None);
+            }
+            file_node_idx.insert(path_str, file_node_id);
+        }
+
+        // Cross-language Imports post-process. Emits (File)-[:Imports]->(symbol)
+        // edges by resolving each `RawImport.imported_name` against the same
+        // SymbolTable + path_aliases used in Pass 2. Resolver misses don't
+        // emit — refuse gitnexus-style cross-language false positives
+        // (`.mjs → Path.java`). Must run BEFORE CSR construction below so
+        // new edges land in `out_offsets` / `in_offsets`.
+        let imports_resolver =
+            Resolver::new(&symbol_table).with_path_aliases(self.path_aliases.clone());
+        crate::post_process::imports_edges::emit_edges(
+            &self.local_graphs,
+            &imports_resolver,
+            &file_node_idx,
             &mut string_pool,
             &mut edges,
         );
@@ -1959,7 +2024,10 @@ mod tests {
         // RelType key sets must match before per-bucket comparison.
         let p_keys: Vec<_> = parallel_buckets.keys().cloned().collect();
         let s_keys: Vec<_> = serial_buckets.keys().cloned().collect();
-        assert_eq!(p_keys, s_keys, "parallel vs serial produced different RelType sets");
+        assert_eq!(
+            p_keys, s_keys,
+            "parallel vs serial produced different RelType sets"
+        );
 
         // Per-RelType equality — divergence is localised to the failing bucket.
         for (rel, p_edges) in &parallel_buckets {

@@ -79,6 +79,8 @@ Supports the openCypher read subset commonly used for graph queries: boolean WHE
 
 **`HasMethod` target kind is parser-determined**: Python `def` and Rust associated fn surface as `Function`, true methods as `Method`. Use `MATCH (c:Class)-[:HasMethod]->(m) RETURN m` — **don't add `:Method` filter** or you'll miss those languages. `gnx inspect <Class>.contained_methods` keeps each entry's `kind` field if callers need to distinguish.
 
+**`Imports` source is always `NodeKind::File`**. Target is the imported symbol when the import names one (TS/JS/Python/Java/PHP/Rust named imports → Function/Method/Class), or `NodeKind::File` for module-style imports (Ruby `require_relative`, C/C++ `#include`, Go `import "pkg"`, C# `using NS;`, Dart relative `import '*.dart'`, Rust `use crate::*`). Use `MATCH (f:File {name:'b.ts'})-[:Imports]->(t) RETURN t.name, t.kind` to find what a file imports. `r.reason` distinguishes `post_process:imports` (named) from `post_process:imports:module` (file-level fallback). External dependencies (Foundation, `package:flutter/...`, `std::io`, `jakarta.*`) **don't emit edges** — gnx refuses to fabricate edges to targets outside the indexed corpus, by design (avoid gitnexus-style `.mjs → Path.java` cross-language false positives).
+
 ## Common pitfalls
 
 1. **`--repo` is required for cross-repo modes**. `@group / @all / csv` only work when explicit.

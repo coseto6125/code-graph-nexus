@@ -32,9 +32,15 @@
   (type_annotation
     (user_type (type_identifier) @property.type))) @property
 
-;; Imports
+;; Imports — Swift `import Module`. tree-sitter-swift grammar defines
+;; `identifier: sep1(simple_identifier, _dot)`, so the module name sits
+;; one level inside the `identifier` node as `(simple_identifier)`. The
+;; nested capture mirrors upstream gitnexus's query (see
+;; `_source_code/gitnexus/src/core/ingestion/tree-sitter-queries.ts:1251`).
+;; Double-tagged because Swift basic-form imports have no separately-
+;; named symbol part.
 (import_declaration
-  (identifier) @import.source
+  (identifier (simple_identifier) @import.name @import.source)
 ) @import
 
 ;; Typealias declarations — `typealias MyInt = Int` or generic

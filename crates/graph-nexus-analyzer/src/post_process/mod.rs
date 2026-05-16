@@ -7,3 +7,4 @@
 //! derivations that fix gaps no single parser is responsible for filling.
 
 pub mod class_membership;
+pub mod imports_edges;
