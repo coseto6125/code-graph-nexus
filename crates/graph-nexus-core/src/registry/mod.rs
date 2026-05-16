@@ -2,6 +2,7 @@
 //! See spec §1-§2, §9.
 
 mod audit;
+pub mod dirname;
 mod io;
 mod lock;
 mod meta;
@@ -9,6 +10,7 @@ mod path;
 mod store;
 
 pub use audit::{AuditEvent, AuditLog};
+pub use dirname::{CommitDirName, ParseError as DirNameParseError, SourceType};
 pub use io::atomic_write_bytes;
 /// Internal implementation detail. Not part of public API.
 /// Use only within graph-nexus-core or in tests.
