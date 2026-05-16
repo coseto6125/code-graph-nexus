@@ -207,8 +207,8 @@ fn search_accepts_mode_bm25() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("error: "));
 }
 
-/// `--mode vector` / `hybrid` / `auto` were retired with the embedding
-/// removal. clap must reject them with `invalid value … possible values: [bm25]`.
+/// clap must reject any `--mode` value other than `bm25` with
+/// `invalid value … possible values: [bm25]`.
 #[test]
 fn search_rejects_removed_modes() {
     let f = two_repo_fixture();

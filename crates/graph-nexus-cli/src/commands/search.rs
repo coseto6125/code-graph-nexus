@@ -289,7 +289,8 @@ fn compute_single(
     let kind_set: Option<Vec<String>> =
         kind_filter.map(|s| s.split(',').map(|k| k.trim().to_lowercase()).collect());
 
-    let mut hits = dispatch_by_mode(graph, pattern, mode, &kind_set, &repo_label, index_dir);
+    let _ = mode;
+    let mut hits = bm25_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir);
 
     // Sort by score descending, trim to TOP_K.
     hits.sort_by(|a, b| {
@@ -473,19 +474,6 @@ fn build_hit(
     })
 }
 
-/// BM25 dispatch shared between the single-repo path (`compute_single`)
-/// and the multi-repo worker path (`compute_multi_with_engines`).
-fn dispatch_by_mode(
-    graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph,
-    pattern: &str,
-    _mode: &SearchMode,
-    kind_set: &Option<Vec<String>>,
-    repo_label: &Option<String>,
-    index_dir: Option<&std::path::Path>,
-) -> Vec<Hit> {
-    bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir)
-}
-
 // ── Multi-repo fan-out ────────────────────────────────────────────────────────
 
 fn run_multi(
@@ -528,6 +516,7 @@ pub fn compute_multi_with_engines(
         kind_filter.map(|s| s.split(',').map(|k| k.trim().to_lowercase()).collect());
 
     // Fan out via rayon; workers return owned hit rows.
+    let _ = mode;
     let worker_results: Vec<(String, Result<Vec<Hit>, String>)> = loaded
         .par_iter()
         .map(|(repo_name, engine_result)| {
@@ -538,10 +527,9 @@ pub fn compute_multi_with_engines(
                     .map_err(|e| format!("{repo_name}: access: {e}"))
                     .map(|graph| {
                         let repo_label = Some(repo_name.clone());
-                        dispatch_by_mode(
+                        bm25_hits_from_graph(
                             graph,
                             pattern,
-                            mode,
                             &kind_set,
                             &repo_label,
                             engine.index_dir(),
