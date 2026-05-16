@@ -3,6 +3,7 @@ pub mod contracts;
 pub mod coverage;
 pub mod cypher;
 pub mod diff;
+pub mod find;
 pub mod format;
 pub mod hook;
 pub mod hook_handle;
