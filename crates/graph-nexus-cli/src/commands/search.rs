@@ -39,8 +39,10 @@ pub enum SearchMode {
 
 #[derive(Args, Debug, Clone)]
 pub struct SearchArgs {
-    /// Pattern: name fragment or natural-language description.
-    pub pattern: String,
+    /// Pattern: name fragment or natural-language description. Required
+    /// unless `--batch` is set (in which case patterns come from stdin).
+    #[arg(required_unless_present = "batch")]
+    pub pattern: Option<String>,
 
     /// Search mode: bm25 (lexical), vector (semantic), hybrid (combined), auto (detect).
     #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
@@ -57,12 +59,28 @@ pub struct SearchArgs {
     /// Output format: text (default) | json | toon.
     #[arg(long, default_value = "text")]
     pub format: Option<String>,
+
+    /// Read patterns from stdin (one per line, lines starting with `#`
+    /// or empty are skipped). Amortizes the embedder cold-start
+    /// (~1–2s) across N queries. Each query is emitted as a separate
+    /// block prefixed by `=== pattern: <pattern> ===`.
+    #[arg(long)]
+    pub batch: bool,
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
+    if args.batch {
+        return run_batch(args, engine);
+    }
+
     let format = OutputFormat::parse(args.format.as_deref());
+    let pattern = args.pattern.clone().ok_or_else(|| {
+        GnxError::InvalidArgument(
+            "pattern is required (or use --batch to read from stdin)".into(),
+        )
+    })?;
 
     // Resolve --repo to a list of targets.  When the selector is absent or
     // expands to exactly one cwd-repo, use the already-loaded `engine` rather
@@ -71,13 +89,13 @@ pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
 
     if targets.is_empty() {
         // Single-repo path using the engine that main.rs already loaded.
-        run_single(args.pattern, args.mode, args.kind, format, engine, None)
+        run_single(pattern, args.mode, args.kind, format, engine, None)
     } else if targets.len() == 1 {
         let (repo_name, graph_path) = targets.into_iter().next().unwrap();
         let local_engine = Engine::load(std::path::PathBuf::from(&graph_path))
             .map_err(|e| GnxError::Rkyv(format!("{repo_name}: load: {e}")))?;
         run_single(
-            args.pattern,
+            pattern,
             args.mode,
             args.kind,
             format,
@@ -85,8 +103,64 @@ pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
             Some(repo_name),
         )
     } else {
-        run_multi(args.pattern, args.mode, args.kind, format, targets)
+        run_multi(pattern, args.mode, args.kind, format, targets)
     }
+}
+
+/// Batch dispatch: read patterns from stdin, one query at a time, all
+/// sharing the OnceLock-cached Embedder so the ~1–2s model init is paid
+/// exactly once for the whole batch.
+///
+/// Output: each query block is preceded by a `=== pattern: <pattern> ===`
+/// stdout line so scripts can split per-query regardless of `--format`.
+/// Single-repo and multi-repo targets are honoured the same way as the
+/// non-batch path; for multi-repo, engine reload still happens per
+/// query (the win is purely on Embedder amortisation, which is the
+/// dominant cost anyway).
+fn run_batch(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
+    use std::io::BufRead;
+
+    let format = OutputFormat::parse(args.format.as_deref());
+    let targets = resolve_targets(args.repo.as_deref())?;
+
+    let stdin = std::io::stdin();
+    let queries: Vec<String> = stdin
+        .lock()
+        .lines()
+        .map_while(Result::ok)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .collect();
+
+    if queries.is_empty() {
+        eprintln!("→ batch: no patterns on stdin (one per line, `#` for comments)");
+        return Ok(());
+    }
+
+    for pattern in &queries {
+        println!("=== pattern: {pattern} ===");
+
+        let hits = if targets.is_empty() {
+            compute_single(pattern, &args.mode, args.kind.as_deref(), engine, None)?
+        } else if targets.len() == 1 {
+            let (repo_name, graph_path) = &targets[0];
+            let local_engine = Engine::load(std::path::PathBuf::from(graph_path))
+                .map_err(|e| GnxError::Rkyv(format!("{repo_name}: load: {e}")))?;
+            compute_single(
+                pattern,
+                &args.mode,
+                args.kind.as_deref(),
+                &local_engine,
+                Some(repo_name.clone()),
+            )?
+        } else {
+            compute_multi(pattern, &args.mode, args.kind.as_deref(), targets.clone())
+                .map(|(h, _)| h)?
+        };
+
+        emit_hits(&hits, format, None)?;
+    }
+    Ok(())
 }
 
 // ── Mode detection ───────────────────────────────────────────────────────────
@@ -656,30 +730,28 @@ fn compute_multi(
 
 /// In-process search entry point for hooks and other internal consumers.
 /// Returns owned `Hit` rows without going through stdout / OutputFormat.
-/// Top-K trimmed identically to `run`.
+/// Top-K trimmed identically to `run`. Batch mode is not exposed here
+/// — hooks always run one pattern at a time.
 pub fn compute_hits(args: SearchArgs, engine: &Engine) -> Result<Vec<Hit>, GnxError> {
+    let pattern = args.pattern.as_deref().ok_or_else(|| {
+        GnxError::InvalidArgument("compute_hits requires a pattern (--batch not supported)".into())
+    })?;
     let targets = resolve_targets(args.repo.as_deref())?;
     if targets.is_empty() {
-        compute_single(
-            &args.pattern,
-            &args.mode,
-            args.kind.as_deref(),
-            engine,
-            None,
-        )
+        compute_single(pattern, &args.mode, args.kind.as_deref(), engine, None)
     } else if targets.len() == 1 {
         let (repo_name, graph_path) = targets.into_iter().next().unwrap();
         let local_engine = Engine::load(std::path::PathBuf::from(&graph_path))
             .map_err(|e| GnxError::Rkyv(format!("{repo_name}: load: {e}")))?;
         compute_single(
-            &args.pattern,
+            pattern,
             &args.mode,
             args.kind.as_deref(),
             &local_engine,
             Some(repo_name),
         )
     } else {
-        compute_multi(&args.pattern, &args.mode, args.kind.as_deref(), targets)
+        compute_multi(pattern, &args.mode, args.kind.as_deref(), targets)
             .map(|(hits, _summary)| hits)
     }
 }

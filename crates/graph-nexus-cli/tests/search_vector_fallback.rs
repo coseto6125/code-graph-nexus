@@ -65,11 +65,12 @@ fn write_graph_and_load(graph: ZeroCopyGraph) -> (tempfile::TempDir, Engine) {
 fn vector_falls_back_to_bm25_when_embeddings_missing() {
     let (_dir, engine) = write_graph_and_load(make_minimal_graph_no_embeddings());
     let args = SearchArgs {
-        pattern: "validateUser".into(),
+        pattern: Some("validateUser".into()),
         mode: SearchMode::Vector,
         kind: None,
         repo: None,
         format: None,
+        batch: false,
     };
     let hits = compute_hits(args, &engine).expect("compute_hits Err");
     assert!(
@@ -83,11 +84,12 @@ fn vector_falls_back_to_bm25_when_embeddings_missing() {
 fn hybrid_falls_back_to_bm25_when_embeddings_missing() {
     let (_dir, engine) = write_graph_and_load(make_minimal_graph_no_embeddings());
     let args = SearchArgs {
-        pattern: "validateUser".into(),
+        pattern: Some("validateUser".into()),
         mode: SearchMode::Hybrid,
         kind: None,
         repo: None,
         format: None,
+        batch: false,
     };
     let hits = compute_hits(args, &engine).expect("compute_hits Err");
     assert!(
