@@ -48,6 +48,9 @@ pub struct DerivedTool {
     pub flag_args: HashSet<String>,
     /// Arg IDs that are positional, in declared order.
     pub positional_args: Vec<String>,
+    /// Fixed argv tokens prepended before JSON-derived args. Used for
+    /// sub-subcommand dispatch (e.g. `["status"]` → `gnx peers status`).
+    pub prefix_args: Vec<String>,
 }
 
 /// Enumerate every visible subcommand of `root` as an MCP tool.
@@ -106,6 +109,7 @@ fn derive_tool(cmd: &Command) -> DerivedTool {
         schema,
         flag_args,
         positional_args,
+        prefix_args: Vec::new(),
     }
 }
 
