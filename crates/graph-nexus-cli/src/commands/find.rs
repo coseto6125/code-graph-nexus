@@ -73,6 +73,9 @@ fn category_priority(cat: &ArchivedFileCategory) -> u8 {
         ArchivedFileCategory::Document => 1,
         ArchivedFileCategory::Config => 2,
         ArchivedFileCategory::Test => 3,
+        // Vendored / third-party — lowest priority because find is meant
+        // for "my code", not the user's dependencies.
+        ArchivedFileCategory::Reference => 4,
     }
 }
 
@@ -82,6 +85,7 @@ fn category_to_str(cat: &ArchivedFileCategory) -> &'static str {
         ArchivedFileCategory::Test => "Test",
         ArchivedFileCategory::Document => "Document",
         ArchivedFileCategory::Config => "Config",
+        ArchivedFileCategory::Reference => "Reference",
     }
 }
 
