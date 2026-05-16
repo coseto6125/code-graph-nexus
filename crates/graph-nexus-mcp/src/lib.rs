@@ -9,6 +9,7 @@
 //! the rmcp stdio adapter, and `spawn.rs` for the subprocess invocation.
 
 pub mod argv;
+pub mod peers;
 pub mod schema;
 pub mod server;
 pub mod spawn;

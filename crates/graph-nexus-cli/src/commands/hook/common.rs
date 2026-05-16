@@ -179,3 +179,48 @@ pub fn strip_shell_quotes(cmd: &str) -> String {
     }
     out
 }
+
+/// Drain this session's peer inbox, render to payload, truncate inbox.
+/// Returns `Some(payload_string)` if there was something to inject, `None` otherwise.
+/// Honors `GNX_REPO_ROOT_OVERRIDE` for tests.
+fn default_repo_root() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let repo_dir = crate::repo_identity::repo_dir_name_for_cwd(&cwd).ok()?;
+    Some(resolve_home_gnx().join(repo_dir))
+}
+
+pub fn drain_and_render_peer_payload() -> Option<String> {
+    let me = crate::session::resolver::resolve_session_id(None);
+    let repo_root: PathBuf = std::env::var("GNX_REPO_ROOT_OVERRIDE")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(default_repo_root)?;
+    let session_dir = repo_root.join("sessions").join(&me);
+    let inbox = session_dir.join("inbox.jsonl");
+
+    // Fast path: skip meta read + inbox open entirely when inbox is absent or empty.
+    // Covers the vast majority of PreToolUse fires with a single stat call.
+    match std::fs::metadata(&inbox) {
+        Err(_) => return None,
+        Ok(m) if m.len() == 0 => return None,
+        Ok(_) => {}
+    }
+
+    let meta_path = session_dir.join("meta.json");
+    let mut meta = graph_nexus_core::session::SessionMeta::read(&meta_path).ok()?;
+
+    let (entries, _new_offset) =
+        graph_nexus_core::peer::inbox::drain(&inbox, meta.last_drained_offset).ok()?;
+    if entries.is_empty() {
+        return None;
+    }
+    let payload = crate::peer::render::render_payload(&entries);
+    if payload.is_empty() {
+        return None;
+    }
+
+    let _ = graph_nexus_core::peer::inbox::truncate_inbox(&inbox);
+    meta.last_drained_offset = 0;
+    let _ = graph_nexus_core::session::SessionMeta::write_atomic(&meta_path, &meta);
+    Some(payload)
+}

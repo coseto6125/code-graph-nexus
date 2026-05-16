@@ -65,6 +65,8 @@ fn reachability_includes_branch_refs_and_active_sessions() {
         base_sha: session_sha.clone(),
         source_worktree: wt.to_string_lossy().into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sessions.join("session_meta.json"), &sm).unwrap();
 
@@ -94,6 +96,8 @@ fn reachability_excludes_idle_sessions() {
         base_sha: session_sha.clone(),
         source_worktree: wt.to_string_lossy().into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sessions.join("session_meta.json"), &sm).unwrap();
 
@@ -204,6 +208,8 @@ fn sweep_sessions_marks_idle_sessions_dead() {
         base_sha: "0".repeat(40),
         source_worktree: "/x".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sessions.join("session_meta.json"), &sm).unwrap();
 

@@ -160,6 +160,8 @@ fn ensure_session_meta(session_dir: &Path, worktree: &Path) -> io::Result<()> {
         base_sha: head_sha,
         source_worktree: worktree.to_string_lossy().into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&meta_path, &sm)
 }
