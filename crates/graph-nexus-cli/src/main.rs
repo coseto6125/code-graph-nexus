@@ -43,6 +43,8 @@ enum Commands {
     Inspect(commands::inspect::InspectArgs),
     /// Find symbols by name (BM25 lexical search)
     Search(commands::search::SearchArgs),
+    /// Find a symbol's definition by exact or fuzzy name match — returns the single most-likely definition, not all occurrences
+    Find(commands::find::FindArgs),
     /// Symbol blast radius — affected callers + risk_level. For binding tier-degradation or resolver delta, use `gnx diff`.
     Impact(commands::impact::ImpactArgs),
     /// AST-aware multi-file rename
@@ -139,6 +141,7 @@ fn main() {
     let repo_opt = match &cli.command {
         Commands::Inspect(args) => args.repo.as_deref(),
         Commands::Search(args) => args.repo.as_deref(),
+        Commands::Find(args) => args.repo.as_deref(),
         Commands::Impact(args) => args.repo.as_deref(),
         Commands::Rename(args) => args.repo.as_deref(),
         Commands::Cypher(args) => args.repo.as_deref(),
@@ -176,6 +179,7 @@ fn main() {
     let result: Result<(), graph_nexus_core::GnxError> = match cli.command {
         Commands::Inspect(args) => commands::inspect::run(args, &engine, &graph_path),
         Commands::Search(args) => commands::search::run(args, &engine),
+        Commands::Find(args) => commands::find::run(args, &engine),
         Commands::Impact(args) => commands::impact::run(args, &engine),
         Commands::Rename(args) => commands::rename::run(args, &engine),
         Commands::Cypher(args) => commands::cypher::run(args, &engine),
@@ -189,9 +193,7 @@ fn main() {
         | Commands::Admin { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
-        | Commands::Hook(_) => {
-            unreachable!("handled before graph load")
-        }
+        | Commands::Hook(_) => unreachable!("handled before graph load"),
     };
     if let Err(e) = result {
         eprintln!("Command failed: {e}");
