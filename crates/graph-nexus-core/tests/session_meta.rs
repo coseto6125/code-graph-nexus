@@ -13,6 +13,8 @@ fn session_meta_round_trip() {
         base_sha: "abc123def4567890abc123def4567890abc123de".into(),
         source_worktree: "/work/myrepo".into(),
         overlay_version: 5,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     let s1 = serde_json::to_string(&sm).unwrap();
     let s2 = serde_json::to_string(&sm).unwrap();
@@ -73,6 +75,8 @@ fn atomic_write_session_meta_full_equality() {
         base_sha: "0".repeat(40),
         source_worktree: "/x".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(tmp.path(), &sm).unwrap();
     let r = SessionMeta::read(tmp.path()).unwrap();
