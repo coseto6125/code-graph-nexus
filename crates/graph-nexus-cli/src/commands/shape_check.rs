@@ -38,10 +38,15 @@ pub struct ShapeCheckArgs {
     /// Output format: text (default) | json | toon
     #[arg(long, default_value = "text")]
     pub format: Option<String>,
+
+    /// Filter: only report drift for routes whose path matches this substring.
+    /// When None (default), all routes with extracted shape are checked.
+    #[arg(long)]
+    pub route: Option<String>,
 }
 
 fn build_payload(
-    _args: ShapeCheckArgs,
+    args: ShapeCheckArgs,
     engine: &crate::engine::Engine,
 ) -> Result<serde_json::Value, GnxError> {
     let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
@@ -70,6 +75,7 @@ fn build_payload(
     let mut report_entries: Vec<serde_json::Value> = Vec::new();
     let mut total_fetches: u64 = 0;
     let mut drift_count: u64 = 0;
+    let mut filter_matched_count: usize = 0;
 
     for edge in graph.edges.iter() {
         if !matches!(&edge.rel_type, ArchivedRelType::Fetches) {
@@ -86,6 +92,18 @@ fn build_payload(
         let Some((resp_keys, err_keys)) = shapes.get(&target_idx) else {
             continue;
         };
+
+        // Apply route filter if provided.
+        if let Some(ref route_filter) = args.route {
+            let route_node = &graph.nodes[target_idx as usize];
+            let route_name = route_node.name.resolve(&graph.string_pool);
+            // Extract path from route name (format: "METHOD /path" or "/path")
+            let route_path = route_name.split_once(' ').map(|(_, p)| p).unwrap_or(route_name);
+            if !route_path.contains(route_filter) {
+                continue;
+            }
+            filter_matched_count += 1;
+        }
 
         // `known` is response_keys ∪ error_keys. We iterate parsed.keys and
         // collect any that aren't present.
@@ -125,6 +143,13 @@ fn build_payload(
             "error_keys": err_keys,
             "fetch_count": parsed.fetch_count,
         }));
+    }
+
+    // Emit no-match message if route filter was provided but no routes matched.
+    if let Some(filter) = &args.route {
+        if filter_matched_count == 0 {
+            eprintln!("No routes match `{filter}` in the graph.");
+        }
     }
 
     Ok(serde_json::json!({

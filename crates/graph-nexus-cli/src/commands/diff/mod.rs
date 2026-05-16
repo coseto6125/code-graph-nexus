@@ -1,0 +1,163 @@
+//! `gnx diff` — generalized graph-level cross-commit diff command.
+//!
+//! Compares two git refs and emits structural changes per requested section
+//! (bindings / routes / contracts / all). See spec
+//! `docs/superpowers/specs/2026-05-16-tier-b-surface-and-diff-design.md` §5.
+
+use clap::{Args, ValueEnum};
+use graph_nexus_core::GnxError;
+
+pub mod baseline;
+pub mod bindings;
+pub mod contracts;
+pub mod git_guard;
+pub mod output;
+pub mod routes;
+
+/// Section of the graph to diff. `All` = bindings + routes + contracts.
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq, Hash)]
+#[value(rename_all = "lowercase")]
+pub enum DiffSection {
+    Bindings,
+    Routes,
+    Contracts,
+    All,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DiffArgs {
+    /// Comma-separated section(s) to diff: bindings, routes, contracts, or all.
+    #[arg(long, value_delimiter = ',', required = true)]
+    pub section: Vec<DiffSection>,
+
+    /// Git ref to compare against: branch / tag / commit SHA / HEAD~N / PR/<n>. No default.
+    #[arg(long, required = true)]
+    pub baseline: String,
+
+    /// Output format: text (default) | json | toon
+    #[arg(long, default_value = "text")]
+    pub format: String,
+
+    /// List every change (text format only). Default truncates to top-10 per section.
+    #[arg(long, default_value_t = false)]
+    pub verbose: bool,
+
+    /// Repository root path (defaults to current directory).
+    #[arg(long)]
+    pub repo: Option<String>,
+}
+
+pub fn run(args: DiffArgs) -> Result<(), GnxError> {
+    let repo_dir = match args.repo.as_deref() {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir()
+            .map_err(|e| GnxError::Output(format!("cwd: {e}")))?,
+    };
+
+    let baseline_sha = baseline::resolve(&args.baseline, &repo_dir)?;
+    let current_sha = baseline::resolve("HEAD", &repo_dir)?;
+
+    let want_bindings = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Bindings | DiffSection::All));
+
+    let want_routes = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Routes | DiffSection::All));
+
+    let want_contracts = args
+        .section
+        .iter()
+        .any(|s| matches!(s, DiffSection::Contracts | DiffSection::All));
+
+    // Fast-path: identical SHAs → nothing could have changed.
+    if baseline_sha == current_sha {
+        let bindings_empty = want_bindings.then(bindings::BindingsDiff::default);
+        let routes_empty = want_routes.then(routes::RoutesDiff::default);
+        let contracts_empty = want_contracts.then(contracts::ContractsDiff::default);
+        output::emit(
+            &output::DiffEnvelope {
+                baseline_ref: &args.baseline,
+                baseline_sha: &baseline_sha,
+                current_ref: "HEAD",
+                current_sha: &current_sha,
+                bindings: bindings_empty.as_ref(),
+                routes: routes_empty.as_ref(),
+                contracts: contracts_empty.as_ref(),
+                verbose: args.verbose,
+            },
+            &args.format,
+        )?;
+        return Ok(());
+    }
+
+    let mut bindings_diff: Option<bindings::BindingsDiff> = None;
+    let mut routes_diff: Option<routes::RoutesDiff> = None;
+    let mut contracts_diff: Option<contracts::ContractsDiff> = None;
+
+    // Single admin index per state (current + baseline). The dump writes
+    // both the resolver JSONL (for bindings) and graph.bin (for routes /
+    // contracts) as side effects of one analyze pass — so we run it ONCE
+    // per state regardless of which sections are requested.
+    let current_jsonl = std::env::temp_dir()
+        .join(format!("gnx-diff-current-{}.jsonl", std::process::id()));
+    let baseline_jsonl = std::env::temp_dir()
+        .join(format!("gnx-diff-baseline-{baseline_sha}.jsonl"));
+    let baseline_graph_tmp = std::env::temp_dir()
+        .join(format!("gnx-diff-graph-baseline-{baseline_sha}.bin"));
+    let legacy_default = std::path::Path::new(".gnx/graph.bin");
+
+    bindings::dump(&repo_dir, &current_jsonl)?;
+    let current_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
+
+    {
+        let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
+        bindings::dump(&repo_dir, &baseline_jsonl)?;
+        let baseline_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
+        std::fs::copy(&baseline_graph, &baseline_graph_tmp).map_err(|e| {
+            GnxError::Output(format!(
+                "copy baseline graph {}: {e}",
+                baseline_graph.display()
+            ))
+        })?;
+    } // _guard drops — branch + stash restored
+
+    if want_bindings {
+        let baseline_map = bindings::load_jsonl(&baseline_jsonl)?;
+        let current_map = bindings::load_jsonl(&current_jsonl)?;
+        bindings_diff = Some(bindings::diff(&baseline_map, &current_map));
+    }
+
+    if want_routes {
+        let current_routes = routes::extract(&current_graph)?;
+        let baseline_routes = routes::extract(&baseline_graph_tmp)?;
+        routes_diff = Some(routes::diff(&baseline_routes, &current_routes));
+    }
+
+    if want_contracts {
+        let current_contracts = contracts::extract(&current_graph)?;
+        let baseline_contracts = contracts::extract(&baseline_graph_tmp)?;
+        contracts_diff = Some(contracts::diff(&baseline_contracts, &current_contracts));
+    }
+
+    let _ = std::fs::remove_file(&current_jsonl);
+    let _ = std::fs::remove_file(&baseline_jsonl);
+    let _ = std::fs::remove_file(&baseline_graph_tmp);
+
+    output::emit(
+        &output::DiffEnvelope {
+            baseline_ref: &args.baseline,
+            baseline_sha: &baseline_sha,
+            current_ref: "HEAD",
+            current_sha: &current_sha,
+            bindings: bindings_diff.as_ref(),
+            routes: routes_diff.as_ref(),
+            contracts: contracts_diff.as_ref(),
+            verbose: args.verbose,
+        },
+        &args.format,
+    )?;
+    Ok(())
+}
