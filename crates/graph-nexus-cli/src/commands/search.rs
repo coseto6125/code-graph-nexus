@@ -4,12 +4,14 @@
 //! (cross-repo rayon fan-out + top-K heap merge).
 //!
 //! ## Mode routing
-//! - `bm25`   — pure lexical (substring scoring against graph node names)
-//! - `vector` — semantic cosine similarity (stub; falls back to bm25 until
-//!   full embedding wiring is complete — TODO: wire to real embed path)
-//! - `hybrid` — bm25 + vector folded (stub: falls back to bm25 without embeddings)
-//! - `auto`   — detect: slug-like input → bm25; else → hybrid if embeddings
+//! - `bm25`   — pure lexical (tantivy BM25 or substring scan fallback)
+//! - `vector` — cosine similarity against per-node BGE-M3 embeddings
+//! - `hybrid` — bm25 + vector fused via Reciprocal Rank Fusion (k=60)
+//! - `auto`   — slug-like input → bm25; else → hybrid if embeddings
 //!   present, else bm25 with a stderr hint
+//!
+//! Vector and hybrid degrade to bm25 + a stderr warning when the graph
+//! has no embeddings — the hook contract requires search never errors.
 //!
 //! ## Cross-repo fan-out
 //! When `--repo` resolves to multiple repos, workers run in parallel via
@@ -39,8 +41,10 @@ pub enum SearchMode {
 
 #[derive(Args, Debug, Clone)]
 pub struct SearchArgs {
-    /// Pattern: name fragment or natural-language description.
-    pub pattern: String,
+    /// Pattern: name fragment or natural-language description. Required
+    /// unless `--batch` is set (in which case patterns come from stdin).
+    #[arg(required_unless_present = "batch")]
+    pub pattern: Option<String>,
 
     /// Search mode: bm25 (lexical), vector (semantic), hybrid (combined), auto (detect).
     #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
@@ -57,12 +61,28 @@ pub struct SearchArgs {
     /// Output format: text (default) | json | toon.
     #[arg(long, default_value = "text")]
     pub format: Option<String>,
+
+    /// Read patterns from stdin (one per line, lines starting with `#`
+    /// or empty are skipped). Amortizes the embedder cold-start
+    /// (~1–2s) across N queries. Each query is emitted as a separate
+    /// block prefixed by `=== pattern: <pattern> ===`.
+    #[arg(long)]
+    pub batch: bool,
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
+    if args.batch {
+        return run_batch(args, engine);
+    }
+
     let format = OutputFormat::parse(args.format.as_deref());
+    let pattern = args.pattern.clone().ok_or_else(|| {
+        GnxError::InvalidArgument(
+            "pattern is required (or use --batch to read from stdin)".into(),
+        )
+    })?;
 
     // Resolve --repo to a list of targets.  When the selector is absent or
     // expands to exactly one cwd-repo, use the already-loaded `engine` rather
@@ -71,13 +91,13 @@ pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
 
     if targets.is_empty() {
         // Single-repo path using the engine that main.rs already loaded.
-        run_single(args.pattern, args.mode, args.kind, format, engine, None)
+        run_single(pattern, args.mode, args.kind, format, engine, None)
     } else if targets.len() == 1 {
         let (repo_name, graph_path) = targets.into_iter().next().unwrap();
         let local_engine = Engine::load(std::path::PathBuf::from(&graph_path))
             .map_err(|e| GnxError::Rkyv(format!("{repo_name}: load: {e}")))?;
         run_single(
-            args.pattern,
+            pattern,
             args.mode,
             args.kind,
             format,
@@ -85,8 +105,73 @@ pub fn run(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
             Some(repo_name),
         )
     } else {
-        run_multi(args.pattern, args.mode, args.kind, format, targets)
+        run_multi(pattern, args.mode, args.kind, format, targets)
     }
+}
+
+/// Batch dispatch: read patterns from stdin, one query at a time, all
+/// sharing the OnceLock-cached Embedder so the ~1–2s model init is paid
+/// exactly once for the whole batch.
+///
+/// Output: each query block is preceded by a `=== pattern: <pattern> ===`
+/// stdout line so scripts can split per-query regardless of `--format`.
+/// For a single-repo target the Engine is also loaded once outside the
+/// per-query loop (mmap setup is the next non-trivial cost after model
+/// init); for multi-repo, each per-pattern `compute_multi` call still
+/// reloads per-repo engines internally — bundling those across N
+/// queries is a deeper refactor and out of scope for this PR.
+fn run_batch(args: SearchArgs, engine: &Engine) -> Result<(), GnxError> {
+    use std::io::BufRead;
+
+    let format = OutputFormat::parse(args.format.as_deref());
+    let targets = resolve_targets(args.repo.as_deref())?;
+
+    let stdin = std::io::stdin();
+    let queries: Vec<String> = stdin
+        .lock()
+        .lines()
+        .map_while(Result::ok)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .collect();
+
+    if queries.is_empty() {
+        eprintln!("→ batch: no patterns on stdin (one per line, `#` for comments)");
+        return Ok(());
+    }
+
+    // Load the single-repo engine once if applicable. Multi-repo
+    // targets fan out per-query inside compute_multi — see docstring.
+    let single_repo_engine: Option<(String, Engine)> = if targets.len() == 1 {
+        let (repo_name, graph_path) = &targets[0];
+        let eng = Engine::load(std::path::PathBuf::from(graph_path))
+            .map_err(|e| GnxError::InvalidArgument(format!("{repo_name}: load: {e}")))?;
+        Some((repo_name.clone(), eng))
+    } else {
+        None
+    };
+
+    for pattern in &queries {
+        println!("=== pattern: {pattern} ===");
+
+        let hits = if targets.is_empty() {
+            compute_single(pattern, &args.mode, args.kind.as_deref(), engine, None)?
+        } else if let Some((repo_name, local_engine)) = single_repo_engine.as_ref() {
+            compute_single(
+                pattern,
+                &args.mode,
+                args.kind.as_deref(),
+                local_engine,
+                Some(repo_name.clone()),
+            )?
+        } else {
+            compute_multi(pattern, &args.mode, args.kind.as_deref(), targets.clone())
+                .map(|(h, _)| h)?
+        };
+
+        emit_hits(&hits, format, None)?;
+    }
+    Ok(())
 }
 
 // ── Mode detection ───────────────────────────────────────────────────────────
@@ -107,8 +192,12 @@ fn detect_mode(input: &str, embeddings_available: bool) -> SearchMode {
     }
 }
 
-/// Stub: returns true only when the graph has an embeddings table.
-/// TODO: query per-repo BranchEntry.embedding_status from the registry.
+/// Returns true when the graph has an embeddings table. Drives
+/// `detect_mode`'s phrase→hybrid routing.
+//
+// TODO: prefer per-repo BranchEntry.embedding_status from the registry
+// once that surface gains a query API — avoids loading the graph just
+// to inspect one Option.
 fn embeddings_available_for(graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph) -> bool {
     graph.embeddings.is_some()
 }
@@ -213,14 +302,10 @@ fn compute_single(
             bm25_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir)
         }
         SearchMode::Vector => {
-            // TODO: wire to real cosine path (graph_nexus_analyzer::embeddings)
-            eprintln!("→ vector mode not yet wired — falling back to bm25");
-            bm25_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir)
+            vector_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir)
         }
         SearchMode::Hybrid => {
-            // TODO: fold bm25 + cosine scores when embeddings are wired
-            eprintln!("→ hybrid: embeddings not wired — using bm25");
-            bm25_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir)
+            hybrid_hits_from_graph(graph, pattern, &kind_set, &repo_label, index_dir)
         }
     };
 
@@ -396,6 +481,183 @@ fn build_hit(
     })
 }
 
+// ── Vector scoring primitives ────────────────────────────────────────────────
+
+/// Plain L2 norm. Returns 0.0 for empty input or an all-zero vector.
+pub(crate) fn l2_norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+/// Score `embeddings[i]` against `query` via cosine similarity, drop
+/// zero-norm and non-positive entries, return the top-`k` as
+/// `(node_idx, similarity)` sorted descending. Skip-marker zero
+/// embeddings produced at build time get filtered here.
+pub(crate) fn cosine_top_k_indices(
+    embeddings: &[Vec<f32>],
+    query: &[f32],
+    k: usize,
+) -> Vec<(usize, f32)> {
+    let q_norm = l2_norm(query);
+    if q_norm == 0.0 {
+        return Vec::new();
+    }
+
+    let scored: Vec<(usize, f32)> = embeddings
+        .par_iter()
+        .enumerate()
+        .filter_map(|(idx, emb)| {
+            let dot: f32 = emb.iter().zip(query.iter()).map(|(a, b)| a * b).sum();
+            let denom = l2_norm(emb) * q_norm;
+            if denom == 0.0 {
+                return None;
+            }
+            let sim = dot / denom;
+            (sim > 0.0).then_some((idx, sim))
+        })
+        .collect();
+
+    let mut heap: BinaryHeap<Reverse<(u32, usize)>> = BinaryHeap::with_capacity(k + 1);
+    for (idx, sim) in scored {
+        heap.push(Reverse((sim.to_bits(), idx)));
+        if heap.len() > k {
+            heap.pop();
+        }
+    }
+
+    let mut out: Vec<(usize, f32)> = heap
+        .into_iter()
+        .map(|r| (r.0 .1, f32::from_bits(r.0 .0)))
+        .collect();
+    out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    out
+}
+
+/// Vector path: embed the query, score every node embedding by cosine,
+/// materialise `Hit` rows for the top-K survivors. All failure modes
+/// degrade to BM25 + a stderr hint — the hook contract requires that
+/// search NEVER errors out.
+fn vector_hits_from_graph(
+    graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph,
+    pattern: &str,
+    kind_set: &Option<Vec<String>>,
+    repo_label: &Option<String>,
+    index_dir: Option<&std::path::Path>,
+) -> Vec<Hit> {
+    let Some(archived_embs) = graph.embeddings.as_ref() else {
+        eprintln!(
+            "→ vector: graph has no embeddings — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
+        );
+        return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    };
+
+    let embedder = match crate::embedder::get_embedder() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("→ vector: embedder unavailable ({e}) — falling back to bm25");
+            return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+        }
+    };
+
+    let query_vec = match embedder.embed(vec![pattern.to_string()]) {
+        Ok(mut vs) if !vs.is_empty() => vs.swap_remove(0),
+        _ => {
+            eprintln!("→ vector: query embed failed — falling back to bm25");
+            return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+        }
+    };
+
+    tracing::debug!(query_norm = l2_norm(&query_vec), "vector query embedded");
+
+    // Materialise archived → owned so the rayon-based ranking helper
+    // (which expects `&[Vec<f32>]`) sees a contiguous slice. Cost:
+    // ~5k × 1024 × 4 B ≈ 20 MB per call; allocator-light vs the
+    // model inference that just happened.
+    let owned_embs: Vec<Vec<f32>> = archived_embs
+        .iter()
+        .map(|v| v.iter().map(|x| x.to_native()).collect())
+        .collect();
+
+    let ranked = cosine_top_k_indices(&owned_embs, &query_vec, TOP_K);
+
+    ranked
+        .into_iter()
+        .filter_map(|(idx, score)| build_hit(graph, idx, score, kind_set, repo_label))
+        .collect()
+}
+
+/// Hybrid path: run BM25 and vector, then fuse via RRF. Short-circuits
+/// to BM25 when the graph has no embeddings — vector_hits_from_graph
+/// would also do this, but skipping the duplicate BM25 call saves a
+/// Tantivy round-trip when we know the vector half can't contribute.
+fn hybrid_hits_from_graph(
+    graph: &graph_nexus_core::graph::ArchivedZeroCopyGraph,
+    pattern: &str,
+    kind_set: &Option<Vec<String>>,
+    repo_label: &Option<String>,
+    index_dir: Option<&std::path::Path>,
+) -> Vec<Hit> {
+    if graph.embeddings.is_none() {
+        eprintln!(
+            "→ hybrid: graph has no embeddings — falling back to bm25 (rebuild with `gnx admin index --embeddings`)"
+        );
+        return bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    }
+
+    let bm25 = bm25_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    let vec = vector_hits_from_graph(graph, pattern, kind_set, repo_label, index_dir);
+    rrf_merge(bm25, vec)
+}
+
+/// Reciprocal Rank Fusion constant. k=60 is the Cormack et al. 2009
+/// default — the parameter used by Elasticsearch / Vespa / Weaviate
+/// for hybrid retrieval. Hard-wired; add a flag if we ever need to
+/// tune per query type.
+const RRF_K: f32 = 60.0;
+
+/// Fuse two ranked `Vec<Hit>` lists by Reciprocal Rank Fusion:
+/// `score(uid) = Σ 1/(RRF_K + rank_i + 1)` over the lists containing
+/// `uid`. Output sorted descending by combined score, truncated to
+/// `TOP_K`. The merged Hit's `score` field is overwritten with the
+/// RRF score so emit/serialise layers see the fused number.
+///
+/// Dedup key: `(file, line, name)`. Stable within a single graph —
+/// the only context this helper runs in. Multi-repo merge happens
+/// later in `compute_multi`, which keys on the full `OrderedHit`
+/// including `repo`.
+pub(crate) fn rrf_merge(bm25: Vec<Hit>, vec: Vec<Hit>) -> Vec<Hit> {
+    type Key = (String, u32, String);
+    let key = |h: &Hit| -> Key { (h.file.clone(), h.line, h.name.clone()) };
+
+    let mut scores: HashMap<Key, (f32, Hit)> = HashMap::new();
+
+    for (rank, h) in bm25.into_iter().enumerate() {
+        let s = 1.0 / (RRF_K + rank as f32 + 1.0);
+        scores
+            .entry(key(&h))
+            .and_modify(|e| e.0 += s)
+            .or_insert_with(|| (s, h));
+    }
+    for (rank, h) in vec.into_iter().enumerate() {
+        let s = 1.0 / (RRF_K + rank as f32 + 1.0);
+        scores
+            .entry(key(&h))
+            .and_modify(|e| e.0 += s)
+            .or_insert_with(|| (s, h));
+    }
+
+    let mut combined: Vec<(f32, Hit)> = scores.into_values().collect();
+    combined.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    combined
+        .into_iter()
+        .take(TOP_K)
+        .map(|(score, mut h)| {
+            h.score = score;
+            h
+        })
+        .collect()
+}
+
 // ── Multi-repo fan-out ────────────────────────────────────────────────────────
 
 fn run_multi(
@@ -483,30 +745,28 @@ fn compute_multi(
 
 /// In-process search entry point for hooks and other internal consumers.
 /// Returns owned `Hit` rows without going through stdout / OutputFormat.
-/// Top-K trimmed identically to `run`.
+/// Top-K trimmed identically to `run`. Batch mode is not exposed here
+/// — hooks always run one pattern at a time.
 pub fn compute_hits(args: SearchArgs, engine: &Engine) -> Result<Vec<Hit>, GnxError> {
+    let pattern = args.pattern.as_deref().ok_or_else(|| {
+        GnxError::InvalidArgument("compute_hits requires a pattern (--batch not supported)".into())
+    })?;
     let targets = resolve_targets(args.repo.as_deref())?;
     if targets.is_empty() {
-        compute_single(
-            &args.pattern,
-            &args.mode,
-            args.kind.as_deref(),
-            engine,
-            None,
-        )
+        compute_single(pattern, &args.mode, args.kind.as_deref(), engine, None)
     } else if targets.len() == 1 {
         let (repo_name, graph_path) = targets.into_iter().next().unwrap();
         let local_engine = Engine::load(std::path::PathBuf::from(&graph_path))
             .map_err(|e| GnxError::Rkyv(format!("{repo_name}: load: {e}")))?;
         compute_single(
-            &args.pattern,
+            pattern,
             &args.mode,
             args.kind.as_deref(),
             &local_engine,
             Some(repo_name),
         )
     } else {
-        compute_multi(&args.pattern, &args.mode, args.kind.as_deref(), targets)
+        compute_multi(pattern, &args.mode, args.kind.as_deref(), targets)
             .map(|(hits, _summary)| hits)
     }
 }
@@ -530,17 +790,20 @@ fn scan_repo(
         SearchMode::Auto => detect_mode(pattern, embeddings_available_for(graph)),
         m => m.clone(),
     };
+    let repo_label = Some(repo_name.to_string());
 
-    // All modes except a real vector path fall through to bm25 for now.
-    // TODO: wire vector/hybrid to graph_nexus_analyzer::embeddings.
-    let _ = effective_mode;
-    Ok(bm25_hits_from_graph(
-        graph,
-        pattern,
-        kind_set,
-        &Some(repo_name.to_string()),
-        index_dir,
-    ))
+    let hits = match effective_mode {
+        SearchMode::Bm25 | SearchMode::Auto => {
+            bm25_hits_from_graph(graph, pattern, kind_set, &repo_label, index_dir)
+        }
+        SearchMode::Vector => {
+            vector_hits_from_graph(graph, pattern, kind_set, &repo_label, index_dir)
+        }
+        SearchMode::Hybrid => {
+            hybrid_hits_from_graph(graph, pattern, kind_set, &repo_label, index_dir)
+        }
+    };
+    Ok(hits)
 }
 
 // ── Repo selector resolution ─────────────────────────────────────────────────
@@ -747,5 +1010,85 @@ mod tests {
     fn compute_hits_signature_check() {
         fn _check(_: fn(SearchArgs, &Engine) -> Result<Vec<Hit>, GnxError>) {}
         _check(compute_hits);
+    }
+
+    #[test]
+    fn l2_norm_handles_zero_vec() {
+        assert_eq!(super::l2_norm(&[]), 0.0);
+        assert_eq!(super::l2_norm(&[0.0, 0.0, 0.0]), 0.0);
+    }
+
+    #[test]
+    fn l2_norm_unit_vec_is_one() {
+        let v = [1.0_f32 / 3.0_f32.sqrt(); 3];
+        assert!((super::l2_norm(&v) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cosine_top_k_indices_ranks_by_similarity() {
+        let embs = vec![
+            vec![1.0, 0.0, 0.0], // node 0 — orthogonal
+            vec![0.0, 1.0, 0.0], // node 1 — identical direction
+            vec![0.0, 0.7, 0.7], // node 2 — partially aligned
+            vec![0.0, 0.0, 0.0], // node 3 — skip-marker
+        ];
+        let query = vec![0.0, 1.0, 0.0];
+        let ranked = super::cosine_top_k_indices(&embs, &query, 3);
+        assert_eq!(ranked[0].0, 1, "node 1 should rank first");
+        assert_eq!(ranked[1].0, 2, "node 2 should rank second");
+        assert!(ranked.iter().all(|(idx, _)| *idx != 3));
+    }
+
+    fn make_test_hit(name: &str, file: &str, line: u32, score: f32) -> super::Hit {
+        super::Hit {
+            repo: None,
+            score,
+            kind: "function".into(),
+            file: file.into(),
+            line,
+            name: name.into(),
+            signature: format!("function {name}"),
+            caller_count: 0,
+            callers: vec![],
+            callees: vec![],
+        }
+    }
+
+    #[test]
+    fn rrf_merge_combines_two_ranked_lists() {
+        let bm25 = vec![
+            make_test_hit("A", "a.rs", 1, 10.0),
+            make_test_hit("B", "b.rs", 2, 8.0),
+            make_test_hit("C", "c.rs", 3, 6.0),
+        ];
+        let vec = vec![
+            make_test_hit("B", "b.rs", 2, 0.9),
+            make_test_hit("A", "a.rs", 1, 0.8),
+            make_test_hit("D", "d.rs", 4, 0.7),
+        ];
+        let merged = super::rrf_merge(bm25, vec);
+        // A and B appear in both lists → expected to take the top 2 slots.
+        let top_names: Vec<&str> = merged.iter().take(2).map(|h| h.name.as_str()).collect();
+        assert!(top_names.contains(&"A") && top_names.contains(&"B"));
+        assert_eq!(merged.len(), 4);
+    }
+
+    #[test]
+    fn rrf_merge_dedupes_by_file_line_name() {
+        let bm25 = vec![make_test_hit("A", "a.rs", 1, 5.0)];
+        let vec = vec![make_test_hit("A", "a.rs", 1, 0.9)];
+        let merged = super::rrf_merge(bm25, vec);
+        assert_eq!(merged.len(), 1);
+        // 1/(60+1) + 1/(60+1) = 2/61
+        assert!((merged[0].score - (2.0 / 61.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rrf_merge_truncates_to_top_k() {
+        let bm25: Vec<super::Hit> = (0..30)
+            .map(|i| make_test_hit(&format!("n{i}"), "x.rs", i, 1.0))
+            .collect();
+        let merged = super::rrf_merge(bm25, vec![]);
+        assert_eq!(merged.len(), super::TOP_K);
     }
 }
