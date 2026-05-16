@@ -124,6 +124,19 @@ fn unpack_watermark(w: u64) -> (u64, u32) {
     (w & OFFSET_MASK, (w >> GEN_SHIFT) as u32)
 }
 
+/// Atomically truncate inbox and bump the generation sidecar so the next
+/// `drain` detects truncation correctly.
+///
+/// Call this instead of `fs::write(path, "")` in hook drain paths.  The
+/// generation bump ensures that a `drain` holding an old watermark will see
+/// the gen mismatch and reset to byte 0, rather than silently missing entries
+/// that were appended between our drain-read and our truncate.
+pub fn truncate_inbox(path: &Path) -> io::Result<()> {
+    std::fs::write(path, "")?;
+    bump_gen(path)?;
+    Ok(())
+}
+
 /// Read entries after `start_offset`, returning `(entries, new_watermark)`.
 ///
 /// The watermark is an opaque `u64` — pass the value returned by a previous

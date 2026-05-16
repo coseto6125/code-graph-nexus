@@ -241,6 +241,15 @@ pub fn drain_and_render_peer_payload() -> Option<String> {
         .or_else(default_repo_root)?;
     let session_dir = repo_root.join("sessions").join(&me);
     let inbox = session_dir.join("inbox.jsonl");
+
+    // Fast path: skip meta read + inbox open entirely when inbox is absent or empty.
+    // Covers the vast majority of PreToolUse fires with a single stat call.
+    match std::fs::metadata(&inbox) {
+        Err(_) => return None,
+        Ok(m) if m.len() == 0 => return None,
+        Ok(_) => {}
+    }
+
     let meta_path = session_dir.join("meta.json");
     let mut meta = graph_nexus_core::session::SessionMeta::read(&meta_path).ok()?;
 
@@ -254,7 +263,7 @@ pub fn drain_and_render_peer_payload() -> Option<String> {
         return None;
     }
 
-    let _ = fs::write(&inbox, "");
+    let _ = graph_nexus_core::peer::inbox::truncate_inbox(&inbox);
     meta.last_drained_offset = 0;
     let _ = graph_nexus_core::session::SessionMeta::write_atomic(&meta_path, &meta);
     Some(payload)

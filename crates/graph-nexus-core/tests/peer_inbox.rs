@@ -1,4 +1,6 @@
-use graph_nexus_core::peer::inbox::{append_entry, drain, ConcernKindSer, InboxEntry};
+use graph_nexus_core::peer::inbox::{
+    append_entry, drain, truncate_inbox, ConcernKindSer, InboxEntry,
+};
 use graph_nexus_core::session::overlay::{SymbolKind, SymbolRef};
 use tempfile::tempdir;
 
@@ -74,6 +76,26 @@ fn drain_resets_offset_when_file_truncated_below_watermark() {
         entries.len(),
         1,
         "after external shrink, drain re-reads from offset 0"
+    );
+}
+
+#[test]
+fn truncate_inbox_bumps_gen_so_drain_detects_shrink() {
+    let dir = tempdir().unwrap();
+    let inbox = dir.path().join("inbox.jsonl");
+
+    append_entry(&inbox, &dirty_event_fixture()).unwrap();
+    let (_, watermark) = drain(&inbox, 0).unwrap();
+    assert!(watermark > 0);
+
+    truncate_inbox(&inbox).unwrap();
+    append_entry(&inbox, &dirty_event_fixture()).unwrap();
+
+    let (entries, _) = drain(&inbox, watermark).unwrap();
+    assert_eq!(
+        entries.len(),
+        1,
+        "post-truncate-and-regrow append must be visible to drain at old watermark"
     );
 }
 

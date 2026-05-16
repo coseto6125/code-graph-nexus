@@ -42,6 +42,11 @@ pub fn run_watcher(cfg: WatcherCfg) -> std::io::Result<()> {
     );
 
     let cache = Arc::new(Mutex::new(rebuild_impact_cache(&cfg.my_session_dir)));
+    // Cached copy of our own dirty symbols. Invalidated whenever our own
+    // dirty_files.json changes (same trigger as impact_cache), avoiding N
+    // reads of the same file when N peers fire dirty events in a burst.
+    let my_dirty_cache: Arc<Mutex<Option<Vec<graph_nexus_core::session::overlay::SymbolRef>>>> =
+        Arc::new(Mutex::new(None));
 
     let (tx, rx) = channel::<notify::Result<Event>>();
     let mut watcher = notify::recommended_watcher(tx).map_err(std::io::Error::other)?;
@@ -56,7 +61,7 @@ pub fn run_watcher(cfg: WatcherCfg) -> std::io::Result<()> {
         match rx.recv_timeout(Duration::from_secs(1)) {
             Ok(Ok(ev)) => {
                 event_count = event_count.wrapping_add(1);
-                if let Err(e) = handle_event(&cfg, &cache, ev) {
+                if let Err(e) = handle_event(&cfg, &cache, &my_dirty_cache, ev) {
                     log_watcher_error("event handler", &e);
                 }
             }
@@ -85,6 +90,7 @@ pub fn run_watcher(cfg: WatcherCfg) -> std::io::Result<()> {
 fn handle_event(
     cfg: &WatcherCfg,
     cache: &Arc<Mutex<ImpactCache>>,
+    my_dirty_cache: &Arc<Mutex<Option<Vec<graph_nexus_core::session::overlay::SymbolRef>>>>,
     ev: Event,
 ) -> std::io::Result<()> {
     if !matches!(ev.kind, EventKind::Modify(_) | EventKind::Create(_)) {
@@ -104,9 +110,11 @@ fn handle_event(
         if sid == cfg.my_session_id {
             let mut c = cache.lock().expect("impact cache lock poisoned");
             *c = rebuild_impact_cache(&cfg.my_session_dir);
+            // Invalidate my_dirty_cache so next dispatch_peer re-reads the updated file.
+            *my_dirty_cache.lock().expect("my_dirty_cache lock poisoned") = None;
             continue;
         }
-        dispatch_peer(cfg, cache, sid, path)?;
+        dispatch_peer(cfg, cache, my_dirty_cache, sid, path)?;
     }
     Ok(())
 }
@@ -114,18 +122,28 @@ fn handle_event(
 fn dispatch_peer(
     cfg: &WatcherCfg,
     cache: &Arc<Mutex<ImpactCache>>,
+    my_dirty_cache: &Arc<Mutex<Option<Vec<graph_nexus_core::session::overlay::SymbolRef>>>>,
     peer_sid: &str,
     peer_dirty_path: &Path,
 ) -> std::io::Result<()> {
     let peer_dirty = DirtyFiles::read(peer_dirty_path)?;
-    let my_dirty: Vec<_> = DirtyFiles::read(&cfg.my_session_dir.join("dirty_files.json"))
-        .map(|d| {
-            d.entries
-                .into_values()
-                .flat_map(|e| e.dirty_symbols)
-                .collect()
-        })
-        .unwrap_or_default();
+    // Populate cache on first call after invalidation; reuse across burst of peer events.
+    let my_dirty = {
+        let mut guard = my_dirty_cache.lock().expect("my_dirty_cache lock poisoned");
+        if guard.is_none() {
+            *guard = Some(
+                DirtyFiles::read(&cfg.my_session_dir.join("dirty_files.json"))
+                    .map(|d| {
+                        d.entries
+                            .into_values()
+                            .flat_map(|e| e.dirty_symbols)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+        }
+        guard.clone().unwrap_or_default()
+    };
     let peer_meta = SessionMeta::read(&peer_dirty_path.with_file_name("meta.json"))?;
     let peer_pid = peer_meta.pid.unwrap_or(0);
     let ts = Utc::now().to_rfc3339();
