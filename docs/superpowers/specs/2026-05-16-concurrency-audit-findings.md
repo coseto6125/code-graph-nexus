@@ -125,6 +125,17 @@
 **Equality includes:** `(source, target, RelType, resolved_reason_string)`
 **Result:** PASS default threads / PASS --test-threads=1 / PASS --test-threads=16
 
+### 4.4 StringPool concurrent intern
+
+| Sub-test | default | --test-threads=1 | --test-threads=N |
+|----------|---------|------------------|-------------------|
+| `string_pool_serial_dedupe_holds_under_pressure` | PASS | PASS | PASS |
+| `string_pool_mutex_wrapped_concurrent_dedupe` | PASS | PASS | PASS |
+
+**Invariant pinned:** Pool MUST be `Mutex`/`RwLock` wrapped when shared. Direct cross-thread `&mut StringPool` is forbidden by the borrow checker (`add()` signature is `&mut self`).
+
+**Audit cross-check of pass2 production path:** `crates/graph-nexus-analyzer/src/resolution/builder.rs:620-740` parallel path pre-interns all reasons serially BEFORE entering `par_iter`, then shares only `&StrRef`. No `StringPool` mutation in worker. ✓ safe by construction.
+
 ## §5 TSan results
 (populated by Phase 7)
 
