@@ -14,6 +14,7 @@ mod git_state;
 mod graph_path;
 mod hint;
 mod output;
+mod parse_cache;
 mod peer;
 pub mod reanalyze;
 mod repo_identity;

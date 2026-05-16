@@ -9,12 +9,15 @@ use crate::repo_identity::repo_dir_name_for_cwd;
 use fs2::FileExt;
 use graph_nexus_core::registry::{
     resolve_home_gnx, CommitBuildMeta, EmbeddingStatus, RefRecord, RepoMeta, SourceType,
+    BUILDER_FINGERPRINT,
 };
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
 pub struct BuildResult {
+    // Read only by `tests/build_orchestrator.rs`; bin callers ignore it today.
+    #[allow(dead_code)]
     pub commit_dir: PathBuf,
     pub sha_hex: String,
     pub source_type: SourceType,
@@ -40,6 +43,22 @@ pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildRe
         .join("commits")
         .join(format!("{dirname}.building"));
 
+    // Fast path: same SHA already built by a binary with a matching
+    // fingerprint → reuse without touching the analyzer pipeline.
+    // L2 is SHA-pure (v2 layout, PR #55); working-tree drift goes through
+    // the L1 session overlay, not here.
+    if commit_dir.join("meta.json").is_file() {
+        if let Ok(meta) = CommitBuildMeta::read(&commit_dir.join("meta.json")) {
+            if meta.builder_fingerprint.as_deref() == Some(BUILDER_FINGERPRINT) {
+                return Ok(BuildResult {
+                    commit_dir,
+                    sha_hex,
+                    source_type: meta.source_type,
+                });
+            }
+        }
+    }
+
     // Acquire build lock; attach pattern if locked
     fs::create_dir_all(&building)?;
     let lock_path = building.join(".build.lock");
@@ -62,8 +81,17 @@ pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildRe
         src
     };
 
-    // 2. Build graph.bin + tantivy via analyzer pipeline (Task 4.4 carves this out)
-    let node_count = crate::commands::admin::index::run_analyzer_for_paths(&src_root, &building)?;
+    // 2. Build graph.bin + tantivy via analyzer pipeline.
+    // `repo_root` doubles as the persistent parse_cache root — cache
+    // entries live in `<repo_root>/parse_cache/<fp>/` and survive across
+    // L2 commit_dirs as long as the file content (and binary build) is
+    // unchanged. p50 commit on this repo touches ~6 / 3176 files; with
+    // the cache active, the remaining 3170 skip tree-sitter entirely.
+    let node_count = crate::commands::admin::index::run_analyzer_for_paths(
+        &src_root,
+        &building,
+        Some(&repo_root),
+    )?;
 
     // 3. Refs / source typing
     let refs_at_build = collect_refs(worktree, &sha_hex)?;
@@ -84,11 +112,21 @@ pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildRe
         embedding_status: EmbeddingStatus::None,
         refs_at_build,
         refs_seen_since: vec![],
+        builder_fingerprint: Some(BUILDER_FINGERPRINT.to_string()),
     };
     CommitBuildMeta::write_atomic(&building.join("meta.json"), &meta)?;
 
-    // 5. fsync + atomic publish
+    // 5. fsync + atomic publish.
+    // A stale commit_dir from an earlier binary (fingerprint mismatch) is
+    // swept aside before the rename — Linux refuses to rename onto a
+    // non-empty directory. The window between remove and rename is
+    // sub-ms and tolerable: another reader would either see the old dir
+    // or, briefly, nothing; the next call short-circuits via the fast
+    // path once the fresh dir lands.
     sync_all_files(&building)?;
+    if commit_dir.exists() {
+        fs::remove_dir_all(&commit_dir)?;
+    }
     fs::rename(&building, &commit_dir)?;
     let _ = fs::remove_dir_all(commit_dir.join("_src")); // tolerate absence
 

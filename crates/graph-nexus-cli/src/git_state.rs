@@ -1,5 +1,10 @@
 //! Resolve (repo_name, branch, worktree_path) from a cwd's git state.
 //! All git invocations go through safe_exec.
+//!
+//! Bin surface stopped constructing `GitState` after `admin drop` switched
+//! to `repo_dir_name_for_cwd` (the only previous caller). Kept alive by
+//! `tests/git_state.rs`; lift this allow when a new bin caller appears.
+#![allow(dead_code)]
 
 use crate::git::safe_exec;
 use graph_nexus_core::registry::{derive_repo_name, sanitize_segment, PathError};
