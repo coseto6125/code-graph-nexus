@@ -782,4 +782,33 @@ mod tests {
         assert_eq!(rows[0]["node_count"], json!(4922));
         assert_eq!(rows[1]["name"], json!("wt-x"));
     }
+
+    #[test]
+    fn build_repo_health_payload_has_metrics_alongside_freshness() {
+        // Locks the per_repo payload contract that LLM consumers depend on:
+        // {repo, frameworks, freshness, metrics, blind_spots}. The path
+        // points nowhere, so the graph load fails and we hit the
+        // graph_unavailable status; we still assert the keys exist (with
+        // zeros) so a future refactor that drops `metrics` or renames a
+        // section fails the test instead of silently breaking the contract.
+        use crate::repo_selector::ResolvedRepo;
+        let r = ResolvedRepo {
+            name: "demo".into(),
+            worktree_path: "/nope/not-a-real-path".into(),
+            index_dir_root: "/nope/not-a-real-path".into(),
+            branches: vec![],
+        };
+        let v = build_repo_health(&r, true);
+        assert_eq!(v["repo"], json!("demo"));
+        assert!(v.get("frameworks").is_some(), "frameworks section missing");
+        assert!(v.get("freshness").is_some(), "freshness section missing");
+        assert!(v.get("metrics").is_some(), "metrics section missing");
+        assert!(v.get("blind_spots").is_some(), "blind_spots section missing");
+        let metrics = &v["metrics"];
+        assert_eq!(metrics["nodes"], json!(0));
+        assert_eq!(metrics["edges"], json!(0));
+        assert_eq!(metrics["files"], json!(0));
+        assert_eq!(metrics["symbols"], json!(0));
+        assert_eq!(metrics["status"], json!("graph_unavailable"));
+    }
 }

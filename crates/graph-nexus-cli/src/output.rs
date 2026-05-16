@@ -225,6 +225,44 @@ mod tests {
     }
 
     #[test]
+    fn output_format_parse_routes_each_flag() {
+        assert_eq!(OutputFormat::parse(None), OutputFormat::Llm);
+        assert_eq!(OutputFormat::parse(Some("")), OutputFormat::Llm); // unknown falls through
+        assert_eq!(OutputFormat::parse(Some("toon")), OutputFormat::Toon);
+        assert_eq!(OutputFormat::parse(Some("json")), OutputFormat::Json);
+        assert_eq!(OutputFormat::parse(Some("text")), OutputFormat::Text);
+    }
+
+    #[test]
+    fn compact_iso_handles_iso_variants() {
+        // Standard chrono-style UTC with subsecond
+        assert_eq!(
+            compact_iso("2026-05-16T15:33:00.410827148+00:00"),
+            "2026-05-16T15:33:00Z"
+        );
+        // Already compact (no `.`, ends `Z`) → identity
+        assert_eq!(
+            compact_iso("2026-05-16T15:33:00Z"),
+            "2026-05-16T15:33:00Z"
+        );
+        // No subsecond, +00:00 offset → just rewrite offset to Z
+        assert_eq!(
+            compact_iso("2026-05-16T15:33:00+00:00"),
+            "2026-05-16T15:33:00Z"
+        );
+        // Non-UTC offset (e.g. +08:00) → keep the offset, drop only subsecond
+        assert_eq!(
+            compact_iso("2026-05-16T15:33:00.123+08:00"),
+            "2026-05-16T15:33:00+08:00"
+        );
+        // Negative offset
+        assert_eq!(
+            compact_iso("2026-05-16T15:33:00.999-05:00"),
+            "2026-05-16T15:33:00-05:00"
+        );
+    }
+
+    #[test]
     fn compress_for_llm_strips_uid_but_keeps_handler_uid() {
         let mut v = json!({
             "results": [
