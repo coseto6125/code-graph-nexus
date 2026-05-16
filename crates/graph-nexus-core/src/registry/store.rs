@@ -192,8 +192,18 @@ impl RegistryFile {
     /// a fresh registry. Group memberships are LOST in this path
     /// (registry-only data) — operator must re-apply via `group_sync`.
     pub fn rebuild_from_disk(home_gnx: &Path) -> io::Result<Self> {
-        use crate::registry::meta::BranchMeta;
         use std::collections::HashMap;
+
+        #[derive(serde::Deserialize)]
+        struct MetaSnapshot {
+            indexed_at: String,
+            node_count: u32,
+            #[serde(default)]
+            delta_size: u64,
+            worktree_path: String,
+            remote_url: String,
+        }
+
         let mut by_repo: HashMap<String, (String, String, String, Vec<BranchEntry>)> =
             HashMap::new();
 
@@ -223,9 +233,12 @@ impl RegistryFile {
                 if !meta_path.exists() {
                     continue;
                 }
-                let meta = match BranchMeta::read(&meta_path) {
-                    Ok(m) => m,
-                    Err(_) => continue,
+                let meta: MetaSnapshot = match fs::read(&meta_path)
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                {
+                    Some(m) => m,
+                    None => continue,
                 };
                 let branch_name = match branch_entry.file_name().into_string() {
                     Ok(b) => b,

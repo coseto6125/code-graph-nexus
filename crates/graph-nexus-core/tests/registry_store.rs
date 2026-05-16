@@ -1,8 +1,6 @@
 //! Tests for registry.json schema (spec §2).
 
-use graph_nexus_core::registry::{
-    strip_credentials, BranchEntry, BranchMeta, RegistryFile, RepoEntry,
-};
+use graph_nexus_core::registry::{strip_credentials, BranchEntry, RegistryFile, RepoEntry};
 
 #[test]
 fn round_trip_serialize_deserialize() {
@@ -134,19 +132,18 @@ fn rebuild_from_disk_when_both_registry_and_bak_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let home_gnx = tmp.path();
 
-    // Manually create ~/.gnx/foo/main/meta.json
+    // Manually create ~/.gnx/foo/main/meta.json using raw JSON
     let meta_dir = home_gnx.join("foo").join("main");
     std::fs::create_dir_all(&meta_dir).unwrap();
-    let meta = BranchMeta {
-        indexed_at: "2026-05-14T03:00:00Z".into(),
-        node_count: 50,
-        delta_size: 0,
-        last_compact_at: None,
-        worktree_path: "/some/path".into(),
-        remote_url: "https://example.com/foo.git".into(),
-        schema_version: 1,
-    };
-    BranchMeta::write_atomic(&meta_dir.join("meta.json"), &meta).unwrap();
+    let meta_json = r#"{
+        "indexed_at": "2026-05-14T03:00:00Z",
+        "node_count": 50,
+        "delta_size": 0,
+        "worktree_path": "/some/path",
+        "remote_url": "https://example.com/foo.git",
+        "schema_version": 1
+    }"#;
+    std::fs::write(meta_dir.join("meta.json"), meta_json).unwrap();
 
     let rebuilt = RegistryFile::rebuild_from_disk(home_gnx).unwrap();
     assert_eq!(rebuilt.repos.len(), 1);

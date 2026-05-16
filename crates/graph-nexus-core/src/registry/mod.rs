@@ -6,7 +6,6 @@ pub mod commit_meta;
 pub mod dirname;
 pub(crate) mod io;
 mod lock;
-mod meta;
 mod path;
 pub mod repo_meta;
 mod store;
@@ -19,11 +18,7 @@ pub use io::atomic_write_bytes;
 /// Use only within graph-nexus-core or in tests.
 #[doc(hidden)]
 pub use lock::FileLock;
-pub use meta::BranchMeta;
-pub use path::{
-    derive_repo_name, resolve_home_gnx, sanitize_branch, sanitize_segment, uid_path, IndexLayout,
-    PathError,
-};
+pub use path::{derive_repo_name, resolve_home_gnx, sanitize_segment, uid_path, PathError};
 pub use repo_meta::RepoMeta;
 pub use store::{strip_credentials, BranchEntry, GroupEntry, RegistryFile, RepoEntry};
 
