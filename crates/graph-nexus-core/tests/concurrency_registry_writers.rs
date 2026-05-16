@@ -5,7 +5,6 @@
 //! MUST converge to a state containing every writer's contribution.
 
 use graph_nexus_core::registry::Registry;
-use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -36,7 +35,7 @@ fn registry_concurrent_writers_converge() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home_gnx = tmp.path().to_path_buf();
 
-    let mut children: Vec<_> = (0..8)
+    let children: Vec<_> = (0..8)
         .map(|i| {
             Command::new(&bin)
                 .arg(&home_gnx)
@@ -49,14 +48,11 @@ fn registry_concurrent_writers_converge() {
         })
         .collect();
 
-    for child in &mut children {
-        let status = child.wait().expect("wait");
-        if !status.success() {
-            let mut stderr = String::new();
-            if let Some(mut s) = child.stderr.take() {
-                let _ = s.read_to_string(&mut stderr);
-            }
-            panic!("child exited {}: {stderr}", status);
+    for child in children {
+        let output = child.wait_with_output().expect("wait_with_output");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            panic!("child exited {}: {stderr}", output.status);
         }
     }
 
@@ -80,7 +76,7 @@ fn registry_concurrent_same_repo_last_writer_wins_safely() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home_gnx = tmp.path().to_path_buf();
 
-    let mut children: Vec<_> = (0..8)
+    let children: Vec<_> = (0..8)
         .map(|i| {
             Command::new(&bin)
                 .arg(&home_gnx)
@@ -93,8 +89,9 @@ fn registry_concurrent_same_repo_last_writer_wins_safely() {
         })
         .collect();
 
-    for child in &mut children {
-        assert!(child.wait().unwrap().success());
+    for child in children {
+        let output = child.wait_with_output().expect("wait_with_output");
+        assert!(output.status.success());
     }
 
     let reg = Registry::open(&home_gnx).expect("open final");
