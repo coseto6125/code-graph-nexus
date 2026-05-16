@@ -97,8 +97,28 @@ fn extract_methods_kwarg(call_node: Node, source: &[u8]) -> Option<Vec<String>> 
         if name != "methods" {
             continue;
         }
-        let value = child.child_by_field_name("value")?;
-        if value.kind() != "list" {
+        let raw_value = child.child_by_field_name("value")?;
+        // Unwrap `frozenset({...})` / `set([...])` / `tuple([...])` wrappers
+        // common in Sanic (`methods=frozenset({"PUT","POST"})`). The literal
+        // collection (set/list/tuple) lives as the first arg of the call.
+        let value = match raw_value.kind() {
+            "call" => {
+                let fn_node = raw_value.child_by_field_name("function")?;
+                let fn_name =
+                    std::str::from_utf8(&source[fn_node.start_byte()..fn_node.end_byte()]).ok()?;
+                if !matches!(fn_name, "frozenset" | "set" | "tuple" | "list") {
+                    return Some(Vec::new()); // unrecognized wrapper
+                }
+                let args = raw_value.child_by_field_name("arguments")?;
+                let mut arg_cursor = args.walk();
+                let inner = args
+                    .children(&mut arg_cursor)
+                    .find(|c| matches!(c.kind(), "set" | "list" | "tuple"));
+                inner.unwrap_or(raw_value)
+            }
+            _ => raw_value,
+        };
+        if !matches!(value.kind(), "list" | "set" | "tuple") {
             return Some(Vec::new()); // present but unparseable
         }
         let mut methods = Vec::new();
@@ -608,8 +628,22 @@ impl LanguageProvider for PythonProvider {
                         std::str::from_utf8(&source[r_method.start_byte()..r_method.end_byte()]),
                         std::str::from_utf8(&source[r_path.start_byte()..r_path.end_byte()]),
                     ) {
-                        if let Some(clean_path) = crate::route_detector::clean_route_path(path_str)
-                        {
+                        // For route-registration methods (route, add_route,
+                        // add_url_rule, add_api_route), framework convention
+                        // (Sanic, Flask) accepts both `'path'` and `'/path'` —
+                        // semantically `/path`. Normalize bare paths so the
+                        // builder's `looks_like_path` filter doesn't drop them
+                        // (mirrors PHP/Laravel bare-path handling).
+                        let is_registration_method = matches!(
+                            method_str.to_ascii_lowercase().as_str(),
+                            "route" | "add_route" | "add_url_rule" | "add_api_route"
+                        );
+                        let resolved_path = if is_registration_method {
+                            crate::route_detector::clean_route_path_lax(path_str)
+                        } else {
+                            crate::route_detector::clean_route_path(path_str)
+                        };
+                        if let Some(clean_path) = resolved_path {
                             // Route-registration methods (`route`, `add_route`,
                             // `add_url_rule`, `add_api_route`) don't encode an
                             // HTTP verb in the name. They default to GET when

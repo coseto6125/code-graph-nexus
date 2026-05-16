@@ -32,6 +32,34 @@ const PHP_HTTP_FRAMEWORK_NAMESPACES: &[&str] = &[
     "CodeIgniter",
 ];
 
+/// Walk a chained member-call expression inward through any depth of
+/// `member_call_expression` until it reaches a `scoped_call_expression` root.
+/// Returns the scope name (`Route`, `Router`, etc.) when the chain terminates
+/// in a scoped call; `None` for any other shape (regular method calls, deep
+/// object navigation, etc.).
+///
+/// Powers chained-route detection like `Route::middleware(['auth'])->get(...)`
+/// or `Route::middleware(...)->prefix(...)->post(...)`. The query captures the
+/// outer member_call; this walks the object field inward to find the root.
+fn walk_to_scoped_root_scope(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    let mut cur = node;
+    loop {
+        match cur.kind() {
+            "member_call_expression" | "member_access_expression" => {
+                cur = cur.child_by_field_name("object")?;
+            }
+            "scoped_call_expression" => {
+                let scope_node = cur.child_by_field_name("scope")?;
+                let scope_text =
+                    std::str::from_utf8(&source[scope_node.start_byte()..scope_node.end_byte()])
+                        .ok()?;
+                return Some(scope_text.to_string());
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// Walk an `array_creation_expression` of shape `[Controller::class, 'action']`
 /// and produce `"Controller@action"` matching Laravel's `@`-routing syntax.
 /// Returns `None` for any array that doesn't match this exact shape.
@@ -147,6 +175,9 @@ impl LanguageProvider for PhpProvider {
         let idx_route_scope = self.query.capture_index_for_name("route.scope");
         let idx_route_method = self.query.capture_index_for_name("route.method");
         let idx_route_path = self.query.capture_index_for_name("route.path");
+        // Chained-call variant: `Route::middleware(...)->get('/x', ...)`.
+        let idx_route_chained_call = self.query.capture_index_for_name("route.chained.call");
+        let idx_route_chained_object = self.query.capture_index_for_name("route.chained.object");
 
         // Router-class allowlist gates generic Route emission. Without it,
         // `Cache::get('key')` / `Config::get('app.name')` / `Auth::get(...)`
@@ -275,6 +306,18 @@ impl LanguageProvider for PhpProvider {
                     }
                 } else if Some(cap_idx) == idx_route_call {
                     route_span_node = Some(cap.node);
+                } else if Some(cap_idx) == idx_route_chained_call {
+                    // Same role as idx_route_call for the chained variant — the
+                    // outer member_call_expression spans the whole route registration.
+                    route_span_node = Some(cap.node);
+                } else if Some(cap_idx) == idx_route_chained_object {
+                    // Walk the object chain inward to find the scoped_call root.
+                    // If found, treat that scope as `route_scope` so the scope-name
+                    // allowlist gate downstream fires the same way as for direct
+                    // `Route::get(...)` calls.
+                    if let Some(root_scope) = walk_to_scoped_root_scope(cap.node, source) {
+                        route_scope = Some(root_scope);
+                    }
                 } else if Some(cap_idx) == idx_laravel_call {
                     laravel_call_span = Some(node_span(&cap.node));
                 } else if Some(cap_idx) == idx_laravel_args {

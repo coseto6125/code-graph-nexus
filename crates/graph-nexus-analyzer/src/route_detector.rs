@@ -77,10 +77,37 @@ pub fn detect_from_call(raw: &RawRoute) -> Option<DetectedRoute> {
 /// Trim matching surrounding single / double quotes from a string literal
 /// captured as raw source text. Returns the inner slice when both ends
 /// match, otherwise the original string.
+///
+/// Also strips Python string-prefix sigils (`r`, `b`, `f`, `u`, `rb`, `br`,
+/// case-insensitive) so paths like `r"/path/to/<ext:file\.(txt)>"`
+/// (raw-string regex routes common in Sanic) and `b"/x"` (byte-string)
+/// reach `looks_like_path` as `/path/to/<ext:file\.(txt)>` and `/x`.
 fn strip_string_quotes(s: &str) -> &str {
+    // Try direct quote-stripping first; fall through to prefix-aware path.
     for q in ['"', '\''] {
         if s.len() >= 2 && s.starts_with(q) && s.ends_with(q) {
             return &s[1..s.len() - 1];
+        }
+    }
+    // Strip up to 2 prefix bytes (e.g. `r`, `rb`, `br`), then re-check.
+    // Prefix bytes must be ASCII for split_at to be UTF-8-safe — paths
+    // starting with multibyte chars (`/啊`) would otherwise panic at the
+    // byte boundary.
+    for prefix_len in [2, 1] {
+        if s.len() < prefix_len + 2 || !s.is_char_boundary(prefix_len) {
+            continue;
+        }
+        let (prefix, rest) = s.split_at(prefix_len);
+        if !prefix
+            .bytes()
+            .all(|b| matches!(b, b'r' | b'R' | b'b' | b'B' | b'f' | b'F' | b'u' | b'U'))
+        {
+            continue;
+        }
+        for q in ['"', '\''] {
+            if rest.starts_with(q) && rest.ends_with(q) && rest.len() >= 2 {
+                return &rest[1..rest.len() - 1];
+            }
         }
     }
     s
@@ -94,6 +121,27 @@ fn strip_string_quotes(s: &str) -> &str {
 pub fn clean_route_path(raw_with_quotes: &str) -> Option<String> {
     let stripped = strip_string_quotes(raw_with_quotes);
     looks_like_path(stripped).then(|| stripped.to_string())
+}
+
+/// Relaxed variant of `clean_route_path` for framework-specific route-
+/// registration methods (Flask `@app.route(...)`, Sanic `@app.route(...)`,
+/// FastAPI `add_api_route(...)`, Laravel `Route::get(...)`). These accept
+/// bare paths (`'register'`, `'path/<x>/y'`) per framework convention —
+/// semantically equivalent to `/register` / `/path/<x>/y`. Normalizes by
+/// prepending `/` when missing and accepts any non-empty result. The caller
+/// should only invoke this when it has independent confidence the call is
+/// a route registration (method-name allowlist), since this skips the
+/// `looks_like_path` FP filter that `clean_route_path` enforces.
+pub fn clean_route_path_lax(raw_with_quotes: &str) -> Option<String> {
+    let stripped = strip_string_quotes(raw_with_quotes).trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    if stripped.starts_with('/') {
+        Some(stripped.to_string())
+    } else {
+        Some(format!("/{stripped}"))
+    }
 }
 
 #[cfg(test)]

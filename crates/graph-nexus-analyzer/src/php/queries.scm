@@ -52,6 +52,18 @@
   arguments: (arguments . (argument [(string) (encapsed_string)] @route.path))
 ) @route.call
 
+;; Chained-call routes — `Route::middleware(['auth'])->get('/path', ...)`,
+;; `Route::middleware(...)->prefix(...)->post('/x', ...)`. Catches the same
+;; HTTP-verb call as above but expressed as a member call chained off a
+;; scoped_call_expression. The parser walks `route.chained.object` inward
+;; through any depth of `member_call_expression` and verifies the root is
+;; a `scoped_call_expression` with a router-allowlist scope.
+(member_call_expression
+  object: (_) @route.chained.object
+  name: (name) @route.method (#match? @route.method "(?i)^(get|post|put|delete|patch)$")
+  arguments: (arguments . (argument [(string) (encapsed_string)] @route.path))
+) @route.chained.call
+
 ;; ---- Laravel ----
 ;; `Route::<method>('/path', <handler>)`. Mirrors upstream
 ;; `gitnexus/src/core/group/extractors/http-patterns/php.ts:34-42`. The

@@ -252,6 +252,49 @@ def dynamic_handler():
     );
 }
 
+// ─── Python — Sanic raw-string + bare-path + frozenset methods ───────
+
+#[test]
+fn python_sanic_bare_path_and_raw_string_and_frozenset_extracts() {
+    // Real-world Sanic patterns previously missed (recovered by the
+    // PR-final follow-ups, validated against sanic-org/sanic):
+    //
+    // 1. `@app.route("path/<x>/y")` — bare path (no leading slash).
+    //    Sanic accepts both forms; `clean_route_path_lax` normalizes.
+    // 2. `@app.route(r"/path/<x:regex>")` — raw-string prefix `r"..."` so
+    //    backslashes in the type spec don't escape. `strip_string_quotes`
+    //    now skips Python string prefixes (r/b/f/u).
+    // 3. `methods=frozenset({"PUT","POST"})` — frozenset wrapper around a
+    //    set literal. `extract_methods_kwarg` unwraps frozenset/set/tuple
+    //    /list calls and walks the inner collection for string literals.
+    let src = r#"
+from sanic import Sanic
+
+app = Sanic("api")
+
+@app.route("path/<possibly_neg:int>/another-word")
+async def bare_path_handler(request, possibly_neg):
+    pass
+
+@app.route(r"/path/to/<ext:file\.(txt)>")
+async def regex_path_handler(request, ext):
+    pass
+
+@app.route("/request_path", methods=frozenset({"PUT", "POST"}), version=2)
+async def frozenset_methods_handler(request):
+    pass
+"#;
+    assert_routes(
+        &py_routes(src),
+        &[
+            ("GET", "/path/<possibly_neg:int>/another-word"),
+            ("GET", "/path/to/<ext:file\\.(txt)>"),
+            ("PUT", "/request_path"),
+            ("POST", "/request_path"),
+        ],
+    );
+}
+
 // ─── Python — Flask transitive Blueprint import (recall fix) ─────────
 
 #[test]
@@ -536,6 +579,52 @@ fn php_laravel_routes_extract_bare_and_slash_paths() {
             ("POST", "/forgot-password"),
             ("DELETE", "/users/{id}"),
         ],
+    );
+}
+
+// ─── PHP — Laravel chained Route::middleware()->get(...) (recall fix) ─
+
+#[test]
+fn php_laravel_chained_middleware_then_verb_extracts() {
+    // Real-world Laravel pattern previously missed: the route registration
+    // is chained off a `Route::middleware(...)` call, expressed in tree-
+    // sitter as `member_call_expression` whose object is a
+    // `scoped_call_expression`. A dedicated query catches this shape and
+    // the parser walks the object chain to verify the root scope is in
+    // the router allowlist (so `$cache->get('key')` still doesn't FP).
+    let src = r#"<?php
+        use Illuminate\Support\Facades\Route;
+
+        Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
+            return $request->user();
+        });
+
+        Route::middleware(['auth'])->prefix('admin')->post('/users', [AdminController::class, 'create']);
+    "#;
+    assert_routes(
+        &php_routes(src),
+        &[("GET", "/user"), ("POST", "/users")],
+    );
+}
+
+// ─── PHP — chained .get() on non-router object NEGATIVE ──────────────
+
+#[test]
+fn php_chained_get_on_non_router_emits_zero() {
+    // Defensive: the chained query is broad (`member_call_expression`),
+    // so a `$cache->get('/key')` must NOT fire. The parser walks the
+    // object chain inward; if the root isn't a scoped_call to a router
+    // class, no emit.
+    let src = r#"<?php
+        use Illuminate\Support\Facades\Route;
+
+        $cache = new Cache();
+        $value = $cache->get('/some-key');
+        $other = $cache->fluent()->get('/another-key');
+    "#;
+    assert_no_routes(
+        &php_routes(src),
+        "chained .get on $cache (no router scope root)",
     );
 }
 
