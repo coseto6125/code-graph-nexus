@@ -141,11 +141,12 @@ fn compute_hits_uses_tantivy_not_substring_scoring() {
     let engine = Engine::load(index_dir.join("graph.bin")).expect("engine load");
 
     let args = SearchArgs {
-        pattern: "config".to_string(),
+        pattern: Some("config".to_string()),
         mode: SearchMode::Bm25,
         kind: None,
         repo: None,
         format: None,
+        batch: false,
     };
     let hits = compute_hits(args, &engine).expect("compute_hits");
 
@@ -191,11 +192,12 @@ fn compute_hits_populates_one_hop_callers_and_callees() {
     let engine = Engine::load(index_dir.join("graph.bin")).expect("engine load");
 
     let args = SearchArgs {
-        pattern: "parseConfig".to_string(),
+        pattern: Some("parseConfig".to_string()),
         mode: SearchMode::Bm25,
         kind: None,
         repo: None,
         format: None,
+        batch: false,
     };
     let hits = compute_hits(args, &engine).expect("compute_hits");
 

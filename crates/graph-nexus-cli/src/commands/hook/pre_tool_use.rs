@@ -35,11 +35,12 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
         Err(_) => return Ok(()),
     };
     let args = SearchArgs {
-        pattern,
+        pattern: Some(pattern),
         mode: SearchMode::Auto,
         kind: None,
         repo: None,
         format: None,
+        batch: false,
     };
     let hits = match compute_hits(args, &engine) {
         Ok(h) => h,
