@@ -9,24 +9,48 @@
 //! resolver miss → don't emit (refuse to produce gitnexus-style cross-language
 //! false positives like `.mjs → Path.java`).
 //!
-//! Resolution strategy (three steps, first-hit wins):
+//! Resolution strategy — 8 sub-steps in 3 tiers, first-hit-wins per import.
+//! Each `if target_file_idx.is_none()` gate keeps later sub-steps reachable
+//! only when earlier ones miss; single-hit constraint in suffix lookups
+//! defuses cross-language ambiguity.
 //!
-//! 1. **Named-symbol lookup** — try `Resolver::resolve_symbol` with both
-//!    `Callable` and `Type` kinds. Covers TS/JS/Python/Java/PHP/Rust where
-//!    `RawImport.imported_name` already names the imported symbol
-//!    (`from a import foo`, `import { foo } from './a'`, etc.).
+//! **Tier 1 — named-symbol lookup** (target is the imported symbol node):
 //!
-//! 2. **FQN last-segment** — if `imported_name` contains `.` (e.g. Kotlin
-//!    `import com.x.Alpha` surfaces with `imported_name = "com.x.Alpha"`),
-//!    retry resolve with the last dotted segment (`"Alpha"`).
+//! - **Step 1**: `Resolver::resolve_symbol` with both `Callable` + `Type`
+//!   kinds against `RawImport.imported_name`. Covers TS/JS/Python/Java/PHP
+//!   where `imported_name` IS the symbol (`from a import foo`).
+//!   Confidence = tier-determined: `SameFile=1.0`, `ImportScoped=0.95`,
+//!   `QualifierScoped=0.85`, `HeritageScoped=0.85`, `Global=0.7`.
 //!
-//! 3. **Module-style fallback** — if Steps 1+2 miss, treat the import as
-//!    pointing at a whole file (Ruby `require_relative 'alpha'`, Go
-//!    `import "x/pkg"`, C `#include "alpha.h"`). Use
-//!    `Resolver::enumerate_candidates` to walk the same path-expansion
-//!    rules Tier 2 uses, then emit a `File → File` edge to the first
-//!    candidate that resolves to a known file. Confidence 0.9 (vs 1.0
-//!    for named imports — fallback is slightly less specific).
+//! - **Step 2**: FQN last-segment retry — if `imported_name` contains `.`
+//!   (Kotlin / Java `import com.x.Alpha` surfaces with `imported_name =
+//!   "com.x.Alpha"`), retry with `"Alpha"`. Same confidence as Step 1.
+//!
+//! **Tier 2 — module-style path resolution** (target is `NodeKind::File`).
+//! Triggered only when Tier 1 misses. All emit with `confidence = 0.9`
+//! and `reason = "post_process:imports:module"`:
+//!
+//! - **Step 3a**: probe `import.source` as-is via `enumerate_candidates`
+//!   (TS `./a`, Python `.foo` already encode relativity).
+//! - **Step 3b**: retry with `./` prefix so the resolver's relative branch
+//!   joins caller dir (Ruby `require_relative 'alpha'`, Go `import "x/pkg"`,
+//!   C `#include "alpha.h"`).
+//! - **Step 3c**: basename + suffix match across all indexed files via
+//!   pre-built `basename_idx` (C/C++ `#include` where header sits under
+//!   `-I include/`).
+//! - **Step 3d**: caller-extension + last-segment basename match (Go
+//!   `import "modulePath/pkg"` whose module prefix isn't a filesystem
+//!   path → match `pkg.<caller_ext>`).
+//!
+//! **Tier 3 — language-specific path normalization** (target is
+//! `NodeKind::File`). Same confidence + reason as Tier 2:
+//!
+//! - **Step 3e**: Rust `use crate::a::b::Foo` — strip leading `crate::` /
+//!   `self::`, take last `::` segment as module-file basename, suffix-match
+//!   with caller extension.
+//! - **Step 3f**: namespace / module-dir match for C# `using NS;` /
+//!   Swift `import Module` where the specifier names a directory
+//!   containing the implementation file. Uses `dir_component_idx`.
 
 use crate::resolution::index::ResolveTarget;
 use crate::resolution::resolver::Resolver;
@@ -34,6 +58,7 @@ use graph_nexus_core::analyzer::types::LocalGraph;
 use graph_nexus_core::graph::{Edge, RelType};
 use graph_nexus_core::pool::StringPool;
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::borrow::Cow;
 
 /// Emit `Imports` edges from each `File` node to the resolved targets of
 /// every `RawImport` in that file. Returns the number of edges appended.
@@ -50,7 +75,7 @@ pub fn emit_edges(
     let mut dedupe: FxHashSet<(u32, u32)> = FxHashSet::default();
 
     // Pre-pass: build a basename → [(full_path, idx)] index so the
-    // Step 3c/3d/3e fallbacks can do O(1) hash lookup + bucket-local
+    // Step 3c/3d/3e/3f fallbacks can do O(1) hash lookup + bucket-local
     // suffix filter instead of an O(N) linear scan across `file_node_idx`
     // per import. On `.sample_repo` (14k files) this shrinks Step 3 cost
     // from O(imports × files) ≈ 200M comparisons to O(imports × bucket)
@@ -66,7 +91,7 @@ pub fn emit_edges(
             .or_default()
             .push((path.as_str(), idx));
     }
-    // Also index path components for Step 3e namespace/module-dir match.
+    // Also index path components for Step 3f namespace/module-dir match.
     // Key = directory component name (e.g. "X" from `src/X/Alpha.cs`).
     // Value = Vec<(full_path, idx)>. Same O(1) lookup benefit.
     let mut dir_component_idx: FxHashMap<&str, Vec<(&str, u32)>> = FxHashMap::default();
@@ -89,6 +114,10 @@ pub fn emit_edges(
         if local_graph.imports.is_empty() {
             continue;
         }
+
+        // Reusable buffer for Step 3b's `./` prefix retry; cleared and
+        // re-filled per import-miss so we don't allocate on every miss.
+        let mut dot_prefix_buf = String::new();
 
         for import in &local_graph.imports {
             let before = emitted;
@@ -131,8 +160,17 @@ pub fn emit_edges(
                 let probe = |spec: &str, file_node_idx: &FxHashMap<String, u32>| -> Option<u32> {
                     let mut hit: Option<u32> = None;
                     resolver.enumerate_candidates(&local_graph.file_path, spec, |candidate| {
-                        let normalized = candidate.replace('\\', "/");
-                        if let Some(&idx) = file_node_idx.get(&normalized) {
+                        // Cow avoids the no-op allocation on Linux/macOS where
+                        // candidate paths already use forward slashes (probe
+                        // callback fires ~10× per import-miss × 14k files,
+                        // so unconditional `String::replace` was ~140k wasted
+                        // heap allocations per build).
+                        let normalized: Cow<'_, str> = if candidate.contains('\\') {
+                            Cow::Owned(candidate.replace('\\', "/"))
+                        } else {
+                            Cow::Borrowed(candidate)
+                        };
+                        if let Some(&idx) = file_node_idx.get(normalized.as_ref()) {
                             hit = Some(idx);
                             return false;
                         }
@@ -152,8 +190,10 @@ pub fn emit_edges(
                 // prepend a `./` but they're all caller-dir-relative in
                 // practice when the target lives in the same indexed tree).
                 if target_file_idx.is_none() && !cleaned.starts_with('.') && !cleaned.is_empty() {
-                    let with_dot = format!("./{}", cleaned);
-                    target_file_idx = probe(&with_dot, file_node_idx);
+                    dot_prefix_buf.clear();
+                    dot_prefix_buf.push_str("./");
+                    dot_prefix_buf.push_str(cleaned);
+                    target_file_idx = probe(&dot_prefix_buf, file_node_idx);
                 }
 
                 // Step 3c: basename + suffix match. Handles C/C++
@@ -179,7 +219,7 @@ pub fn emit_edges(
                     }
                 }
 
-                // Step 3f: Rust `use` path resolution. The Rust parser
+                // Step 3e: Rust `use` path resolution. The Rust parser
                 // stamps `use crate::a::b::Foo` as `source = "crate::a::b"`
                 // (parent module path) + `imported_name = "Foo"` (already
                 // split off). The resolver doesn't grok `::` as a path
@@ -225,7 +265,7 @@ pub fn emit_edges(
                     }
                 }
 
-                // Step 3e: namespace/module-dir match. C# `using NS;`
+                // Step 3f: namespace/module-dir match. C# `using NS;`
                 // names a namespace whose source lives under a `/NS/`
                 // directory; Swift `import Module` similarly names a
                 // module-dir. O(1) lookup via dir_component_idx, then

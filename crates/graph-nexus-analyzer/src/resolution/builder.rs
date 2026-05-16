@@ -985,7 +985,16 @@ impl GraphBuilder {
                 community_id: 0,
             });
             if self.generate_embeddings {
-                final_embeddings.push(None);
+                // File nodes are synthetic metadata, not searchable content —
+                // push a sentinel zero-vec (matching EntryPoint at L621) to
+                // preserve embeddings[i] ↔ nodes[i] alignment WITHOUT routing
+                // a None through the fill loop. A None here would never be
+                // matched by `new_embs_iter` (no embed_texts entry was
+                // pushed alongside), causing the unwrap loop to set
+                // `all_some = false` and emit a spurious
+                // "Some embeddings failed to generate" warning on every
+                // build that enables embeddings.
+                final_embeddings.push(Some(vec![0.0; 1024]));
             }
             file_node_idx.insert(path_str, file_node_id);
         }
