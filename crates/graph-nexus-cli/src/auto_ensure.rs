@@ -88,7 +88,7 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<(), Strin
 }
 
 fn apply_l1_overlay_updates(graph_path: &Path, worktree_root: &Path) -> io::Result<()> {
-    use crate::session::{overlay_writer, resolver};
+    use crate::session::{overlay_writer, promotion, resolver};
 
     let session_id = resolver::resolve_session_id(None);
     let home_gnx = graph_nexus_core::registry::resolve_home_gnx();
@@ -96,6 +96,27 @@ fn apply_l1_overlay_updates(graph_path: &Path, worktree_root: &Path) -> io::Resu
     let session_dir = home_gnx.join(&repo_dir).join("sessions").join(&session_id);
     fs::create_dir_all(&session_dir)?;
     ensure_session_meta(&session_dir, worktree_root)?;
+
+    // ── HEAD-drift promotion check ────────────────────────────────────────
+    let current_head = git_head_sha(worktree_root)?;
+    let sm_path = session_dir.join("session_meta.json");
+    let session_meta = SessionMeta::read(&sm_path)?;
+    if session_meta.base_sha != current_head {
+        match promotion::promotion_case(&session_meta.base_sha, &current_head, worktree_root) {
+            promotion::PromotionCase::A => {
+                let stats = promotion::promote_case_a(&session_dir, worktree_root, &current_head)?;
+                eprintln!(
+                    "✓ session promoted (Case A: fast-forward, {} dropped, {} kept)",
+                    stats.dropped, stats.kept
+                );
+            }
+            promotion::PromotionCase::B => {
+                promotion::promote_case_b(&session_dir, &session_meta.base_sha, &current_head)?;
+                eprintln!("✓ session rebased (Case B: diverged, L1 invalidated)");
+            }
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     let graph_mtime = fs::metadata(graph_path)?.modified()?;
     let dirty_files = collect_dirty_files(graph_path, worktree_root, graph_mtime)?;
