@@ -28,6 +28,18 @@ fn py_routes(src: &str) -> Vec<RawRoute> {
         .routes
 }
 
+/// Parse Python with a caller-supplied file path. Use when the test
+/// depends on the file being classified as `FileCategory::Test` via
+/// `is_test_path` (e.g. path contains `/tests/` or matches
+/// `*_test.py` / `conftest.` / `test_*` conventions).
+fn py_routes_at(path: &str, src: &str) -> Vec<RawRoute> {
+    PythonProvider::new()
+        .unwrap()
+        .parse_file(path.as_ref(), src.as_bytes())
+        .unwrap()
+        .routes
+}
+
 fn js_routes(src: &str) -> Vec<RawRoute> {
     JavaScriptProvider::new()
         .unwrap()
@@ -339,6 +351,74 @@ _, response = app.sync_client.put("/api/sync")
     assert_no_routes(
         &py_routes(src),
         ".test_client / .asgi_client / .sync_client chained-call test-client requests",
+    );
+}
+
+// ─── Python — pytest-fixture direct receiver in test file NEGATIVE ────
+
+#[test]
+fn python_test_file_direct_client_receiver_emits_zero() {
+    // Real-world Sanic pattern (tests/worker/test_inspector.py): pytest
+    // fixture `http_client` injected as function param, then called as
+    // `http_client.post('/reload')`. Indistinguishable from a real
+    // `app.post('/reload')` by call shape, but the FILE PATH gives the
+    // signal — `tests/worker/test_inspector.py` is classified as
+    // `FileCategory::Test`. Inside test files, a bare-identifier
+    // receiver matching one of the conventional test-client variable
+    // names (`http_client`, `client`, `api_client`, ...) gets dropped.
+    //
+    // Production files are unaffected — there `client = APIRouter()`
+    // is legitimate and keeps emitting.
+    let src = r#"
+import pytest
+from sanic import Sanic
+
+@pytest.fixture
+def http_client(inspector):
+    return inspector.client
+
+def test_run_inspector_reload(http_client):
+    _, response = http_client.post("/reload")
+
+def test_run_inspector_scale(http_client):
+    _, response = http_client.post("/scale", json={"replicas": 4})
+
+def test_using_generic_client(client):
+    _, response = client.post("/api/foo")
+"#;
+    // Must NOT emit when path classifies as test.
+    assert_no_routes(
+        &py_routes_at("tests/worker/test_inspector.py", src),
+        "pytest-fixture direct client receiver in test file",
+    );
+}
+
+#[test]
+fn python_production_file_direct_client_receiver_still_extracts() {
+    // Symmetric guard: in a PRODUCTION file path (not classified as
+    // test), `client` may legitimately be an `APIRouter` / `Blueprint`
+    // / similar — keep emitting. The test-file gate prevents the
+    // FN from spreading to production.
+    //
+    // Use Flask Blueprint `client.route(...)` form (the `route` method
+    // bypasses the framework-presence requirement because it's in the
+    // route-registration method allowlist; the file still has imports
+    // so the `!imports.is_empty()` guard passes).
+    let src = r#"
+from flask import Blueprint
+
+client = Blueprint("api", __name__)
+
+@client.route("/api/foo", methods=["GET"])
+def handle_foo():
+    pass
+"#;
+    let routes = py_routes_at("src/app/api.py", src);
+    let pairs_set: std::collections::BTreeSet<_> = pairs(&routes).into_iter().collect();
+    assert!(
+        pairs_set.contains(&("GET".to_string(), "/api/foo".to_string())),
+        "production file must still emit routes on `client` receiver: {:?}",
+        pairs_set
     );
 }
 

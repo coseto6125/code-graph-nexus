@@ -4,6 +4,7 @@ use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
     Span, MODULE_LEVEL_SOURCE,
 };
+use graph_nexus_core::algorithms::process_trace::is_test_path;
 use graph_nexus_core::analyzer::provider::LanguageProvider;
 use graph_nexus_core::analyzer::types::{
     BlindSpot, LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode, RawRoute,
@@ -78,6 +79,51 @@ const BLIND_SPEC: &[(&str, &str)] = &[
 /// overwhelmingly a testing convention; user code that names a production
 /// attribute the same way would be false-negative.
 const TEST_CLIENT_CHAIN_MARKERS: &[&str] = &[".test_client.", ".asgi_client.", ".sync_client."];
+
+/// Direct receiver names that — only inside test files (path/filename
+/// classified as Test) — indicate a test-client variable injected via
+/// pytest fixture or similar. Common conventions: `http_client` (Sanic
+/// inspector tests), `client` / `api_client` / `async_client` (Flask /
+/// FastAPI). In production files these names could legitimately be a
+/// Blueprint or app variable, so we only treat them as test-client when
+/// the source file is itself a test file.
+///
+/// Caller must combine with `is_test_path(file_path)`. Empirical impact
+/// on sanic-org/sanic `tests/worker/test_inspector.py`: removes 3 final
+/// `--include-tests` FPs (`/reload`, `/shutdown`, `/scale`) where
+/// `http_client` is a pytest fixture function.
+const TEST_FILE_DIRECT_RECEIVERS: &[&str] = &[
+    "http_client",
+    "client",
+    "api_client",
+    "async_client",
+    "asgi_client",
+    "test_client",
+    "sync_client",
+];
+
+/// True when `call_node`'s function chain's immediate receiver is a bare
+/// identifier matching one of `TEST_FILE_DIRECT_RECEIVERS`. Used only in
+/// combination with a test-file path check (caller responsibility).
+fn is_test_file_direct_receiver_call(call_node: Node, source: &[u8]) -> bool {
+    let Some(fn_node) = call_node.child_by_field_name("function") else {
+        return false;
+    };
+    // function is an attribute node like `http_client.post`; its object
+    // field is the receiver. Only check bare identifiers — chained
+    // accesses like `self.http_client.X` are out of scope for this filter
+    // (the `.test_client.` chain filter handles those).
+    let Some(obj_node) = fn_node.child_by_field_name("object") else {
+        return false;
+    };
+    if obj_node.kind() != "identifier" {
+        return false;
+    }
+    let Ok(name) = std::str::from_utf8(&source[obj_node.start_byte()..obj_node.end_byte()]) else {
+        return false;
+    };
+    TEST_FILE_DIRECT_RECEIVERS.contains(&name)
+}
 
 /// True when the call's function chain contains any test-client marker,
 /// identifying patterns like `app.test_client.get('/x')` /
@@ -353,6 +399,11 @@ impl LanguageProvider for PythonProvider {
         let has_django = has_import_from(&imports, DJANGO_REQUIRED);
         let has_celery = has_import_from(&imports, CELERY_REQUIRED);
         let has_any_http_framework = has_import_from(&imports, HTTP_FRAMEWORK_MODULES);
+        // Path-conditional flag for the test-file-only direct-receiver
+        // filter. `is_test_path` matches `tests/` / `test_*.py` / `conftest.`
+        // / `*_test.py` / `_spec.` and the rest of the FileCategory::Test
+        // patterns. Production files keep their permissive emission rules.
+        let file_is_test = is_test_path(&path.to_string_lossy());
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
@@ -662,6 +713,16 @@ impl LanguageProvider for PythonProvider {
             // FPs.
             if let Some(call_node) = route_call_node {
                 if is_test_client_chained_call(call_node, source) {
+                    continue;
+                }
+                // Path-conditional filter: in test files, also drop calls
+                // whose immediate receiver is a known test-client fixture
+                // name (`http_client`, `client`, `api_client`, ...). These
+                // are pytest fixtures that bind to HTTP clients — not
+                // route registrations. Production files keep emitting on
+                // these names because there `client = Blueprint(...)`
+                // / `client = APIRouter()` is legitimate.
+                if file_is_test && is_test_file_direct_receiver_call(call_node, source) {
                     continue;
                 }
             }
