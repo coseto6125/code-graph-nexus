@@ -50,7 +50,7 @@ Commands:
   rename     AST-aware multi-file rename
   cypher     Cypher query escape hatch
   coverage   Registry + repo health (indexed repos, freshness, frameworks,
-             externals, blind spots, contracts summary)
+             blind spots, contracts summary)
   routes     List HTTP routes; with path, show handler + full caller chain
   scan       Verify a file's symbol references exist; suggests near-matches
              for missing
@@ -215,13 +215,12 @@ Cypher escape hatch for queries not covered by canned commands.
 
 #### 3.2.6 `gnx coverage`
 
-Single entry point for "what do I have / how healthy is it". Folds the old `doctor` + `status` + `list` + `overview` + `externals` summary.
+Single entry point for "what do I have / how healthy is it". Folds the old `doctor` + `status` + `list` + `overview`. External-client (HTTP/DB/Redis/queue) usage detail is **not** folded here — see the standalone `gnx tool_map` command (its per-callsite binding analysis sits beyond a health summary's granularity).
 
 | Arg / Flag | Type | Default | Purpose |
 |---|---|---|---|
 | `--frameworks` | bool | true (incl) | Framework detection coverage |
 | `--freshness` | bool | true (incl) | Index vs working-tree mtime check |
-| `--externals` | bool | true (incl) | Summary of HTTP/DB/Redis/queue clients |
 | `--blind-spots` | bool | true (incl) | Unsupported file types, missing grammars |
 | `--detailed` | bool | false | Verbose per-section breakdown |
 
@@ -531,7 +530,7 @@ RepoEntry {
 | Global flags | 1 (`--graph`) | **1** (`--repo`) |
 | Total binary surface | 27 | **19** |
 
-Dropped (folded or removed): `analyze` (→ `admin index`), `analyze-here` (→ auto-ensure / `admin index .`), `register`, `unregister`/`remove`, `index` (recovery, → registry self-heals via `admin index`), `clean` (→ `admin drop`), `init` (→ `admin install-hook`), `list` (→ `coverage`), `summarize` (→ `coverage`), `doctor` (→ `coverage`), `status` (→ `coverage` + auto stale warnings), `tool-map` (→ `coverage --externals`), `route-map` + `api-impact` (→ `routes`), `detect-changes` (→ `impact --since`), `cluster`, `process`, `multi_query` (→ `search` multi-repo), `context` (→ `inspect`), `query` (→ `search`).
+Dropped (folded or removed): `analyze` (→ `admin index`), `analyze-here` (→ auto-ensure / `admin index .`), `register`, `unregister`/`remove`, `index` (recovery, → registry self-heals via `admin index`), `clean` (→ `admin drop`), `init` (→ `admin install-hook`), `list` (→ `coverage`), `summarize` (→ `coverage`), `doctor` (→ `coverage`), `status` (→ `coverage` + auto stale warnings), `route-map` + `api-impact` (→ `routes`), `detect-changes` (→ `impact --since`), `cluster`, `process`, `multi_query` (→ `search` multi-repo), `context` (→ `inspect`), `query` (→ `search`). `tool-map` was initially folded into `coverage --externals` but later restored as a standalone command — its per-callsite binding analysis is too granular for a health summary.
 
 Added: `scan`, `contracts`, nested `admin group add/remove`, multi-group `RepoEntry.groups`, auto-ensure indexing, server-side rename verification, hybrid search modes.
 
