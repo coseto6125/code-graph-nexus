@@ -283,7 +283,8 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
     }
 
     let start = std::time::Instant::now();
-    let sha = head_sha_hex(&worktree).map_err(|e| format!("git rev-parse HEAD: {e}"))?;
+    let sha = crate::build::orchestrator::head_sha_hex(&worktree)
+        .map_err(|e| format!("git rev-parse HEAD: {e}"))?;
     let commit_dir =
         locate_commit_dir(&worktree, &sha).map_err(|e| format!("locate commit dir: {e}"))?;
 
@@ -331,21 +332,6 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
     }
 }
 
-fn head_sha_hex(worktree: &std::path::Path) -> std::io::Result<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(worktree)
-        .args(["rev-parse", "HEAD"])
-        .output()?;
-    if !out.status.success() {
-        return Err(std::io::Error::other("git rev-parse HEAD failed"));
-    }
-    Ok(std::str::from_utf8(&out.stdout)
-        .map_err(std::io::Error::other)?
-        .trim()
-        .to_string())
-}
-
 fn locate_commit_dir(
     worktree: &std::path::Path,
     sha: &str,
@@ -357,13 +343,9 @@ fn locate_commit_dir(
         return Ok(None);
     }
     let idx = crate::commit_lookup::CommitIndex::scan(&commits)?;
-    let sha_bytes =
-        sha_hex_to_bytes(sha).ok_or_else(|| std::io::Error::other("invalid sha hex"))?;
+    let sha_bytes = crate::session::state::sha_hex_to_bytes(sha)
+        .ok_or_else(|| std::io::Error::other("invalid sha hex"))?;
     Ok(idx.find(&sha_bytes).map(|name| commits.join(name)))
-}
-
-fn sha_hex_to_bytes(s: &str) -> Option<[u8; 20]> {
-    hex::decode(s).ok()?.try_into().ok()
 }
 
 fn detect_source_type(commit_dir: &std::path::Path) -> graph_nexus_core::registry::SourceType {

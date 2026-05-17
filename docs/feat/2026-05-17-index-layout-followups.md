@@ -102,6 +102,17 @@ Each item alone is too small for its own brainstorm cycle, but they share infras
 
 ---
 
+## P4 — Force-rebuild follow-ups (post-2026-05-17 spec)
+
+These items were explicit non-goals in the force-rebuild + session-reference design (`docs/superpowers/specs/2026-05-17-force-rebuild-and-session-reference-design.md`) but should still happen:
+
+- **F5 fd-level test**: spec invariant F5 ("PureReference query 不讀 graph_overlay") is currently asserted via `engine.view() == GraphView::L2Only`, not via strace/lsof. If future P2 work adds overlay probing inside `Engine::load`, F5 could silently regress. Add a wrapper that records every `fs::File::open` path and runs the standard query smoke against it.
+- **`admin sessions reset <id>` / `admin sessions sweep`**: parent spec §11.2 lists these alongside `sessions list`. Now that the subcommand exists with `list`, the other two are mechanical additions over `SessionState` + atomic rename.
+- **AugmentedReference overlay merge** (parent spec §11.2 P2): `Engine::open` records `overlay_dir` for Augmented sessions but doesn't merge fragments yet. P2 implementer should hook into the `GraphView::L2WithOverlay` branch.
+- **`admin index --rev <ref>` flag**: currently implicit HEAD. Add when the broader `--rev` rollout per parent spec §11.1 happens.
+
+---
+
 ## Out of scope (don't pick up unless you have a reason)
 
 - **`session_resolver` env-var race under parallel cargo test** — flaky in default parallel mode, deterministic with `--test-threads=1`. Real fix is to use a process-wide mutex in tests that touch `CLAUDE_CODE_SESSION_ID`. Low ROI — workaround documented.

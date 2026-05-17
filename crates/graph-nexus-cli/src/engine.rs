@@ -42,7 +42,7 @@ impl Engine {
             mmap,
             graph_path,
             overlay_dir: None,
-            view: GraphView::L2WithOverlay,
+            view: GraphView::L2Only,
         })
     }
 
@@ -82,6 +82,7 @@ impl Engine {
     #[allow(dead_code)]
     pub fn with_overlay(mut self, dir: PathBuf) -> Self {
         self.overlay_dir = Some(dir);
+        self.view = GraphView::L2WithOverlay;
         self
     }
 

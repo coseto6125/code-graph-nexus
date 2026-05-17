@@ -125,13 +125,17 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         .join("commits")
         .join(format!("{dirname}.building"));
 
-    // 1. Acquire lock (attach-and-retake pattern if contended)
+    // 1. Acquire lock (attach-and-retake pattern if contended).
+    // Hold the lock fd in `_lock_guard` until the function returns — fs2 advisory
+    // locks release on fd close, so dropping mid-function would let a concurrent
+    // --force race into our drop+rebuild window.
     fs::create_dir_all(&building)?;
     let lock_path = building.join(".build.lock");
     let lock = OpenOptions::new()
         .create(true)
         .write(true)
         .open(&lock_path)?;
+    let _lock_guard;
     if lock.try_lock_exclusive().is_err() {
         wait_for_completion(&building, &commit_dir)?;
         fs::create_dir_all(&building)?;
@@ -142,6 +146,9 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         lock2
             .try_lock_exclusive()
             .map_err(|e| io::Error::other(format!("re-lock after attach failed: {e}")))?;
+        _lock_guard = lock2;
+    } else {
+        _lock_guard = lock;
     }
 
     // 2. Invalidate matching L1 BEFORE dropping L2 (spec §4.4)
