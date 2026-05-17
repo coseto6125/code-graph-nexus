@@ -317,12 +317,30 @@ impl SymbolTable {
             self.node_kinds.len(),
             "register_node ids must be monotonic and dense for kind-indexing"
         );
-        self.file_scoped
-            .entry(file_path.to_string())
-            .or_default()
-            .entry(node_name.to_string())
-            .or_default()
-            .push(node_id);
+        // Primary-type priority: when a non-Impl node lands for a name that
+        // previously only had Impl entries (or is brand-new), we push it and
+        // remove any prior Impl placeholder. When an Impl node lands for a name
+        // that already has a non-Impl entry, we skip the Impl — Pass-2
+        // class_membership must resolve "Foo" to the Struct, not the impl block.
+        let file_map = self.file_scoped.entry(file_path.to_string()).or_default();
+        let entry = file_map.entry(node_name.to_string()).or_default();
+        if kind == NodeKind::Impl {
+            let has_primary = entry.iter().any(|&id| {
+                !matches!(
+                    self.node_kinds.get(id as usize),
+                    Some(NodeKind::Impl)
+                )
+            });
+            if !has_primary {
+                entry.push(node_id);
+            }
+        } else {
+            // Non-Impl: remove any prior Impl-only placeholders, then push.
+            entry.retain(|&id| {
+                !matches!(self.node_kinds.get(id as usize), Some(NodeKind::Impl))
+            });
+            entry.push(node_id);
+        }
 
         self.global_scoped
             .entry(node_name.to_string())
