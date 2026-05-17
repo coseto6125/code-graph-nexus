@@ -42,12 +42,17 @@ pub struct CoverageArgs {
 }
 
 pub fn run(args: CoverageArgs, _graph_arg: &Path) -> Result<(), GnxError> {
+    let format = OutputFormat::parse(args.format.as_deref());
+    let payload = build_payload(&args, _graph_arg)?;
+    emit(&payload, format)
+}
+
+pub fn build_payload(args: &CoverageArgs, _graph_arg: &Path) -> Result<Value, GnxError> {
     let home_gnx = resolve_home_gnx();
     let registry = Registry::open(&home_gnx)
         .map_err(|e| GnxError::InvalidArgument(format!("registry open: {e}")))?;
     let reg = registry.snapshot();
 
-    let format = OutputFormat::parse(args.format.as_deref());
     let cwd = std::env::current_dir().unwrap_or_default();
 
     let mut sections: serde_json::Map<String, Value> = serde_json::Map::new();
@@ -78,8 +83,7 @@ pub fn run(args: CoverageArgs, _graph_arg: &Path) -> Result<(), GnxError> {
         sections.insert("groups".into(), build_groups_overview(reg));
     }
 
-    let value = json!({ "coverage": Value::Object(sections) });
-    emit(&value, format)
+    Ok(json!({ "coverage": Value::Object(sections) }))
 }
 
 // ── Registry overview helpers ────────────────────────────────────────────────
@@ -89,7 +93,11 @@ fn build_registry_overview(reg: &RegistryFile, detailed: bool) -> Value {
         .repos
         .iter()
         .map(|(dir_name, alias)| {
-            let display_name = alias.aliases.first().map(|s| s.as_str()).unwrap_or(dir_name);
+            let display_name = alias
+                .aliases
+                .first()
+                .map(|s| s.as_str())
+                .unwrap_or(dir_name);
             json!({
                 "name": display_name,
                 "dir_name": dir_name,
@@ -759,7 +767,10 @@ mod tests {
         assert!(v.get("frameworks").is_some(), "frameworks section missing");
         assert!(v.get("freshness").is_some(), "freshness section missing");
         assert!(v.get("metrics").is_some(), "metrics section missing");
-        assert!(v.get("blind_spots").is_some(), "blind_spots section missing");
+        assert!(
+            v.get("blind_spots").is_some(),
+            "blind_spots section missing"
+        );
         let metrics = &v["metrics"];
         assert_eq!(metrics["nodes"], json!(0));
         assert_eq!(metrics["edges"], json!(0));
