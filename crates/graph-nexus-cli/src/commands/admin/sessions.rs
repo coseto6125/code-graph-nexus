@@ -109,6 +109,9 @@ fn collect_rows(home_gnx: &std::path::Path) -> io::Result<Vec<ListRow>> {
         if !sessions_dir.exists() {
             continue;
         }
+        // Scan CommitIndex once per repo; every session classification reuses it
+        // instead of re-walking commits/ per session.
+        let idx = crate::commit_lookup::CommitIndex::scan(&repo_dir.join("commits")).ok();
         for s_entry in fs::read_dir(&sessions_dir)? {
             let s_entry = s_entry?;
             let s_path = s_entry.path();
@@ -122,13 +125,22 @@ fn collect_rows(home_gnx: &std::path::Path) -> io::Result<Vec<ListRow>> {
             if sid.starts_with('.') || sid.contains(".stale-") || sid.contains(".dead") {
                 continue;
             }
-            // Single SessionMeta::read covers both the Stale-variant base_sha
-            // fallback (classify drops base_sha for Stale) and last_touched
-            // (not carried in any SessionState variant). For non-Stale paths
-            // classify already opened session_meta.json once; this second read
-            // is unavoidable without threading SessionMeta through SessionState.
+            // Read SessionMeta once and thread it through both classify and
+            // the (base_sha / last_touched) extraction below. classify_with_meta
+            // avoids the second session_meta.json open that classify() would
+            // otherwise do.
             let sm = SessionMeta::read(&s_path.join("session_meta.json")).ok();
-            let state = crate::session::state::classify(&repo_dir, sid);
+            let state = match &sm {
+                Some(sm) => crate::session::state::classify_with_meta(
+                    &repo_dir,
+                    sid,
+                    sm,
+                    idx.as_ref(),
+                ),
+                None => SessionState::Stale {
+                    reason: graph_nexus_core::session::StaleReason::MetaUnreadable,
+                },
+            };
             let (base_sha, state_view) = match &state {
                 SessionState::PureReference { base_sha, l2_dirname } => (
                     base_sha.clone(),

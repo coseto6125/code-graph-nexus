@@ -21,12 +21,24 @@ pub(crate) fn classify_with_index(
     sid: &str,
     idx: Option<&CommitIndex>,
 ) -> SessionState {
-    let sid_dir = repo_root.join("sessions").join(sid);
-    let sm_path = sid_dir.join("session_meta.json");
+    let sm_path = repo_root.join("sessions").join(sid).join("session_meta.json");
     let sm = match SessionMeta::read(&sm_path) {
         Ok(sm) => sm,
         Err(_) => return SessionState::Stale { reason: StaleReason::MetaUnreadable },
     };
+    classify_with_meta(repo_root, sid, &sm, idx)
+}
+
+/// Maximum-reuse variant: caller has already read `SessionMeta` for other
+/// fields (e.g. last_touched) and passes it in to avoid a second open.
+/// Used by `admin sessions list::collect_rows`.
+pub(crate) fn classify_with_meta(
+    repo_root: &Path,
+    sid: &str,
+    sm: &SessionMeta,
+    idx: Option<&CommitIndex>,
+) -> SessionState {
+    let sid_dir = repo_root.join("sessions").join(sid);
 
     let l2_dirname = match resolve_l2_dirname_with(idx, &sm.base_sha) {
         Some(d) => d,
@@ -45,12 +57,12 @@ pub(crate) fn classify_with_index(
 
     if dirty.entries.is_empty() {
         SessionState::PureReference {
-            base_sha: sm.base_sha,
+            base_sha: sm.base_sha.clone(),
             l2_dirname,
         }
     } else {
         SessionState::AugmentedReference {
-            base_sha: sm.base_sha,
+            base_sha: sm.base_sha.clone(),
             l2_dirname,
             fragment_count: dirty.entries.len(),
         }

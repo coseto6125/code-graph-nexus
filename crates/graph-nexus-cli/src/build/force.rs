@@ -7,7 +7,9 @@ use crate::commit_lookup::CommitIndex;
 use crate::repo_identity::repo_dir_name_for_cwd;
 use crate::session::state::classify_with_index;
 use fs2::FileExt;
-use graph_nexus_core::registry::{resolve_home_gnx, SourceType};
+use graph_nexus_core::registry::{
+    resolve_home_gnx, CommitBuildMeta, SourceType, BUILDER_FINGERPRINT,
+};
 use graph_nexus_core::session::SessionState;
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -89,8 +91,29 @@ fn matches_sha_hint(repo_root: &Path, sid: &str, target_sha: &str) -> bool {
 fn spawn_delayed_rm_rf(path: PathBuf, delay: Duration) {
     thread::spawn(move || {
         thread::sleep(delay);
-        let _ = fs::remove_dir_all(&path);
+        if let Err(e) = fs::remove_dir_all(&path) {
+            tracing::warn!(
+                "delayed rm of stale session dir failed: {} (path={}); falls to GC sweep",
+                e,
+                path.display()
+            );
+        }
     });
+}
+
+/// Read the winner's meta.json after wait_for_completion. Returns the build
+/// result if `meta.builder_fingerprint == BUILDER_FINGERPRINT` — letting
+/// `force_rebuild_l2` attach instead of producing a duplicate rebuild.
+fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildResult> {
+    let meta = CommitBuildMeta::read(&commit_dir.join("meta.json")).ok()?;
+    if meta.builder_fingerprint.as_deref() != Some(BUILDER_FINGERPRINT) {
+        return None;
+    }
+    Some(BuildResult {
+        commit_dir: commit_dir.to_path_buf(),
+        sha_hex: meta.sha,
+        source_type: meta.source_type,
+    })
 }
 
 #[derive(Debug)]
@@ -124,9 +147,11 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         .join("commits")
         .join(format!("{dirname}.building"));
 
-    // 1. Acquire lock (attach-and-retake pattern if contended).
-    // Hold the lock fd in `lock_guard` until the function returns — fs2 advisory
-    // locks release on fd close, so dropping mid-function would let a concurrent
+    // 1. Acquire lock. Use blocking lock_exclusive on the retake path so that
+    // N concurrent --force callers serialize instead of racing on try_lock_
+    // exclusive (which would hard-fail all losers after the first retaker).
+    // The held lock_guard fd lives until function return — fs2 advisory locks
+    // release on fd close, and dropping mid-function would let another
     // --force race into our drop+rebuild window.
     fs::create_dir_all(&building)?;
     let lock_path = building.join(".build.lock");
@@ -136,14 +161,30 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         .open(&lock_path)?;
     let lock_guard = if lock.try_lock_exclusive().is_err() {
         wait_for_completion(&building, &commit_dir)?;
+
+        // 1a. Fingerprint short-circuit. If the winning builder just published
+        // an L2 at our SHA with the current binary fingerprint, our own
+        // rebuild would just reproduce the same artifact. Attach to the
+        // winner's result instead of drop+rebuild. This collapses N
+        // concurrent --force into 1 actual build.
+        if let Some(attached) = attach_if_fingerprint_matches(&commit_dir) {
+            return Ok(ForceRebuildResult {
+                sha_hex: attached.sha_hex,
+                source_type: attached.source_type,
+                commit_dir: attached.commit_dir,
+                rebuilt: false,
+                invalidate_report: InvalidateReport::default(),
+            });
+        }
+
         fs::create_dir_all(&building)?;
         let lock2 = OpenOptions::new()
             .create(true)
             .write(true)
             .open(&lock_path)?;
         lock2
-            .try_lock_exclusive()
-            .map_err(|e| io::Error::other(format!("re-lock after attach failed: {e}")))?;
+            .lock_exclusive()
+            .map_err(|e| io::Error::other(format!("blocking re-lock failed: {e}")))?;
         lock2
     } else {
         lock
