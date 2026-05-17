@@ -107,6 +107,17 @@ impl LanguageProvider for SwiftProvider {
         let idx_property_name = self.query.capture_index_for_name("property.name");
         let idx_property_type = self.query.capture_index_for_name("property.type");
 
+        // Per (root, name-byte-offset) dedup. tree-sitter-swift fires the
+        // same property_declaration match ~3-4× per declared name when the
+        // optional `(type_annotation ...)?` resolves as both present and
+        // absent alternatives, AND when nested `bound_identifier` re-binds
+        // through pattern matching. Tracking (root_id, name_start_byte)
+        // collapses true duplicates while keeping tuple-pattern
+        // declarations (`let (a, b) = …`) distinct (different name byte
+        // offsets within the same root).
+        let mut seen_properties: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::new();
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
@@ -237,9 +248,43 @@ impl LanguageProvider for SwiftProvider {
             }
 
             // Swift property declaration `var x: Int` / `let y: String` →
-            // Property node. Captured separately from `(class ...)` body so
-            // both class properties and top-level lets land here.
+            // Property node ONLY when declared at class/struct/extension/
+            // protocol scope or top-level. tree-sitter-swift uses
+            // `property_declaration` for ALL `let/var`, including
+            // function-body locals (`func foo() { let x = 1 }`). Ref
+            // gitnexus filters those out — they're locals, not properties.
+            // Walk up the AST; if we hit `function_body` / `init_body` /
+            // `getter_specifier` / `setter_specifier` before a class-like
+            // body or the file root, skip the emission.
             if let (Some(pr_root), Some(pr_name)) = (property_root, property_name) {
+                if !seen_properties.insert((pr_root.id(), pr_name.start_byte())) {
+                    // Already emitted this (declaration, name-position) pair.
+                    continue;
+                }
+                // Only filter properties declared INSIDE computed-property
+                // getter/setter bodies, willSet/didSet observers, or
+                // closure literals — those are syntactically lets that the
+                // ref impl excludes. Test/setup function bodies are NOT
+                // filtered; ref captures their lets too as a stand-in for
+                // fixture/state declarations.
+                let mut anc = pr_root.parent();
+                let mut is_local = false;
+                while let Some(a) = anc {
+                    match a.kind() {
+                        "computed_property" | "willset_didset_block" | "lambda_literal" => {
+                            is_local = true;
+                            break;
+                        }
+                        "class_body" | "protocol_body" | "enum_class_body" | "source_file" => {
+                            break;
+                        }
+                        _ => {}
+                    }
+                    anc = a.parent();
+                }
+                if is_local {
+                    continue;
+                }
                 if let Ok(name_str) =
                     std::str::from_utf8(&source[pr_name.start_byte()..pr_name.end_byte()])
                 {

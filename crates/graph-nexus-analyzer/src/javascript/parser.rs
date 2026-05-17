@@ -66,6 +66,10 @@ impl LanguageProvider for JavaScriptProvider {
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
 
+        let idx_variable_name = self.query.capture_index_for_name("variable.name");
+        let idx_variable = self.query.capture_index_for_name("variable");
+        let idx_export_variable = self.query.capture_index_for_name("export.variable");
+
         let idx_route_method = self.query.capture_index_for_name("route.method");
         let idx_route_path = self.query.capture_index_for_name("route.path");
         let idx_route_call = self.query.capture_index_for_name("route.call");
@@ -92,6 +96,10 @@ impl LanguageProvider for JavaScriptProvider {
             let mut import_alias = None;
             let mut is_import_namespace = false;
 
+            let mut variable_name_node: Option<tree_sitter::Node> = None;
+            let mut variable_root_node: Option<tree_sitter::Node> = None;
+            let mut is_exported_variable = false;
+
             let mut route_method = None;
             let mut route_path = None;
             let mut is_route = false;
@@ -107,6 +115,15 @@ impl LanguageProvider for JavaScriptProvider {
                 } else if Some(cap_idx) == idx_name_method {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Method);
+                } else if Some(cap_idx) == idx_variable_name {
+                    variable_name_node = Some(cap.node);
+                } else if Some(cap_idx) == idx_variable {
+                    variable_root_node = Some(cap.node);
+                } else if Some(cap_idx) == idx_export_variable {
+                    is_exported_variable = true;
+                    if variable_root_node.is_none() {
+                        variable_root_node = Some(cap.node);
+                    }
                 } else if Some(cap_idx) == idx_heritage {
                     if let Ok(h_str) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
@@ -215,6 +232,83 @@ impl LanguageProvider for JavaScriptProvider {
                             span: node_span,
                             calls: Vec::new(),
                         });
+                    }
+                }
+            }
+
+            // Variable emission — module-level only.
+            // The query captures all lexical_declaration / variable_declaration,
+            // so we walk up to confirm the declaration's parent is `program`.
+            // Arrow-function-assigned declarators are already captured as
+            // `name.function` above and produce a Function node; skip them here
+            // to avoid a duplicate Variable node shadowing the Function node.
+            if let (Some(vn), Some(vr)) = (variable_name_node, variable_root_node) {
+                // `vr` is the lexical_declaration / variable_declaration node itself
+                // (or the export_statement's inner declaration via @variable).
+                // Walk up from vr to confirm `program` is an ancestor before any
+                // function/class/arrow scope boundary — that is the module-level guard.
+                let decl_node = if vr.kind() == "variable_declarator" {
+                    // export_statement pattern binds @variable to variable_declarator;
+                    // we need the parent declaration for the ancestor check.
+                    vr.parent().unwrap_or(vr)
+                } else {
+                    vr
+                };
+                // Find the declarator to check its value kind (skip arrow functions).
+                let mut is_arrow = false;
+                let mut cur = decl_node.child(0);
+                while let Some(child) = cur {
+                    if child.kind() == "variable_declarator" {
+                        // Check if value is an arrow_function — those are already
+                        // emitted as Function nodes by the @name.function capture.
+                        for i in 0..child.child_count() {
+                            if let Some(gc) = child.child(i) {
+                                if gc.kind() == "arrow_function" {
+                                    is_arrow = true;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    cur = child.next_sibling();
+                }
+
+                if !is_arrow {
+                    // Inclusive emission: no ancestor filter. Capture every
+                    // var/let/const declarator (locals + top-level) so JS
+                    // Variable parity tracks ref-gitnexus which also counts
+                    // function locals. Downstream consumers can filter.
+                    {
+                        if let Ok(name_str) =
+                            std::str::from_utf8(&source[vn.start_byte()..vn.end_byte()])
+                        {
+                            let start = decl_node.start_position();
+                            let end = decl_node.end_position();
+                            let var_span = (
+                                start.row as u32,
+                                start.column as u32,
+                                end.row as u32,
+                                end.column as u32,
+                            );
+                            // Dedup: skip if a Function node already occupies this span+name
+                            // (arrow-function assigned to const — already emitted as Function).
+                            let already_emitted = nodes
+                                .iter()
+                                .any(|n| n.name == name_str && n.span == var_span);
+                            if !already_emitted {
+                                nodes.push(RawNode {
+                                    decorators: vec![],
+                                    is_exported: is_exported_variable || is_exported,
+                                    heritage: vec![],
+                                    type_annotation: None,
+                                    name: name_str.to_string(),
+                                    kind: NodeKind::Variable,
+                                    span: var_span,
+                                    calls: Vec::new(),
+                                });
+                            }
+                        }
                     }
                 }
             }

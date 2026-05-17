@@ -101,6 +101,12 @@ impl LanguageProvider for CSharpProvider {
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
         let idx_interface = self.query.capture_index_for_name("interface");
+        let idx_property_name = self.query.capture_index_for_name("property.name");
+        let idx_property = self.query.capture_index_for_name("property");
+        let idx_variable_name = self.query.capture_index_for_name("variable.name");
+        let idx_variable = self.query.capture_index_for_name("variable");
+        let idx_constructor_name = self.query.capture_index_for_name("constructor.name");
+        let idx_constructor = self.query.capture_index_for_name("constructor");
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -130,6 +136,15 @@ impl LanguageProvider for CSharpProvider {
                 } else if Some(cap_idx) == idx_name_interface {
                     name_node = Some(cap.node);
                     kind = Some(NodeKind::Interface);
+                } else if Some(cap_idx) == idx_property_name {
+                    name_node = Some(cap.node);
+                    kind = Some(NodeKind::Property);
+                } else if Some(cap_idx) == idx_variable_name {
+                    name_node = Some(cap.node);
+                    kind = Some(NodeKind::Variable);
+                } else if Some(cap_idx) == idx_constructor_name {
+                    name_node = Some(cap.node);
+                    kind = Some(NodeKind::Constructor);
                 } else if Some(cap_idx) == idx_import_name {
                     import_name = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_source {
@@ -169,7 +184,10 @@ impl LanguageProvider for CSharpProvider {
                 } else if (Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_method
-                    || Some(cap_idx) == idx_interface)
+                    || Some(cap_idx) == idx_interface
+                    || Some(cap_idx) == idx_property
+                    || Some(cap_idx) == idx_variable
+                    || Some(cap_idx) == idx_constructor)
                     && root_span_node.is_none()
                 {
                     root_span_node = Some(cap.node);
@@ -181,7 +199,14 @@ impl LanguageProvider for CSharpProvider {
                     let start = root.start_position();
                     let end = root.end_position();
 
-                    let node_id = root.id();
+                    // For Property + Variable nodes, multiple declarators
+                    // share the same root node id (`int x, y, z;`); key on
+                    // the identifier node so each declarator is distinct.
+                    let node_id = if matches!(k, NodeKind::Property | NodeKind::Variable) {
+                        n.id()
+                    } else {
+                        root.id()
+                    };
                     let entry = node_map.entry(node_id).or_insert_with(|| RawNode {
                         decorators: vec![],
                         is_exported,
