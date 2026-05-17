@@ -248,6 +248,42 @@ impl LanguageProvider for GitHubActionsProvider {
             }
         }
 
+        // Extract workflow_call outputs from `on.workflow_call.outputs` — these
+        // are consumed by reusable-workflow callers and are the workflow's public API.
+        if let Some(on_val) = mapping_value(top_mapping, "on", source) {
+            if let Some(on_mapping) = unwrap_block_mapping(on_val) {
+                if let Some(wc_val) = mapping_value(on_mapping, "workflow_call", source) {
+                    if let Some(wc_mapping) = unwrap_block_mapping(wc_val) {
+                        if let Some(outputs_val) = mapping_value(wc_mapping, "outputs", source) {
+                            if let Some(outputs_mapping) = unwrap_block_mapping(outputs_val) {
+                                for (out_key, out_val_node) in
+                                    mapping_pairs(outputs_mapping, source)
+                                {
+                                    let start = out_val_node.start_position();
+                                    let end = out_val_node.end_position();
+                                    nodes.push(RawNode {
+                                        name: out_key.to_string(),
+                                        kind: NodeKind::Property,
+                                        span: (
+                                            start.row as u32,
+                                            start.column as u32,
+                                            end.row as u32,
+                                            end.column as u32,
+                                        ),
+                                        is_exported: true,
+                                        heritage: vec![],
+                                        type_annotation: None,
+                                        decorators: vec!["workflow_call.output".to_string()],
+                                        calls: vec![],
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Extract jobs map
         let jobs_block = mapping_value(top_mapping, "jobs", source).and_then(unwrap_block_mapping);
 
@@ -280,6 +316,34 @@ impl LanguageProvider for GitHubActionsProvider {
                                 alias: None,
                                 binding_kind: None,
                             });
+                        }
+                    }
+                }
+
+                // Job-level `outputs:` → exported Property nodes named "<job>/<key>".
+                // These are consumed by downstream jobs via `needs.<job>.outputs.<key>`.
+                if let Some(jm) = job_val_mapping {
+                    if let Some(outputs_val) = mapping_value(jm, "outputs", source) {
+                        if let Some(outputs_mapping) = unwrap_block_mapping(outputs_val) {
+                            for (out_key, out_val_node) in mapping_pairs(outputs_mapping, source) {
+                                let ostart = out_val_node.start_position();
+                                let oend = out_val_node.end_position();
+                                nodes.push(RawNode {
+                                    name: format!("{}/{}", job_key, out_key),
+                                    kind: NodeKind::Property,
+                                    span: (
+                                        ostart.row as u32,
+                                        ostart.column as u32,
+                                        oend.row as u32,
+                                        oend.column as u32,
+                                    ),
+                                    is_exported: true,
+                                    heritage: vec![],
+                                    type_annotation: None,
+                                    decorators: vec!["job.output".to_string()],
+                                    calls: vec![],
+                                });
+                            }
                         }
                     }
                 }

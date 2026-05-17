@@ -64,10 +64,31 @@ impl LanguageProvider for MoveProvider {
         let idx_import_name = self.query.capture_index_for_name("import.name");
         let idx_import_source = self.query.capture_index_for_name("import.source");
 
+        // Functions: exported when the `function_definition` node has a named `modifier`
+        // child (tree-sitter-move grammar: `modifier` carries `public`, `public(friend)`,
+        // `public(package)`, or `entry`). Walk children once per match — no extra capture needed.
+        //
+        // Structs: the grammar has no `modifier` child on `struct_definition`; detect
+        // "public struct …" via source-text prefix scan instead.
+        let has_modifier_child = |node: tree_sitter::Node| -> bool {
+            let mut cursor = node.walk();
+            let has = node
+                .named_children(&mut cursor)
+                .any(|child| child.kind() == "modifier");
+            has
+        };
+        let is_pub_prefix = |node: tree_sitter::Node| -> bool {
+            source
+                .get(node.start_byte()..node.start_byte().saturating_add(7))
+                .map(|s| s == b"public ")
+                .unwrap_or(false)
+        };
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
             let mut root_span_node = None;
+            let mut is_struct_root = false;
             let mut import_name = None;
             let mut import_src = None;
 
@@ -87,6 +108,9 @@ impl LanguageProvider for MoveProvider {
                 } else if [idx_class, idx_function, idx_struct, idx_const].contains(&Some(cap_idx))
                 {
                     root_span_node = Some(cap.node);
+                    if Some(cap_idx) == idx_struct {
+                        is_struct_root = true;
+                    }
                 } else if Some(cap_idx) == idx_import_name {
                     import_name = Some(cap.node);
                 } else if Some(cap_idx) == idx_import_source {
@@ -98,6 +122,14 @@ impl LanguageProvider for MoveProvider {
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let start = root.start_position();
                     let end = root.end_position();
+                    // Functions: exported when the AST node has a named `modifier` child.
+                    // Structs: no `modifier` child in the grammar; fall back to source-text
+                    // prefix scan for "public ".
+                    let is_exported = if is_struct_root {
+                        is_pub_prefix(root)
+                    } else {
+                        has_modifier_child(root)
+                    };
                     nodes.push(RawNode {
                         name: name_str.to_string(),
                         kind: k,
@@ -107,7 +139,7 @@ impl LanguageProvider for MoveProvider {
                             end.row as u32,
                             end.column as u32,
                         ),
-                        is_exported: false,
+                        is_exported,
                         heritage: Vec::new(),
                         type_annotation: None,
                         decorators: Vec::new(),

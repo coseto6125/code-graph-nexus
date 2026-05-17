@@ -108,9 +108,19 @@ impl LanguageProvider for CrystalProvider {
                     } else {
                         Vec::new()
                     };
+                    // Crystal visibility: inline `private`/`protected` modifier
+                    // appears as a sibling node immediately before the definition.
+                    // The simplest reliable check is to look at the parent node's
+                    // source bytes up to the definition's start for the keyword.
+                    let is_exported = {
+                        let before = &source[..root.start_byte()];
+                        // Walk backwards over whitespace/newlines, then check keyword.
+                        let trimmed = before.trim_ascii_end();
+                        !(trimmed.ends_with(b"private") || trimmed.ends_with(b"protected"))
+                    };
                     nodes.push(RawNode {
                         decorators: Vec::new(),
-                        is_exported: true,
+                        is_exported,
                         heritage: heritage_for_emit,
                         type_annotation: None,
                         name: name_str.to_string(),

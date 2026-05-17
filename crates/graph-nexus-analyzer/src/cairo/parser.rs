@@ -64,6 +64,19 @@ impl LanguageProvider for CairoProvider {
         let idx_const = self.query.capture_index_for_name("const");
         let idx_import = self.query.capture_index_for_name("import");
 
+        // The vendored tree-sitter-cairo grammar (v0.0.1) doesn't tokenize `pub`
+        // at all — so the declaration node's start_byte begins at `fn`/`struct`/
+        // etc., not at `pub`. Detect the modifier by scanning a small window of
+        // bytes *preceding* the declaration and checking the trimmed tail.
+        let is_pub_prefix = |node: tree_sitter::Node| -> bool {
+            let start = node.start_byte();
+            let window_start = start.saturating_sub(8);
+            source
+                .get(window_start..start)
+                .map(|s| s.trim_ascii_end().ends_with(b"pub"))
+                .unwrap_or(false)
+        };
+
         while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut kind = None;
@@ -109,7 +122,7 @@ impl LanguageProvider for CairoProvider {
                     let end = root.end_position();
                     nodes.push(RawNode {
                         decorators: vec![],
-                        is_exported: true,
+                        is_exported: is_pub_prefix(root),
                         heritage,
                         type_annotation: None,
                         name: name_str.to_string(),
