@@ -51,13 +51,6 @@ fn resolve_l2_dirname(repo_root: &Path, sha_hex: &str) -> Option<String> {
     idx.find(&sha_bytes).map(|s| s.to_string())
 }
 
-fn sha_hex_to_bytes(hex: &str) -> Option<[u8; 20]> {
-    if hex.len() != 40 {
-        return None;
-    }
-    let mut out = [0u8; 20];
-    for i in 0..20 {
-        out[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
-    }
-    Some(out)
+fn sha_hex_to_bytes(s: &str) -> Option<[u8; 20]> {
+    hex::decode(s).ok()?.try_into().ok()
 }
