@@ -147,10 +147,12 @@ impl<'a> Resolver<'a> {
         let mut results = Vec::new();
         let source_file_str = source_file.to_string_lossy();
 
-        // Tier 1: Try SameFile
+        // Tier 1: Try SameFile (kind-aware so a property named `Foo` doesn't
+        // win the lookup for a constructor call `Foo()` in the same file —
+        // see `SymbolTable::file_scoped` doc).
         if let Some(node_id) = self
             .symbol_table
-            .lookup_in_file(&source_file_str, symbol_name)
+            .lookup_in_file_with_kind(&source_file_str, symbol_name, target)
         {
             results.push((node_id, ResolutionTier::SameFile.base_confidence()));
             self.record(
@@ -186,7 +188,11 @@ impl<'a> Resolver<'a> {
                     source_file,
                     &import.source,
                     &self.path_aliases,
-                    |candidate| match self.symbol_table.lookup_in_file(candidate, exported_name) {
+                    |candidate| match self.symbol_table.lookup_in_file_with_kind(
+                        candidate,
+                        exported_name,
+                        target,
+                    ) {
                         Some(id) => {
                             hit = Some(id);
                             false // stop enumerating
@@ -235,7 +241,9 @@ impl<'a> Resolver<'a> {
         if let Some((qualifier, member)) = split_qualifier(symbol_name) {
             let hit = self
                 .resolve_qualifier_file(source_file, qualifier, raw_imports)
-                .and_then(|qf| self.symbol_table.lookup_in_file(&qf, member));
+                .and_then(|qf| {
+                    self.symbol_table.lookup_in_file_with_kind(&qf, member, target)
+                });
             if let Some(node_id) = hit {
                 let conf = ResolutionTier::QualifierScoped.base_confidence();
                 results.push((node_id, conf));
@@ -273,7 +281,10 @@ impl<'a> Resolver<'a> {
         if !caller_heritage.is_empty() {
             for base in caller_heritage {
                 if let Some(qf) = self.resolve_qualifier_file(source_file, base, raw_imports) {
-                    if let Some(node_id) = self.symbol_table.lookup_in_file(&qf, symbol_name) {
+                    if let Some(node_id) = self
+                        .symbol_table
+                        .lookup_in_file_with_kind(&qf, symbol_name, target)
+                    {
                         let conf = ResolutionTier::HeritageScoped.base_confidence();
                         results.push((node_id, conf));
                         self.record(
@@ -556,11 +567,14 @@ impl<'a> Resolver<'a> {
     ) -> Option<String> {
         let source_file_str = source_file.to_string_lossy();
 
-        // Tier 1: same-file qualifier definition.
-        if let Some(id) = self
-            .symbol_table
-            .lookup_in_file(&source_file_str, qualifier)
-        {
+        // Tier 1: same-file qualifier definition. Qualifiers are class /
+        // interface names, so filter to Type here — avoids a property
+        // named `Logger` winning over `class Logger` in the same file.
+        if let Some(id) = self.symbol_table.lookup_in_file_with_kind(
+            &source_file_str,
+            qualifier,
+            ResolveTarget::Type,
+        ) {
             return self.symbol_table.file_of(id).map(str::to_string);
         }
 
@@ -584,7 +598,7 @@ impl<'a> Resolver<'a> {
                 |candidate| {
                     if self
                         .symbol_table
-                        .lookup_in_file(candidate, exported)
+                        .lookup_in_file_with_kind(candidate, exported, ResolveTarget::Type)
                         .is_some()
                     {
                         hit = Some(candidate.to_string());
@@ -811,10 +825,12 @@ mod tests {
     }
 
     #[test]
-    fn tier1_same_file_still_wins() {
-        // SameFile resolution unaffected by kind filter — Variable in same
-        // file beats global resolution path. Pins that the fix only changes
-        // Tier-3 semantics.
+    fn tier1_same_file_kind_filters_out_non_callable() {
+        // SameFile is now kind-aware: a Variable named `helper` in the same
+        // file no longer "wins" for a Callable target — it would yield the
+        // semantically-nonsense `Calls -> Variable` edge that PR #71 round-3
+        // set out to remove. Falls through to Tier-3 Global, which picks
+        // up the Function in b.rs (unique under the Callable predicate).
         let st = st_with(&[
             ("a.rs", "helper", NodeKind::Variable),
             ("b.rs", "helper", NodeKind::Function),
@@ -826,7 +842,7 @@ mod tests {
             &[],
             ResolveTarget::Callable,
         );
-        assert_eq!(out, vec![(0, ResolutionTier::SameFile.base_confidence())]);
+        assert_eq!(out, vec![(1, ResolutionTier::Global.base_confidence())]);
     }
 
     // ── Layer-1 barriers (language + vendor) ────────────────────────────────
@@ -1130,12 +1146,13 @@ mod tests {
     }
 
     #[test]
-    fn tier2_5_member_kind_unconstrained_within_qualifier_file() {
-        // Inside the qualifier's file we lookup by name only — no kind
-        // filter. A class method, a free function, or even a const at the
-        // same name in that file should all be reachable. This mirrors what
-        // a programmer expects: `A::THING` means "whatever `THING` means in
-        // A's file", not "THING constrained to Callable kinds".
+    fn tier2_5_member_kind_filtered_inside_qualifier_file() {
+        // PR #71 round-3 flipped Tier 2.5 to kind-aware lookup (the
+        // previous "prefer recall" stance was producing `Calls -> Const`
+        // and `Calls -> Variable` edges that have no operational meaning).
+        // `A::FLAG` requesting Callable no longer resolves to the Const —
+        // it falls through to Unresolved (Tier 3 Global filters on
+        // Callable too, and no Callable named FLAG exists).
         let st = st_with(&[
             ("a.rs", "A", NodeKind::Class),
             ("a.rs", "FLAG", NodeKind::Const),
@@ -1147,14 +1164,10 @@ mod tests {
             &[],
             ResolveTarget::Callable,
         );
-        // FLAG is a Const — it's still found because lookup_in_file is kind-
-        // agnostic. The caller chose to ask for Callable; if they want strict
-        // kind enforcement after Tier 2.5 they can filter downstream. For
-        // now: prefer recall here, since the qualifier already scopes the
-        // lookup tightly.
-        assert_eq!(
-            out,
-            vec![(1, ResolutionTier::QualifierScoped.base_confidence())]
+        assert!(
+            out.is_empty(),
+            "FLAG is a Const, must not surface as a Callable target; got {:?}",
+            out
         );
     }
 
