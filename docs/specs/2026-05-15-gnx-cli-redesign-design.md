@@ -52,8 +52,6 @@ Commands:
   coverage   Registry + repo health (indexed repos, freshness, frameworks,
              blind spots, contracts summary)
   routes     List HTTP routes; with path, show handler + full caller chain
-  scan       Verify a file's symbol references exist; suggests near-matches
-             for missing
   contracts  Cross-repo API contracts inventory (producer ↔ consumer matched)
 
 Options:
@@ -327,7 +325,7 @@ Not in any `--help` output, but still runnable:
 
 ## 5. Auto-Ensure Index
 
-Agent CLI does not expose `index` as an explicit command. Instead, any query command (inspect / search / impact / cypher / coverage / routes / scan / contracts) follows this protocol:
+Agent CLI does not expose `index` as an explicit command. Instead, any query command (inspect / search / impact / cypher / coverage / routes / contracts) follows this protocol:
 
 ```
 1. Resolve --repo selector → repo path(s).
@@ -383,7 +381,6 @@ Forms accepted:
 | `rename` | ✗ | Modifies source; single-repo per invocation |
 | `coverage` | ✓ | Aggregated for groups |
 | `routes` | ✓ | Cross-repo route inventory |
-| `scan` | ✗ | File is in one repo |
 | `contracts` | ✓ | Core use case |
 
 ---
@@ -515,7 +512,7 @@ RepoEntry {
 
 Dropped (folded or removed): `analyze` (→ `admin index`), `analyze-here` (→ auto-ensure / `admin index .`), `register`, `unregister`/`remove`, `index` (recovery, → registry self-heals via `admin index`), `clean` (→ `admin drop`), `init` (→ `admin install-hook`), `list` (→ `coverage`), `summarize` (→ `coverage`), `doctor` (→ `coverage`), `status` (→ `coverage` + auto stale warnings), `route-map` + `api-impact` (→ `routes`), `detect-changes` (→ `impact --since`), `cluster`, `process`, `multi_query` (→ `search` multi-repo), `context` (→ `inspect`), `query` (→ `search`). `tool-map` was initially folded into `coverage --externals` but later restored as a standalone command — its per-callsite binding analysis is too granular for a health summary.
 
-Added: `scan`, `contracts`, nested `admin group add/remove`, multi-group `RepoEntry.groups`, auto-ensure indexing, server-side rename verification, hybrid search modes.
+Added: `contracts`, nested `admin group add/remove`, multi-group `RepoEntry.groups`, auto-ensure indexing, server-side rename verification, hybrid search modes. (`scan` was added in this redesign and later removed in the 2026-05-17 review-aggregator pivot — see `docs/feat/2026-05-17-gnx-review-spec.md`.)
 
 ---
 
@@ -523,13 +520,11 @@ Added: `scan`, `contracts`, nested `admin group add/remove`, multi-group `RepoEn
 
 1. **`coverage` without `--repo`**: should it report on every registered repo (potentially slow with N repos) or on `cwd` only with a hint? Current spec says registry-level overview; refine during implementation.
 
-2. **`scan --strict` heuristic**: what counts as "uncertain"? Likely candidates: resolver tier-3 global matches (per recent eywa hint: "Cap Tier 3 global matching to unambiguous cases only when global_matches length is exactly one"). Spec leaves implementation latitude.
+2. **`auto` mode for search**: regex `^[A-Za-z0-9_]+$` is heuristic. If real-world inputs hit edge cases (e.g., `User_ID` slug treated as bm25 but user meant concept), revisit. Initial implementation: stick with regex; instrument to log auto-mode decisions for offline tuning.
 
-3. **`auto` mode for search**: regex `^[A-Za-z0-9_]+$` is heuristic. If real-world inputs hit edge cases (e.g., `User_ID` slug treated as bm25 but user meant concept), revisit. Initial implementation: stick with regex; instrument to log auto-mode decisions for offline tuning.
+3. **`impact --since` overlap with `git diff`**: should we mirror git's `..` / `...` ref syntax? Initial: `--since HEAD~1` (single ref means "compared to current HEAD"); add `--base..--head` later if needed.
 
-4. **`impact --since` overlap with `git diff`**: should we mirror git's `..` / `...` ref syntax? Initial: `--since HEAD~1` (single ref means "compared to current HEAD"); add `--base..--head` later if needed.
-
-5. **etoon vs TOON default**: §7.1 says server selects. Implementation decision: route through etoon as the universal serializer (per eywa hint: "all final output segments | etoon"), but suppress columnar layout for single-record outputs (auto-detect text mode).
+4. **etoon vs TOON default**: §7.1 says server selects. Implementation decision: route through etoon as the universal serializer (per eywa hint: "all final output segments | etoon"), but suppress columnar layout for single-record outputs (auto-detect text mode).
 
 ---
 
