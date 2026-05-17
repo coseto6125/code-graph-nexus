@@ -514,14 +514,17 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
 
 ### 新增
 
-- `crates/graph-nexus-core/src/session/state.rs` — `SessionState` enum + `classify()` + `StaleReason` + `InvalidateReport`
-- `crates/graph-nexus-cli/src/build/force.rs` — `force_rebuild_l2` orchestrator（call sites: invalidate_matching_l1 → drop L2 → reuse build_l2 internals）
+- `crates/graph-nexus-core/src/session/state.rs` — `SessionState` enum + `StaleReason`（pure types）
+- `crates/graph-nexus-cli/src/session/state.rs` — `classify()` function（needs `commit_lookup::CommitIndex`，故落 cli 而非 core）
+- `crates/graph-nexus-cli/src/build/force.rs` — `force_rebuild_l2` + `invalidate_matching_l1` + `InvalidateReport`（共用 build_l2 internal helpers）
+- `crates/graph-nexus-cli/src/commands/admin/sessions.rs` — `admin sessions list` subcommand（minimal: list only；reset/sweep 為 parent spec §11.2 後續）
 
 ### 修改
 
-- `crates/graph-nexus-core/src/session/mod.rs` — re-export `SessionState`
+- `crates/graph-nexus-core/src/session/mod.rs` — re-export `SessionState` + `StaleReason`
+- `crates/graph-nexus-cli/src/session/mod.rs` — re-export `state::classify`
+- `crates/graph-nexus-cli/src/commands/admin/mod.rs` — `AdminCommands` 加 `Sessions` variant
 - `crates/graph-nexus-cli/src/commands/admin/index.rs` — 刪除 `no_cache / embeddings / drop_embeddings` 欄 + warn-no-op 區塊；`run` 改 match (force, commit_dir) 三分支
-- `crates/graph-nexus-cli/src/commands/admin/sessions.rs` — `list` 加 STATE 欄；走 `SessionState::classify`
 - `crates/graph-nexus-cli/src/engine.rs` — `Engine::open` 改走 `SessionState::classify` + `GraphView` enum dispatch
 - `crates/graph-nexus-cli/src/build/orchestrator.rs` — `build_l2` 簽名不變；`force_rebuild_l2` 共用 internal helpers (source resolution, analyzer, atomic publish)
 - `crates/graph-nexus-cli/src/build/mod.rs` — re-export `force_rebuild_l2`
