@@ -423,6 +423,110 @@ export function test_caller() {
     );
 }
 
+#[test]
+fn inspect_impact_upstream_excludes_test_callers_by_default() {
+    // `impact_upstream_1hop` is a sibling channel to `incoming` and must apply
+    // the same `--include_tests` filter; otherwise the LLM consumer sees
+    // contradictory blast-radius (empty incoming, populated impact) for any
+    // function whose only callers live under `tests/`.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write(
+        repo,
+        "src/lib.ts",
+        "export function target_fn() { return 1; }\n",
+    );
+    write(
+        repo,
+        "tests/lib.test.ts",
+        r#"
+import { target_fn } from '../src/lib';
+
+export function test_caller() {
+    return target_fn();
+}
+"#,
+    );
+    init_and_analyze(repo);
+
+    let default = run_json(
+        repo,
+        &["inspect", "--name", "target_fn", "--format", "json"],
+    );
+    let upstream = default["impact_upstream_1hop"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for entry in &upstream {
+        let fp = entry["file"].as_str().unwrap_or("");
+        assert!(
+            !fp.contains("tests/") && !fp.contains(".test."),
+            "default impact_upstream_1hop must drop test callers, got {entry}"
+        );
+    }
+
+    let with_tests = run_json(
+        repo,
+        &[
+            "inspect",
+            "--name",
+            "target_fn",
+            "--include_tests",
+            "--format",
+            "json",
+        ],
+    );
+    let with_upstream = with_tests["impact_upstream_1hop"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        with_upstream.len() > upstream.len(),
+        "--include_tests should grow impact_upstream_1hop. default={} with_tests={}",
+        upstream.len(),
+        with_upstream.len()
+    );
+}
+
+#[test]
+fn inspect_impact_upstream_excludes_file_kind_sources() {
+    // File-kind nodes hold (File)-[:Imports]->(symbol) edges; treating them
+    // as upstream "callers" leaks file basenames into a list the LLM reads as
+    // "who depends on this function". Impact must surface only symbol-level
+    // callers (Function / Method / Constructor / Class).
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write(
+        repo,
+        "src/lib.ts",
+        "export function target_fn() { return 1; }\n",
+    );
+    // `consumer.ts` imports target_fn but never calls it from inside a function
+    // body — the Imports edge from the File node is the only incoming edge.
+    write(
+        repo,
+        "src/consumer.ts",
+        "import { target_fn } from './lib';\nexport const ref = target_fn;\n",
+    );
+    init_and_analyze(repo);
+
+    let result = run_json(
+        repo,
+        &["inspect", "--name", "target_fn", "--format", "json"],
+    );
+    let upstream = result["impact_upstream_1hop"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for entry in &upstream {
+        let kind = entry["kind"].as_str().unwrap_or("");
+        assert_ne!(
+            kind, "File",
+            "impact_upstream_1hop must not surface File-kind nodes: {entry}"
+        );
+    }
+}
+
 // ── New tests for Task 2.1 composition requirements ──
 
 #[test]

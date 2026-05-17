@@ -173,8 +173,11 @@ fn build_inspect_block(
         })
         .collect();
 
-    // 1-hop upstream impact: direct callers/importers.
-    let upstream_1hop = bfs_upstream_1hop(graph, node_idx);
+    // 1-hop upstream impact: direct callers. Reuses the same `edge_keeps`
+    // policy as `incoming` so the two channels can't drift — empty
+    // `incoming` + populated `impact_upstream_1hop` previously contradicted
+    // each other for any function whose only callers lived under `tests/`.
+    let upstream_1hop = bfs_upstream_1hop(graph, node_idx, &edge_keeps);
 
     // Class-only derived view: flatten outgoing HasMethod / HasProperty edges
     // into compact member lists. Kept per-entry `kind` so callers can still
@@ -235,9 +238,22 @@ fn collect_contained_members(
     (methods, properties)
 }
 
-/// Collect direct callers/importers of `node_idx` (depth=1 upstream).
+/// Collect direct symbol-level callers of `node_idx` (depth=1 upstream).
 /// Returns a compact list of `{name, kind, file}` records.
-fn bfs_upstream_1hop(graph: &ArchivedZeroCopyGraph, node_idx: usize) -> Vec<serde_json::Value> {
+///
+/// File-kind sources are skipped: `(File)-[:Imports]->(symbol)` edges are
+/// module-level dependencies, not call sites, and surfacing them as
+/// "upstream callers" misleads an LLM consumer that asked "who depends on
+/// this function". `edge_keeps` is the same closure applied to `incoming`
+/// so the two channels expose the same filtered view of the in-edges.
+fn bfs_upstream_1hop<F>(
+    graph: &ArchivedZeroCopyGraph,
+    node_idx: usize,
+    edge_keeps: &F,
+) -> Vec<serde_json::Value>
+where
+    F: Fn(&str, &str, &str) -> bool,
+{
     let mut visited = HashSet::new();
     visited.insert(node_idx);
 
@@ -249,6 +265,20 @@ fn bfs_upstream_1hop(graph: &ArchivedZeroCopyGraph, node_idx: usize) -> Vec<serd
         let edge_idx = graph.in_edge_idx[i].to_native() as usize;
         let edge = &graph.edges[edge_idx];
         let src_idx = edge.source.to_native() as usize;
+        let source_node = &graph.nodes[src_idx];
+        if matches!(
+            source_node.kind,
+            graph_nexus_core::graph::ArchivedNodeKind::File
+        ) {
+            continue;
+        }
+        let source_file = &graph.files[source_node.file_idx.to_native() as usize];
+        let source_file_path = source_file.path.resolve(&graph.string_pool);
+        let source_kind = kind_to_str(&source_node.kind);
+        let rel_str = rel_to_str(&edge.rel_type);
+        if !edge_keeps(source_kind, source_file_path, rel_str) {
+            continue;
+        }
         if visited.insert(src_idx) {
             queue.push_back(src_idx);
         }
