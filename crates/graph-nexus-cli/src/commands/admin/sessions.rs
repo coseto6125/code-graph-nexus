@@ -110,8 +110,9 @@ fn collect_rows(home_gnx: &std::path::Path) -> io::Result<Vec<ListRow>> {
             continue;
         }
         // Scan CommitIndex once per repo; every session classification reuses it
-        // instead of re-walking commits/ per session.
-        let idx = crate::commit_lookup::CommitIndex::scan(&repo_dir.join("commits")).ok();
+        // instead of re-walking commits/ per session. scan_cached reuses across
+        // repeated `admin sessions list` calls when commits/ hasn't changed.
+        let idx = crate::commit_lookup::CommitIndex::scan_cached(&repo_dir.join("commits")).ok();
         for s_entry in fs::read_dir(&sessions_dir)? {
             let s_entry = s_entry?;
             let s_path = s_entry.path();

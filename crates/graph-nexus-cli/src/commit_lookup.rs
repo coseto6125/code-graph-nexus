@@ -2,15 +2,24 @@ use graph_nexus_core::registry::CommitDirName;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 /// In-memory `sha → dirname` map built by scanning a `<repo>/commits/` dir.
 /// Built lazily once per CLI invocation; `find()` is O(1).
 ///
 /// Unparseable dir names (garbage / partial `.building` / `.stale` leftovers)
 /// are skipped, not surfaced — they are recovery debris, not query targets.
+#[derive(Clone)]
 pub struct CommitIndex {
     by_sha: HashMap<[u8; 20], String>,
 }
+
+/// Process-level cache for `scan_cached`. Keyed by canonicalized commits dir
+/// path, valued by (mtime at scan time, index). mtime mismatch ⇒ rescan.
+/// Long-lived MCP servers hit this on every `Engine::open` / classify; the
+/// cache turns N readdir per query into N stat per query.
+static SCAN_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, CommitIndex)>>> = OnceLock::new();
 
 impl CommitIndex {
     pub fn scan(commits_dir: &Path) -> io::Result<Self> {
@@ -35,6 +44,33 @@ impl CommitIndex {
             by_sha.insert(parsed.sha, name);
         }
         Ok(Self { by_sha })
+    }
+
+    /// `scan` + process-level cache keyed on `commits_dir` mtime. Atomic
+    /// commit-dir publish (rename of `<dirname>.building/` → `<dirname>/`)
+    /// bumps parent `commits/` mtime, so a fresh scan happens on the very
+    /// next call after a publish. Cache miss / unavailable mtime falls
+    /// through to plain `scan`. Used by classify in hot-path query setup.
+    pub fn scan_cached(commits_dir: &Path) -> io::Result<Self> {
+        let Some(mtime) = std::fs::metadata(commits_dir)
+            .ok()
+            .and_then(|m| m.modified().ok())
+        else {
+            return Self::scan(commits_dir);
+        };
+        let cache = SCAN_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Ok(map) = cache.lock() {
+            if let Some((cached_mt, idx)) = map.get(commits_dir) {
+                if *cached_mt == mtime {
+                    return Ok(idx.clone());
+                }
+            }
+        }
+        let fresh = Self::scan(commits_dir)?;
+        if let Ok(mut map) = cache.lock() {
+            map.insert(commits_dir.to_path_buf(), (mtime, fresh.clone()));
+        }
+        Ok(fresh)
     }
 
     pub fn find(&self, sha: &[u8; 20]) -> Option<&str> {

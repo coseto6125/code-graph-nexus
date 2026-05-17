@@ -8,7 +8,10 @@ use std::fs;
 use std::path::Path;
 
 pub fn classify(repo_root: &Path, sid: &str) -> SessionState {
-    let idx = CommitIndex::scan(&repo_root.join("commits")).ok();
+    // scan_cached: per-process cache keyed on commits/ mtime. Cuts
+    // hot-path Engine::open from N readdir/query down to N stat/query
+    // when many queries hit the same SHA.
+    let idx = CommitIndex::scan_cached(&repo_root.join("commits")).ok();
     classify_with_index(repo_root, sid, idx.as_ref())
 }
 

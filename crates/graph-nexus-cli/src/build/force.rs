@@ -36,8 +36,9 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
     let sha8 = target_sha.get(..8).unwrap_or(target_sha);
     let mut report = InvalidateReport::default();
     // Hoist CommitIndex::scan once — classify_with_index reuses it across all
-    // sessions instead of re-walking commits/ per session.
-    let idx = CommitIndex::scan(&repo_root.join("commits")).ok();
+    // sessions instead of re-walking commits/ per session. scan_cached lets
+    // back-to-back --force invocations also skip the readdir.
+    let idx = CommitIndex::scan_cached(&repo_root.join("commits")).ok();
 
     for entry in fs::read_dir(&sessions_dir)? {
         let entry = entry?;
