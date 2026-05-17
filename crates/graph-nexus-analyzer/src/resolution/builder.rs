@@ -626,8 +626,8 @@ impl GraphBuilder {
         //
         // Pass 2 strategy: dump-disabled path (production hot path) runs in
         // parallel over `local_graphs` via rayon. Dump-enabled path (oracle
-        // harness, off by default) falls back to serial because
-        // `Resolver.decisions` is `RefCell<Vec<_>>` and not `Sync`.
+        // harness, off by default) stays serial so one resolver owns the
+        // decision stream and preserves deterministic dump order.
         //
         // To enable parallelism we pre-compute two artifacts serially before
         // the par_iter so the inner closure only needs read-only access to
@@ -685,10 +685,10 @@ impl GraphBuilder {
         let dump_enabled = self.resolver_dump_path.is_some();
         let path_aliases = self.path_aliases.clone();
 
-        // Resolver carries decisions: RefCell<...> which is `!Sync`, so when
-        // dumping is enabled we run the serial path. When disabled (the
-        // production case) we create a fresh `Resolver` *inside* each
-        // par_iter worker so each thread owns its own state.
+        // When dumping is enabled we run the serial path so a single resolver
+        // owns the decision stream. When disabled (the production case) we
+        // create a fresh `Resolver` *inside* each par_iter worker so each
+        // thread owns its own state.
         let mut resolver_for_dump = if dump_enabled {
             let mut r = Resolver::new(&symbol_table).with_path_aliases(path_aliases.clone());
             r.enable_dump();

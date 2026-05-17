@@ -72,7 +72,6 @@ pub fn emit_edges(
     let reason_named = string_pool.add("post_process:imports");
     let reason_module = string_pool.add("post_process:imports:module");
     let mut emitted = 0usize;
-    let mut dedupe: FxHashSet<(u32, u32)> = FxHashSet::default();
 
     // Pre-pass: build a basename → [(full_path, idx)] index so the
     // Step 3c/3d/3e/3f fallbacks can do O(1) hash lookup + bucket-local

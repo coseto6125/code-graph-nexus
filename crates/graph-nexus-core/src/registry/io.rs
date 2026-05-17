@@ -5,6 +5,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Atomic write: tmp → fsync → rename. The temp path is `<path>.tmp`
 /// (appended, not extension-replaced) so any failure mode — `Ctrl+C`,
@@ -46,16 +49,18 @@ pub fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()>
 /// derived artifacts) where a torn write on crash is acceptable — the
 /// next read either deletes the corrupt blob and reparses, or never
 /// finds it because the rename didn't reach disk. The tmp+rename still
-/// provides atomicity within a single process lifetime; we just don't
-/// pay the per-file fsync cost (~2ms each on typical SSDs, which
-/// dominates cold-index time when cache puts are O(10⁴)).
+/// provides atomicity within a single process lifetime; each writer uses
+/// a unique temp sibling so duplicate content-hash writes cannot trample
+/// each other's temp file. We just don't pay the per-file fsync cost
+/// (~2ms each on typical SSDs, which dominates cold-index time when
+/// cache puts are O(10⁴)).
 pub fn atomic_write_bytes_no_fsync(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
         }
     }
-    let tmp = tmp_sibling(path);
+    let tmp = unique_tmp_sibling(path);
     {
         let mut f = fs::OpenOptions::new()
             .create(true)
@@ -76,5 +81,15 @@ pub fn atomic_write_bytes_no_fsync(path: &Path, bytes: &[u8]) -> io::Result<()> 
 fn tmp_sibling(path: &Path) -> PathBuf {
     let mut buf: OsString = path.as_os_str().to_owned();
     buf.push(".tmp");
+    PathBuf::from(buf)
+}
+
+fn unique_tmp_sibling(path: &Path) -> PathBuf {
+    let mut buf: OsString = path.as_os_str().to_owned();
+    buf.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     PathBuf::from(buf)
 }

@@ -81,6 +81,9 @@ pub fn run_analyzer_for_paths(
             Ok(entry) => {
                 let path = entry.path();
                 if path.is_file() {
+                    if !should_analyze_path(path) {
+                        continue;
+                    }
                     if let Ok(metadata) = entry.metadata() {
                         if metadata.len() > MAX_FILE_SIZE {
                             skipped_large_files += 1;
@@ -88,40 +91,8 @@ pub fn run_analyzer_for_paths(
                         }
                     }
 
-                    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                    let is_dockerfile_basename = matches!(file_name, "Dockerfile" | "dockerfile");
-                    let is_compose_basename = matches!(
-                        file_name,
-                        "docker-compose.yml"
-                            | "docker-compose.yaml"
-                            | "compose.yml"
-                            | "compose.yaml"
-                    );
-                    let is_gha_workflow = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .is_some_and(|e| matches!(e, "yml" | "yaml"))
-                        && {
-                            let components: Vec<_> = path.components().collect();
-                            components.windows(2).any(|w| {
-                                w[0].as_os_str() == ".github" && w[1].as_os_str() == "workflows"
-                            })
-                        };
-                    if is_dockerfile_basename || is_compose_basename || is_gha_workflow {
-                        let rel_path = path.strip_prefix(src_root).unwrap_or(path);
-                        files_to_analyze.push((path.to_path_buf(), rel_path.to_path_buf()));
-                    } else if let Some(
-                        "ts" | "tsx" | "py" | "pyi" | "go" | "rs" | "java" | "js" | "jsx" | "mjs"
-                        | "cjs" | "php" | "rb" | "kt" | "kts" | "cs" | "c" | "h" | "cpp" | "hpp"
-                        | "cc" | "hh" | "cxx" | "hxx" | "swift" | "dart" | "md" | "txt" | "rst"
-                        | "sh" | "bash" | "lua" | "luau" | "cr" | "sol" | "move" | "dockerfile"
-                        | "nim" | "tf" | "tfvars" | "hcl" | "vy" | "sql" | "cairo" | "v" | "sv"
-                        | "vh" | "svh" | "zig",
-                    ) = path.extension().and_then(|s| s.to_str())
-                    {
-                        let rel_path = path.strip_prefix(src_root).unwrap_or(path);
-                        files_to_analyze.push((path.to_path_buf(), rel_path.to_path_buf()));
-                    }
+                    let rel_path = path.strip_prefix(src_root).unwrap_or(path);
+                    files_to_analyze.push((path.to_path_buf(), rel_path.to_path_buf()));
                 }
             }
             Err(err) => {
@@ -376,17 +347,7 @@ fn detect_needed_providers(files: &[(std::path::PathBuf, std::path::PathBuf)]) -
             n.docker_compose = true;
             continue;
         }
-        let is_gha = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| matches!(e, "yml" | "yaml"))
-            && {
-                let components: Vec<_> = path.components().collect();
-                components
-                    .windows(2)
-                    .any(|w| w[0].as_os_str() == ".github" && w[1].as_os_str() == "workflows")
-            };
-        if is_gha {
+        if is_github_actions_workflow(path) {
             n.github_actions = true;
             continue;
         }
@@ -424,4 +385,50 @@ fn detect_needed_providers(files: &[(std::path::PathBuf, std::path::PathBuf)]) -
         }
     }
     n
+}
+
+fn should_analyze_path(path: &std::path::Path) -> bool {
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if matches!(file_name, "Dockerfile" | "dockerfile") {
+        return true;
+    }
+    if matches!(
+        file_name,
+        "docker-compose.yml" | "docker-compose.yaml" | "compose.yml" | "compose.yaml"
+    ) {
+        return true;
+    }
+    if is_github_actions_workflow(path) {
+        return true;
+    }
+    matches!(
+        path.extension().and_then(|s| s.to_str()),
+        Some(
+            "ts" | "tsx" | "py" | "pyi" | "go" | "rs" | "java" | "js" | "jsx" | "mjs"
+            | "cjs" | "php" | "rb" | "kt" | "kts" | "cs" | "c" | "h" | "cpp" | "hpp"
+            | "cc" | "hh" | "cxx" | "hxx" | "swift" | "dart" | "md" | "txt" | "rst"
+            | "sh" | "bash" | "lua" | "luau" | "cr" | "sol" | "move" | "dockerfile"
+            | "nim" | "tf" | "tfvars" | "hcl" | "vy" | "sql" | "cairo" | "v" | "sv"
+            | "vh" | "svh" | "zig"
+        )
+    )
+}
+
+fn is_github_actions_workflow(path: &std::path::Path) -> bool {
+    if !path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e, "yml" | "yaml"))
+    {
+        return false;
+    }
+
+    let mut prev_is_github = false;
+    for component in path.components() {
+        if prev_is_github && component.as_os_str() == "workflows" {
+            return true;
+        }
+        prev_is_github = component.as_os_str() == ".github";
+    }
+    false
 }
