@@ -62,8 +62,12 @@ fn main() {
     let hex: String = digest.iter().map(|b| format!("{:02x}", b)).collect();
 
     println!("cargo:rustc-env=GRAPH_NEXUS_PARSER_FINGERPRINT={hex}");
-    // Visible in `cargo build -vv` / when this script's stdout is shown.
-    println!("cargo:warning=graph-nexus-analyzer parser fingerprint: {hex}");
+    println!("cargo:rerun-if-env-changed=GNX_BUILD_VERBOSE");
+    // Opt-in via `GNX_BUILD_VERBOSE=1`; env var above keeps the fingerprint
+    // available to runtime code regardless.
+    if std::env::var_os("GNX_BUILD_VERBOSE").is_some() {
+        println!("cargo:warning=graph-nexus-analyzer parser fingerprint: {hex}");
+    }
 }
 
 /// Recursively collect files under `dir` whose names match the parser set.
