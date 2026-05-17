@@ -255,6 +255,13 @@ impl SymbolTable {
         Self::default()
     }
 
+    /// Iterate every file path the table knows about. The resolver's Tier-4
+    /// module-file fallback uses this to find a file whose basename stem
+    /// matches a qualifier (`auto_ensure::ensure_fresh` → `auto_ensure.rs`).
+    pub fn files(&self) -> impl Iterator<Item = &str> {
+        self.file_scoped.keys().map(String::as_str)
+    }
+
     /// Registers a node with the given file path, node name, node ID, and kind.
     ///
     /// `node_id` must be the monotonic sequential index assigned by the builder

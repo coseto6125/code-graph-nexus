@@ -240,7 +240,7 @@ impl<'a> Resolver<'a> {
         // safe to fall back) from `std::...` (external, refuse).
         if let Some((qualifier, member)) = split_qualifier(symbol_name) {
             let hit = self
-                .resolve_qualifier_file(source_file, qualifier, raw_imports)
+                .resolve_qualifier_file(source_file, qualifier, raw_imports, Some(symbol_name))
                 .and_then(|qf| {
                     self.symbol_table.lookup_in_file_with_kind(&qf, member, target)
                 });
@@ -280,7 +280,7 @@ impl<'a> Resolver<'a> {
         // recorded by the parser, mirroring MRO precedence).
         if !caller_heritage.is_empty() {
             for base in caller_heritage {
-                if let Some(qf) = self.resolve_qualifier_file(source_file, base, raw_imports) {
+                if let Some(qf) = self.resolve_qualifier_file(source_file, base, raw_imports, None) {
                     if let Some(node_id) = self
                         .symbol_table
                         .lookup_in_file_with_kind(&qf, symbol_name, target)
@@ -375,6 +375,47 @@ impl<'a> Resolver<'a> {
 /// * `std::vec::Vec::new` → `Some(("Vec", "new"))`
 /// * `obj.method` → `Some(("obj", "method"))`
 /// * `foo` → `None`
+///
+/// Is the prefix preceding `qualifier` inside `full_callee` an "internal"
+/// path (empty, or `crate` / `self` / `super` chain)? Tier 4 only fires on
+/// calls where the qualifier names an internal module rather than the
+/// trailing segment of an extern crate / std module path. `std::fs::read`
+/// → preceding = `std` → returns false. `auto_ensure::ensure_fresh` →
+/// preceding = `` → returns true. `crate::auto_ensure::ensure_fresh` →
+/// preceding = `crate` → returns true.
+fn qualifier_prefix_is_internal(full_callee: &str, qualifier: &str) -> bool {
+    let Some(member_split) = full_callee.rfind("::").or_else(|| full_callee.rfind('.')) else {
+        return false;
+    };
+    let before_member = &full_callee[..member_split];
+    let preceding = before_member
+        .rsplit_once("::")
+        .or_else(|| before_member.rsplit_once('.'))
+        .map(|(p, q)| if q == qualifier { p } else { "" })
+        .unwrap_or("");
+    preceding.is_empty()
+        || preceding
+            .split("::")
+            .all(|s| matches!(s, "crate" | "self" | "super"))
+}
+
+/// Crate-root prefix of a normalized repo-relative path. The "crate root"
+/// here is the substring preceding the first `/src/` or `/tests/` segment,
+/// which is enough to keep a workspace member's files together (every Rust
+/// file in `crates/cli/src/...` shares prefix `crates/cli`) while keeping
+/// external paths (the std library is never indexed in a workspace, so its
+/// "prefix" never matches an indexed file's) outside the bucket.
+///
+/// Paths with no `/src/` or `/tests/` segment return `""` — single-crate
+/// repos at the repo root all share the empty prefix, so the Tier-4
+/// module-file fallback still fires for them.
+fn crate_root_prefix(path: &str) -> &str {
+    path.rsplit_once("/src/")
+        .or_else(|| path.rsplit_once("/tests/"))
+        .map(|(root, _)| root)
+        .unwrap_or("")
+}
+
 fn split_qualifier(name: &str) -> Option<(&str, &str)> {
     let colon_idx = name.rfind("::");
     let dot_idx = name.rfind('.');
@@ -564,6 +605,7 @@ impl<'a> Resolver<'a> {
         source_file: &Path,
         qualifier: &str,
         raw_imports: &[RawImport],
+        full_callee: Option<&str>,
     ) -> Option<String> {
         let source_file_str = source_file.to_string_lossy();
 
@@ -616,10 +658,57 @@ impl<'a> Resolver<'a> {
         // Tier 3: kind-filtered unique global. Language + vendor barriers
         // applied via FileMeta — the same defences as bare-name Tier 3.
         let caller_meta = FileMeta::from_path(&source_file_str);
-        let id =
+        if let Some(id) =
             self.symbol_table
-                .lookup_unique_global(qualifier, ResolveTarget::Type, caller_meta)?;
-        self.symbol_table.file_of(id).map(str::to_string)
+                .lookup_unique_global(qualifier, ResolveTarget::Type, caller_meta)
+        {
+            return self.symbol_table.file_of(id).map(str::to_string);
+        }
+
+        // Tier 4: module-file fallback. The qualifier didn't match any Type
+        // anywhere, but Rust / Python / similar languages let a *module name*
+        // act as a qualifier (`mod auto_ensure;` ↔ `auto_ensure.rs`, `import
+        // foo` ↔ `foo.py`). Walk the registered file paths and look for one
+        // whose stem matches the qualifier and lives in the caller's crate.
+        //
+        // Fires only from Tier 2.5 (qualified-call resolution) — heritage
+        // resolution passes `None` because parent class names should resolve
+        // as Types, not as module files.
+        //
+        // Two false-positive defences:
+        //
+        //   1. **Internal-prefix check** — the qualifier's preceding segments
+        //      must be empty (bare relative path), or be `crate`/`self`/`super`.
+        //      `std::fs::read` becomes ("fs", "read") after split_qualifier;
+        //      its preceding segment is `std` → external → declined.
+        //
+        //   2. **Same-crate prefix** — caller and candidate must share the
+        //      same `*/src/` (or `*/tests/`) ancestor. Defends single-crate
+        //      repos where the internal-prefix check alone would let a
+        //      `std::fs::read` call bind to a workspace `src/fs.rs` — the
+        //      preceding segment is `std` so check (1) handles that; check
+        //      (2) is the secondary defence if a future extern crate name
+        //      manages to slip past check (1).
+        let full = full_callee?;
+        if !qualifier_prefix_is_internal(full, qualifier) {
+            return None;
+        }
+        let caller_prefix = crate_root_prefix(&source_file_str);
+        let mut hit: Option<String> = None;
+        for fp in self.symbol_table.files() {
+            let stem = std::path::Path::new(fp).file_stem().and_then(|s| s.to_str());
+            if stem != Some(qualifier) {
+                continue;
+            }
+            if crate_root_prefix(fp) != caller_prefix {
+                continue;
+            }
+            if hit.is_some() {
+                return None;
+            }
+            hit = Some(fp.to_string());
+        }
+        hit
     }
 
     #[allow(clippy::too_many_arguments)]

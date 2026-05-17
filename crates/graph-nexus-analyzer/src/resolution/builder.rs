@@ -964,7 +964,7 @@ impl GraphBuilder {
         // dense invariant (`index.rs::register_node` debug_assert). File
         // nodes don't enter SymbolTable; they're metadata reachable only
         // via `file_node_idx` for module-level edges (Imports today).
-        for local_graph in &self.local_graphs {
+        for (i, local_graph) in self.local_graphs.iter().enumerate() {
             let path_str = local_graph.file_path.to_string_lossy().replace('\\', "/");
             let basename = std::path::Path::new(&path_str)
                 .file_name()
@@ -976,7 +976,12 @@ impl GraphBuilder {
             // `Node.file_idx` points into `files: Vec<File>`. Pass 1 pushed
             // `files` in the same `self.local_graphs` enumeration order, so
             // the i-th LocalGraph's File node references `files[i]`.
-            let node_file_idx = file_node_idx.len() as u32;
+            //
+            // Use the iteration index directly — an earlier `file_node_idx.len()`
+            // formulation silently lagged behind `i` when paths duplicated
+            // (HashMap insert overwrites instead of growing), pointing later
+            // File nodes at the wrong files[] entry.
+            let node_file_idx = i as u32;
             // `nodes.len()` is the authoritative index because Passes 1.5
             // (Routes), 1.6/2 (EntryPoint), and Pass 4 (Process) all push
             // into `nodes` AFTER Pass 1 without keeping `current_node_idx`
