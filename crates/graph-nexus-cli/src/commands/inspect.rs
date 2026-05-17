@@ -186,6 +186,7 @@ fn build_inspect_block(
             | graph_nexus_core::graph::ArchivedNodeKind::Struct
             | graph_nexus_core::graph::ArchivedNodeKind::Trait
             | graph_nexus_core::graph::ArchivedNodeKind::Interface
+            | graph_nexus_core::graph::ArchivedNodeKind::Enum
     ) {
         collect_contained_members(graph, node_idx)
     } else {

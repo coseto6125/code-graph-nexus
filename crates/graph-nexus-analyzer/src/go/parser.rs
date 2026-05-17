@@ -487,11 +487,12 @@ impl LanguageProvider for GoProvider {
 
         // Merge file-scope var candidates: only add names not already covered by
         // the typed `@var` path (which emits Variable nodes with type_annotation).
+        // Span check prevents suppressing package-level vars when a local `:=`
+        // shadows them by name — only skip when both name AND span match.
         for pending in file_var_pending {
-            if !nodes
-                .iter()
-                .any(|n| n.name == pending.name && n.kind == NodeKind::Variable)
-            {
+            if !nodes.iter().any(|n| {
+                n.name == pending.name && n.span == pending.span && n.kind == NodeKind::Variable
+            }) {
                 nodes.push(pending);
             }
         }

@@ -148,6 +148,39 @@ impl NodeKind {
             Self::Class | Self::Interface | Self::Struct | Self::Enum | Self::Typedef | Self::Trait
         )
     }
+
+    /// Static variant name. Used by Pass 1 UID construction (`"<Kind>:<path>:<name>"`)
+    /// where `write!(.., "{:?}", kind)` would otherwise go through `fmt`
+    /// dispatch per node (~300k on `.sample_repo`). Matches the variant
+    /// identifier exactly, so existing UID strings stay byte-stable.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "File",
+            Self::Function => "Function",
+            Self::Class => "Class",
+            Self::Method => "Method",
+            Self::Interface => "Interface",
+            Self::Constructor => "Constructor",
+            Self::Property => "Property",
+            Self::Variable => "Variable",
+            Self::Const => "Const",
+            Self::Import => "Import",
+            Self::Route => "Route",
+            Self::Process => "Process",
+            Self::Document => "Document",
+            Self::Section => "Section",
+            Self::EntryPoint => "EntryPoint",
+            Self::Struct => "Struct",
+            Self::Enum => "Enum",
+            Self::Typedef => "Typedef",
+            Self::Namespace => "Namespace",
+            Self::Module => "Module",
+            Self::Macro => "Macro",
+            Self::Annotation => "Annotation",
+            Self::Trait => "Trait",
+            Self::Impl => "Impl",
+        }
+    }
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]

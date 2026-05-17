@@ -107,9 +107,14 @@ impl LanguageProvider for SwiftProvider {
         let idx_property_name_pat = self.query.capture_index_for_name("property.name.pat");
         let idx_constructor = self.query.capture_index_for_name("constructor");
 
-        // Per (root_id, name_start_byte) dedup. Two query patterns fire for
-        // every property_declaration (typed + untyped alternatives); dedup
-        // collapses duplicate matches while keeping tuple-pattern names distinct.
+        // Per (root, name-byte-offset) dedup. tree-sitter-swift fires the
+        // same property_declaration match ~3-4× per declared name when the
+        // optional `(type_annotation ...)?` resolves as both present and
+        // absent alternatives, AND when nested `bound_identifier` re-binds
+        // through pattern matching. Tracking (root_id, name_start_byte)
+        // collapses true duplicates while keeping tuple-pattern
+        // declarations (`let (a, b) = …`) distinct (different name byte
+        // offsets within the same root).
         let mut seen_properties: std::collections::HashSet<(usize, usize)> =
             std::collections::HashSet::new();
 

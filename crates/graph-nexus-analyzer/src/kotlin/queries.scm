@@ -47,9 +47,11 @@
       (simple_identifier) @property.name)
   ) @property)
 
-; Variables — top-level val/var (direct child of source_file).
-; Broad capture; parser.rs post-filters to exclude class-body and function-local ones.
-(property_declaration
-  (variable_declaration
-    (simple_identifier) @variable.name)
-) @variable
+; Variables — top-level val/var (direct child of source_file only).
+; Anchored to source_file so class-body property_declarations don't produce
+; spurious duplicate Variable nodes alongside the @property capture above.
+(source_file
+  (property_declaration
+    (variable_declaration
+      (simple_identifier) @variable.name)
+  ) @variable)

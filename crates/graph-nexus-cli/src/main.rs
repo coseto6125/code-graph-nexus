@@ -1,6 +1,15 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 
+// mimalloc as global allocator: heavily parallel build path
+// (16-thread rayon par_iter on 22k file parses + cache puts + edge
+// emission) hammers the system allocator. mimalloc's per-thread
+// arenas dramatically reduce allocator lock contention vs glibc
+// malloc, especially for the many short-lived Vec/String allocations
+// in tree-sitter capture processing + post-process edge resolution.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod admin;
 mod auto_ensure;
 mod background;
@@ -87,7 +96,9 @@ enum Commands {
     /// Internal: Claude Code / Codex / Gemini agent hook dispatch.
     #[command(hide = true)]
     Hook(commands::hook::HookArgs),
-    /// Watch peer sessions for dirty events; inject into hook context.
+    /// Relay this session's dirty surface to peer inboxes (foreground / detached daemon).
+    /// MCP-hidden: lifecycle is owned by the session_start hook, not the LLM.
+    #[command(hide = true)]
     Watch(commands::watch::WatchArgs),
     /// Multi-session peer collaboration (status / diff / log / gc + Ƀ messaging)
     Peers(commands::peers::PeersArgs),

@@ -28,6 +28,7 @@ fn is_inline_class_member(node: tree_sitter::Node<'_>) -> bool {
     false
 }
 
+
 /// True if `name` is a C/C++ reserved keyword that tree-sitter sometimes
 /// mis-captures as an identifier during error-recovery from preprocessor
 /// macros. Legal C++ code never names a variable with these.
