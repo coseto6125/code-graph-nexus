@@ -1,15 +1,16 @@
 //! JavaScript `LangSpec` — capture-name → NodeKind table.
 //!
-//! Covers the symbol-producing captures in `queries.scm`.
-//! Route and framework captures (`route.*`, `express.*`, `hapi.*`) are
-//! metadata-only and handled directly in `parser.rs`.
+//! Covers the symbol-producing captures dispatched through the spec
+//! table. Route and framework captures (`route.*`, `express.*`,
+//! `hapi.*`) are metadata-only and handled directly in `parser.rs`.
 //!
-//! ### Variable handling
+//! ### `variable.name` is NOT in this table
 //!
-//! JS Variables (`@variable.name`) have special post-processing: arrow-function
-//! dedup, `const`/`let`/`var` kind split, and span dedup against already-emitted
-//! Function nodes. That logic stays in `parser.rs`; `variable.name` is listed
-//! here so the spec table is the complete source of truth for all symbol captures.
+//! JS Variables have arrow-function dedup, `const`/`let`/`var` kind split,
+//! and span-dedup against already-emitted Function nodes — `parser.rs`
+//! dispatches `@variable.name` via a dedicated `idx_variable_name` path
+//! ahead of the spec lookup. Listing it here would be misleading
+//! (the entry would never be consulted), so it's intentionally omitted.
 
 use graph_nexus_core::analyzer::lang_spec::LangSpec;
 use graph_nexus_core::graph::NodeKind;
@@ -23,10 +24,5 @@ impl LangSpec for JavaScriptSpec {
         "name.function" => NodeKind::Function,
         "name.class"    => NodeKind::Class,
         "name.method"   => NodeKind::Method,
-        "variable.name" => NodeKind::Variable,
     };
-
-    // JavaScript query patterns are not scope-anchored at query time for
-    // Variables, so runtime dedup logic in parser.rs handles that path.
-    // MODULE_SCOPED_CAPTURES gate is not used (default empty set from trait).
 }
