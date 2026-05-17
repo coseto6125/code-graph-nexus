@@ -44,12 +44,16 @@
   )
 ) @export
 
-;; Constants
-(lexical_declaration
-  (variable_declarator
-    name: (identifier) @const.name
-  )
-) @const
+;; Constants — module-level only. Anchored to direct children of `program`;
+;; function-body / block-scope `const x = …` declarations are intentionally
+;; dropped (they bloat Const counts without LLM-disambiguation value).
+;; The `export_statement` wrapper below already implies module scope.
+(program
+  (lexical_declaration
+    (variable_declarator
+      name: (identifier) @const.name
+    )
+  ) @const)
 
 (export_statement
   declaration: (lexical_declaration
@@ -59,12 +63,13 @@
   )
 ) @export
 
-;; Variables
-(variable_declaration
-  (variable_declarator
-    name: (identifier) @variable.name
-  )
-) @variable
+;; Variables — module-level only (parallel to `lexical_declaration` above).
+(program
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @variable.name
+    )
+  ) @variable)
 
 (export_statement
   declaration: (variable_declaration
