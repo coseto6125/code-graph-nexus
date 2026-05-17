@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::resolution::heuristics::ResolutionTier;
 use crate::resolution::index::{FileMeta, ResolveTarget, SymbolTable};
 use crate::resolution::path_aliases::PathAliases;
+use crate::rust::module_tree::RustWorkspaceModTree;
 
 pub type NodeId = u32;
 
@@ -31,6 +32,11 @@ pub enum DecisionTier {
     /// needing to inspect `alt_count`. Edge behaviour is unchanged — both
     /// outcomes emit no edge.
     AmbiguousGlobal,
+    /// Tier 3.5 — Rust workspace module-tree resolved the FQN path to a
+    /// concrete file and found the member there. Confidence 1.0; tagged
+    /// `reason: "module-tree"` so analytics can distinguish from Tier-4
+    /// heuristic edges (confidence 0.7).
+    ModuleTree,
     Unresolved,
 }
 
@@ -67,6 +73,13 @@ pub struct Resolver<'a> {
     /// `@/utils` maps to `src/utils` (then existing extension/index
     /// probing finishes the lookup).
     path_aliases: PathAliases,
+    /// Rust workspace module tree for Tier 3.5 FQN resolution.
+    /// `None` when not available (non-Rust repos, no Cargo.toml, build
+    /// failure). Shared across rayon workers — read-only after construction.
+    mod_tree: Option<&'a RustWorkspaceModTree>,
+    /// Workspace root path, used by Tier 3.5 to make absolute paths
+    /// repo-relative. `None` when `mod_tree` is `None`.
+    workspace_root: Option<std::path::PathBuf>,
 }
 
 impl<'a> Resolver<'a> {
@@ -76,6 +89,8 @@ impl<'a> Resolver<'a> {
             symbol_table,
             decisions: None,
             path_aliases: PathAliases::new(),
+            mod_tree: None,
+            workspace_root: None,
         }
     }
 
@@ -84,6 +99,17 @@ impl<'a> Resolver<'a> {
     /// Tier-2 specifier expansion.
     pub fn with_path_aliases(mut self, aliases: PathAliases) -> Self {
         self.path_aliases = aliases;
+        self
+    }
+
+    /// Attach the Rust workspace module tree for Tier 3.5 FQN resolution.
+    pub fn with_mod_tree(
+        mut self,
+        tree: &'a RustWorkspaceModTree,
+        workspace_root: std::path::PathBuf,
+    ) -> Self {
+        self.mod_tree = Some(tree);
+        self.workspace_root = Some(workspace_root);
         self
     }
 
@@ -258,6 +284,39 @@ impl<'a> Resolver<'a> {
                 );
                 return results;
             }
+
+            // Tier 3.5: Rust workspace module-tree FQN resolution.
+            //
+            // Fires when Tier 2.5 (qualifier-scoped) fails AND a Rust module
+            // tree is available. Handles `crate::a::b::fn` and
+            // `<crate_name>::a::b::fn` paths by walking the filesystem-backed
+            // mod tree instead of relying on the qualifier-as-Type heuristic.
+            //
+            // Only fires for callee strings with `::` — dot-separated callees
+            // are method calls (handled by heritage / Tier 2.5 via receiver
+            // types) not module-path FQNs.
+            if symbol_name.contains("::") {
+                if let Some(node_id) = self.try_module_tree_resolve(
+                    &source_file_str,
+                    symbol_name,
+                    member,
+                    target,
+                ) {
+                    const MT_CONF: f32 = 1.0;
+                    results.push((node_id, MT_CONF));
+                    self.record(
+                        &source_file_str,
+                        symbol_name,
+                        None,
+                        DecisionTier::ModuleTree,
+                        Some(node_id),
+                        0,
+                        Some(MT_CONF),
+                    );
+                    return results;
+                }
+            }
+
             self.record(
                 &source_file_str,
                 symbol_name,
@@ -705,6 +764,35 @@ impl<'a> Resolver<'a> {
             hit = Some(fp);
         }
         hit.map(str::to_string)
+    }
+
+    /// Tier 3.5: attempt module-tree FQN resolution for Rust qualified calls.
+    ///
+    /// `symbol_name` is the full callee string (e.g.
+    /// `"crate::build::orchestrator::build_l2"`).
+    /// `member` is its last `::` segment (the item name, same value that
+    /// `split_qualifier` already extracted for Tier 2.5).
+    ///
+    /// Returns the node id of the resolved target, or `None` if the module
+    /// tree is absent, the FQN doesn't resolve, or the member isn't found in
+    /// the resolved file.
+    fn try_module_tree_resolve(
+        &self,
+        source_file_str: &str,
+        symbol_name: &str,
+        member: &str,
+        target: ResolveTarget,
+    ) -> Option<NodeId> {
+        let tree = self.mod_tree?;
+        let workspace_root = self.workspace_root.as_ref()?;
+        let resolved = tree.resolve_fqn(symbol_name, source_file_str, workspace_root)?;
+        self.symbol_table
+            .lookup_in_file_with_kind(&resolved.file, &resolved.item_name, target)
+            .or_else(|| {
+                let bare = member.split('<').next().unwrap_or(member);
+                self.symbol_table
+                    .lookup_in_file_with_kind(&resolved.file, bare, target)
+            })
     }
 
     #[allow(clippy::too_many_arguments)]

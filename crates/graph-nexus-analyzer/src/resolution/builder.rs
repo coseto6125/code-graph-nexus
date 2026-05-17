@@ -706,12 +706,25 @@ impl GraphBuilder {
         let dump_enabled = self.resolver_dump_path.is_some();
         let path_aliases = self.path_aliases.clone();
 
+        // Build the Rust workspace module tree once before Pass 2. This is
+        // Tier 3.5: resolves `crate::a::b::fn` FQN calls to concrete files
+        // by walking the filesystem mod tree from each crate root. Gated on
+        // `repo_root` being set — test harnesses that don't set a repo root
+        // simply skip module-tree resolution.
+        let mod_tree_opt: Option<crate::rust::module_tree::RustWorkspaceModTree> =
+            self.repo_root.as_ref().map(|root| {
+                crate::rust::module_tree::RustWorkspaceModTree::build(root)
+            });
+
         // When dumping is enabled we run the serial path so a single resolver
         // owns the decision stream. When disabled (the production case) we
         // create a fresh `Resolver` *inside* each par_iter worker so each
         // thread owns its own state.
         let mut resolver_for_dump = if dump_enabled {
             let mut r = Resolver::new(&symbol_table).with_path_aliases(path_aliases.clone());
+            if let (Some(mt), Some(root)) = (mod_tree_opt.as_ref(), self.repo_root.as_ref()) {
+                r = r.with_mod_tree(mt, root.clone());
+            }
             r.enable_dump();
             Some(r)
         } else {
@@ -757,12 +770,20 @@ impl GraphBuilder {
             // borrows symbol_table, clones path_aliases). For ~14k files
             // on .sample_repo that's ~14k path_aliases.clone() calls
             // totalling a few ms — far below the parallelism gain.
+            //
+            // The mod_tree borrow is `&RustWorkspaceModTree` (read-only,
+            // `Sync`), so sharing it across rayon workers is safe.
+            let mod_tree_ref = mod_tree_opt.as_ref();
+            let workspace_root_ref = self.repo_root.as_ref();
             local_graphs
                 .par_iter()
                 .enumerate()
                 .flat_map_iter(|(graph_idx, local_graph)| {
-                    let resolver =
+                    let mut resolver =
                         Resolver::new(symbol_table_ref).with_path_aliases(path_aliases.clone());
+                    if let (Some(mt), Some(root)) = (mod_tree_ref, workspace_root_ref) {
+                        resolver = resolver.with_mod_tree(mt, root.clone());
+                    }
                     let start_idx = start_indices[graph_idx];
                     let mut local_edges: Vec<Edge> = Vec::new();
                     for (node_offset, raw_node) in local_graph.nodes.iter().enumerate() {
@@ -1551,7 +1572,8 @@ mod tests {
                 | DecisionTier::QualifierScoped
                 | DecisionTier::HeritageScoped
                 | DecisionTier::Global
-                | DecisionTier::AmbiguousGlobal => {
+                | DecisionTier::AmbiguousGlobal
+                | DecisionTier::ModuleTree => {
                     panic!(
                         "fixture should only produce ImportScoped/Unresolved, got {:?}",
                         original.tier
