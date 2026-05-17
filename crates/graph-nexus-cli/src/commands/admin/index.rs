@@ -141,143 +141,72 @@ pub fn run_analyzer_for_paths(
     if prof { eprintln!("prof step1.scan_files: {:.2}s ({} files)", t_step1.elapsed().as_secs_f32(), files_to_analyze.len()); }
     let t_step2 = std::time::Instant::now();
     // ── Step 2: Initialize pipeline with only needed providers ────────────
+    //
+    // Each provider's `::new()` builds a tree-sitter Query from a static
+    // `.scm` source (s-expression parse + bytecode generation). On a
+    // 14-lang corpus, ~24 providers × 5-15ms = ~280ms serial. Run them
+    // concurrently via rayon — Query::new is CPU-bound + thread-safe;
+    // construction order doesn't matter for runtime semantics (file
+    // routing is keyed on the lowercase `name()` string, not ordering).
     let needed = detect_needed_providers(&files_to_analyze);
-    let mut pipeline = AnalyzerPipeline::new();
-    if needed.typescript {
-        pipeline.register_provider(Box::new(
-            TypeScriptProvider::new().map_err(std::io::Error::other)?,
-        ));
+    type ProviderFactory =
+        Box<dyn FnOnce() -> std::io::Result<Box<dyn graph_nexus_core::analyzer::provider::LanguageProvider>> + Send>;
+    let mut factories: Vec<ProviderFactory> = Vec::new();
+    macro_rules! add {
+        ($flag:expr, $ctor:expr) => {
+            if $flag { factories.push(Box::new(|| {
+                $ctor.map(|p| Box::new(p) as Box<dyn graph_nexus_core::analyzer::provider::LanguageProvider>)
+                    .map_err(std::io::Error::other)
+            })); }
+        };
     }
-    if needed.python {
-        pipeline.register_provider(Box::new(
-            PythonProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.go {
-        pipeline.register_provider(Box::new(GoProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.rust {
-        pipeline.register_provider(Box::new(
-            RustProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.java {
-        pipeline.register_provider(Box::new(
-            JavaProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.javascript {
-        pipeline.register_provider(Box::new(
-            JavaScriptProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.php {
-        pipeline.register_provider(Box::new(PhpProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.ruby {
-        pipeline.register_provider(Box::new(
-            RubyProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.kotlin {
-        pipeline.register_provider(Box::new(
-            KotlinProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.csharp {
-        pipeline.register_provider(Box::new(
-            CSharpProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.c {
-        pipeline.register_provider(Box::new(CProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.cpp {
-        pipeline.register_provider(Box::new(CppProvider::new().map_err(std::io::Error::other)?));
-    }
+    add!(needed.typescript, TypeScriptProvider::new());
+    add!(needed.python, PythonProvider::new());
+    add!(needed.go, GoProvider::new());
+    add!(needed.rust, RustProvider::new());
+    add!(needed.java, JavaProvider::new());
+    add!(needed.javascript, JavaScriptProvider::new());
+    add!(needed.php, PhpProvider::new());
+    add!(needed.ruby, RubyProvider::new());
+    add!(needed.kotlin, KotlinProvider::new());
+    add!(needed.csharp, CSharpProvider::new());
+    add!(needed.c, CProvider::new());
+    add!(needed.cpp, CppProvider::new());
     if needed.swift {
-        pipeline.register_provider(Box::new(SwiftProvider::new().unwrap()));
+        // SwiftProvider::new returns anyhow::Result that the original site
+        // unwrapped — preserve that contract.
+        factories.push(Box::new(|| {
+            SwiftProvider::new()
+                .map(|p| Box::new(p) as Box<dyn graph_nexus_core::analyzer::provider::LanguageProvider>)
+                .map_err(std::io::Error::other)
+        }));
     }
-    if needed.dart {
-        pipeline.register_provider(Box::new(
-            DartProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.markdown {
-        pipeline.register_provider(Box::new(
-            MarkdownProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.yaml {
-        pipeline.register_provider(Box::new(
-            YamlProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.github_actions {
-        pipeline.register_provider(Box::new(
-            GitHubActionsProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.bash {
-        pipeline.register_provider(Box::new(
-            BashProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.lua {
-        pipeline.register_provider(Box::new(LuaProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.crystal {
-        pipeline.register_provider(Box::new(
-            CrystalProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.move_lang {
-        pipeline.register_provider(Box::new(
-            MoveProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.solidity {
-        pipeline.register_provider(Box::new(
-            SolidityProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.dockerfile {
-        pipeline.register_provider(Box::new(
-            DockerfileProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.nim {
-        pipeline.register_provider(Box::new(NimProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.hcl {
-        pipeline.register_provider(Box::new(HclProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.sql {
-        pipeline.register_provider(Box::new(SqlProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.vyper {
-        pipeline.register_provider(Box::new(
-            VyperProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.verilog {
-        pipeline.register_provider(Box::new(
-            VerilogProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.cairo {
-        pipeline.register_provider(Box::new(
-            CairoProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
-    if needed.zig {
-        pipeline.register_provider(Box::new(ZigProvider::new().map_err(std::io::Error::other)?));
-    }
-    if needed.docker_compose {
-        pipeline.register_provider(Box::new(
-            DockerComposeProvider::new().map_err(std::io::Error::other)?,
-        ));
-    }
+    add!(needed.dart, DartProvider::new());
+    add!(needed.markdown, MarkdownProvider::new());
+    add!(needed.yaml, YamlProvider::new());
+    add!(needed.github_actions, GitHubActionsProvider::new());
+    add!(needed.bash, BashProvider::new());
+    add!(needed.lua, LuaProvider::new());
+    add!(needed.crystal, CrystalProvider::new());
+    add!(needed.move_lang, MoveProvider::new());
+    add!(needed.solidity, SolidityProvider::new());
+    add!(needed.dockerfile, DockerfileProvider::new());
+    add!(needed.nim, NimProvider::new());
+    add!(needed.hcl, HclProvider::new());
+    add!(needed.sql, SqlProvider::new());
+    add!(needed.vyper, VyperProvider::new());
+    add!(needed.verilog, VerilogProvider::new());
+    add!(needed.cairo, CairoProvider::new());
+    add!(needed.zig, ZigProvider::new());
+    add!(needed.docker_compose, DockerComposeProvider::new());
+
+    use rayon::prelude::*;
+    let providers: Vec<Box<dyn graph_nexus_core::analyzer::provider::LanguageProvider>> = factories
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let mut pipeline = AnalyzerPipeline::new();
+    for p in providers { pipeline.register_provider(p); }
 
     if prof { eprintln!("prof step2.init_providers: {:.2}s", t_step2.elapsed().as_secs_f32()); }
     let t_step3 = std::time::Instant::now();
