@@ -48,7 +48,10 @@ fn assert_single_json(stdout: &[u8], event_label: &str) -> Value {
         "{event_label}: expected non-empty stdout when peer drain has data"
     );
     let s = String::from_utf8_lossy(stdout);
-    let json_lines = s.lines().filter(|l| l.trim_start().starts_with('{')).count();
+    let json_lines = s
+        .lines()
+        .filter(|l| l.trim_start().starts_with('{'))
+        .count();
     assert_eq!(
         json_lines, 1,
         "{event_label}: expected exactly one JSON object on stdout, got {json_lines}\nstdout:\n{s}"
@@ -102,6 +105,36 @@ fn user_prompt_submit_emits_single_json_when_peer_drain_has_data() {
         ctx.contains("ups-peer-msg"),
         "peer body missing from payload: {ctx}"
     );
+}
+
+/// True regression for B1: seed BOTH a `.rebuild-complete` marker AND a
+/// peer inbox entry so the handler builds two sections in one fire.
+/// With the pre-fix double-`println!` code, this would emit two JSON
+/// objects on stdout and `assert_single_json` would trip on json_lines==2.
+#[test]
+fn user_prompt_submit_coalesces_rebuild_marker_and_peer_drain() {
+    let tmp = tempdir().unwrap();
+    let sid = "single_emit_ups_dual";
+    let session_dir = tmp.path().join("sessions").join(sid);
+    seed_inbox(&session_dir, sid, "ups-dual-peer");
+
+    // gnx_state_dir() requires an absolute cwd with `<cwd>/.gnx/` present.
+    let cwd = tempdir().unwrap();
+    let state_dir = cwd.path().join(".gnx");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join(".rebuild-complete"), b"").unwrap();
+
+    let envelope = format!(r#"{{"cwd":"{}"}}"#, cwd.path().display());
+    let out = fire("user-prompt-submit", &envelope, sid, tmp.path());
+    let json = assert_single_json(&out, "UserPromptSubmit(dual)");
+    let ctx = json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        ctx.contains("rebuild complete"),
+        "rebuild section missing: {ctx}"
+    );
+    assert!(ctx.contains("ups-dual-peer"), "peer section missing: {ctx}");
 }
 
 #[test]

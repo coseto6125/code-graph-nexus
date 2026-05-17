@@ -45,18 +45,10 @@ pub fn handle(input: &HookInput) -> Result<(), GnxError> {
     // (un-indexed worktrees have nothing to watch). Fire-and-forget — failures
     // don't block session_start. `daemon::spawn_detached` calls setsid() so the
     // watcher survives terminal SIGHUP and the hook subprocess exiting.
-    if index_dir_opt.is_some()
-        && std::path::Path::new(&input.cwd)
-            .join(".gnx/auto-watch")
-            .exists()
-    {
+    if index_dir_opt.is_some() && Path::new(&input.cwd).join(".gnx/auto-watch").exists() {
         if let Ok(exe) = std::env::current_exe() {
-            let exe_str = exe.to_string_lossy().into_owned();
-            let _ = graph_nexus_core::daemon::spawn_detached(&[
-                exe_str.as_str(),
-                "watch",
-                "--start",
-            ]);
+            let exe_str = exe.to_string_lossy();
+            let _ = graph_nexus_core::daemon::spawn_detached(&[&exe_str, "watch", "--start"]);
         }
     }
     Ok(())
