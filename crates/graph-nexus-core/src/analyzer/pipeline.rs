@@ -1,7 +1,9 @@
 use super::provider::LanguageProvider;
 use super::types::LocalGraph;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// Skip source files larger than this cap. A 100 MiB minified JS bundle or a
 /// pathological generated source can otherwise materialise straight into
@@ -254,6 +256,16 @@ impl AnalyzerPipeline {
         let (tx, rx) = crossbeam_channel::unbounded::<LocalGraph>();
         let cache_lookup = &cache_lookup;
         let max_file_bytes = resolve_max_file_bytes();
+        let prof = std::env::var("GNX_PROF").is_ok();
+        // Per-provider (count, total_ns) when GNX_PROF=1. Mutex is fine —
+        // critical section is just a HashMap update, negligible vs the
+        // parse_file work it brackets.
+        let times_owned: Option<Mutex<HashMap<&'static str, (u64, u64)>>> = if prof {
+            Some(Mutex::new(HashMap::new()))
+        } else {
+            None
+        };
+        let times = times_owned.as_ref();
 
         // Producer (A): parse files concurrently
         rayon::scope(|s| {
@@ -299,7 +311,16 @@ impl AnalyzerPipeline {
                             Some(p) => p,
                             None => return,
                         };
-                        if let Ok(mut local_graph) = provider.parse_file(&rel_path, &source) {
+                        let t_parse = std::time::Instant::now();
+                        let result = provider.parse_file(&rel_path, &source);
+                        let parse_ns = t_parse.elapsed().as_nanos() as u64;
+                        if let Some(t) = times {
+                            let mut m = t.lock().unwrap();
+                            let entry = m.entry(provider.name()).or_insert((0u64, 0u64));
+                            entry.0 += 1;
+                            entry.1 += parse_ns;
+                        }
+                        if let Ok(mut local_graph) = result {
                             local_graph.content_hash = content_hash;
                             let _ = sender.send(local_graph);
                         }
@@ -311,6 +332,24 @@ impl AnalyzerPipeline {
         let mut all_graphs = Vec::new();
         while let Ok(graph) = rx.recv() {
             all_graphs.push(graph);
+        }
+
+        if let Some(t) = times_owned {
+            let m = t.into_inner().unwrap();
+            let mut rows: Vec<_> = m.into_iter().collect();
+            // Sort by total ns descending — surface the hot providers first.
+            rows.sort_by(|a, b| b.1.1.cmp(&a.1.1));
+            eprintln!("prof per-provider parse_file:");
+            for (name, (n, ns)) in rows {
+                let per_file_us = if n > 0 { ns / n / 1000 } else { 0 };
+                eprintln!(
+                    "  {:<16} n={:>6}  total={:>7.2}s  per-file={}µs",
+                    name,
+                    n,
+                    ns as f64 / 1e9,
+                    per_file_us
+                );
+            }
         }
 
         all_graphs

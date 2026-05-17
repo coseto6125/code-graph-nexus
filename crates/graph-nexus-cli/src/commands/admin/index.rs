@@ -67,6 +67,8 @@ pub fn run_analyzer_for_paths(
     out_dir: &std::path::Path,
     parse_cache_root: Option<&std::path::Path>,
 ) -> std::io::Result<usize> {
+    let prof = std::env::var("GNX_PROF").is_ok();
+    let t_step1 = std::time::Instant::now();
     // ── Step 1: Scan files ────────────────────────────────────────────────
     let mut files_to_analyze: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
     let mut skipped_large_files: u64 = 0;
@@ -136,6 +138,8 @@ pub fn run_analyzer_for_paths(
         );
     }
 
+    if prof { eprintln!("prof step1.scan_files: {:.2}s ({} files)", t_step1.elapsed().as_secs_f32(), files_to_analyze.len()); }
+    let t_step2 = std::time::Instant::now();
     // ── Step 2: Initialize pipeline with only needed providers ────────────
     let needed = detect_needed_providers(&files_to_analyze);
     let mut pipeline = AnalyzerPipeline::new();
@@ -275,6 +279,8 @@ pub fn run_analyzer_for_paths(
         ));
     }
 
+    if prof { eprintln!("prof step2.init_providers: {:.2}s", t_step2.elapsed().as_secs_f32()); }
+    let t_step3 = std::time::Instant::now();
     // ── Step 3: Analyze files (persistent per-file parse cache) ──────────
     let parse_cache = match parse_cache_root {
         Some(root) if std::env::var_os("GNX_NO_CACHE").is_none() => {
@@ -293,15 +299,24 @@ pub fn run_analyzer_for_paths(
         _ => None,
     };
     let cache_ref: Option<&crate::parse_cache::ParseCache> = parse_cache.as_ref();
+    let t_parse = std::time::Instant::now();
     let local_graphs = pipeline.analyze_with_cache(files_to_analyze, |_rel_path, hash| {
         cache_ref.and_then(|c| c.get(hash))
     });
+    if prof { eprintln!("prof step3a.parse_only: {:.2}s", t_parse.elapsed().as_secs_f32()); }
+    let t_cache_put = std::time::Instant::now();
     // Write back only fresh parses. Cache hits return the same blob we'd
     // re-serialize on put — the existence stat skips that round-trip for
-    // the (~99% on typical commits) hit fraction.
-    if let Some(cache) = cache_ref {
-        for g in &local_graphs {
-            if !cache.path_for(&g.content_hash).exists() {
+    // the (~99% on typical commits) hit fraction. Parallelize via
+    // `par_iter` (rayon picks `num_cpus` workers — no hardcoded thread
+    // count). Each `put` is now fsync-free (see `parse_cache::put` doc),
+    // so the workers don't serialize on disk-sync syscalls.
+    let put_count = if let Some(cache) = cache_ref {
+        use rayon::prelude::*;
+        local_graphs
+            .par_iter()
+            .filter(|g| !cache.path_for(&g.content_hash).exists())
+            .map(|g| {
                 if let Err(e) = cache.put(g) {
                     tracing::warn!(
                         "parse_cache: put failed for {:?}: {}",
@@ -309,10 +324,15 @@ pub fn run_analyzer_for_paths(
                         e
                     );
                 }
-            }
-        }
-    }
+            })
+            .count()
+    } else {
+        0
+    };
+    if prof { eprintln!("prof step3b.cache_puts: {:.2}s ({} puts)", t_cache_put.elapsed().as_secs_f32(), put_count); }
 
+    if prof { eprintln!("prof step3.analyze_files: {:.2}s", t_step3.elapsed().as_secs_f32()); }
+    let t_step4 = std::time::Instant::now();
     // ── Step 4: Build global graph ────────────────────────────────────────
     let aliases = crate::config_parser::parse_configs(src_root);
     let mut builder = GraphBuilder::new()
@@ -324,6 +344,8 @@ pub fn run_analyzer_for_paths(
     let global_graph = builder.build();
     let node_count = global_graph.nodes.len();
 
+    if prof { eprintln!("prof step4.build_global_graph: {:.2}s ({} nodes)", t_step4.elapsed().as_secs_f32(), node_count); }
+    let t_step5 = std::time::Instant::now();
     // ── Step 5: Write graph.bin (atomic) ──────────────────────────────────
     let bin_path = out_dir.join("graph.bin");
     let lock_path = bin_path.with_extension("lock");
@@ -332,6 +354,8 @@ pub fn run_analyzer_for_paths(
         rkyv::to_bytes::<rkyv::rancor::Error>(&global_graph).map_err(std::io::Error::other)?;
     graph_nexus_core::registry::atomic_write_bytes(&bin_path, &bytes)?;
 
+    if prof { eprintln!("prof step5.write_graph_bin: {:.2}s ({} bytes)", t_step5.elapsed().as_secs_f32(), bytes.len()); }
+    let t_step6 = std::time::Instant::now();
     // ── Step 6: Build tantivy full-text index (best-effort) ───────────────
     if let Err(e) = crate::search::TantivyEngine::build_index(out_dir, &global_graph) {
         tracing::warn!(
@@ -341,6 +365,7 @@ pub fn run_analyzer_for_paths(
         );
     }
 
+    if prof { eprintln!("prof step6.tantivy: {:.2}s", t_step6.elapsed().as_secs_f32()); }
     Ok(node_count)
 }
 

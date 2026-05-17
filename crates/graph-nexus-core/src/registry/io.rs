@@ -41,6 +41,34 @@ pub fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> io::Result<()>
     atomic_write_bytes(path, &bytes)
 }
 
+/// Same as [`atomic_write_bytes`] but skips `fsync` for write throughput.
+/// Use only for content-addressable / regeneratable data (parse cache,
+/// derived artifacts) where a torn write on crash is acceptable — the
+/// next read either deletes the corrupt blob and reparses, or never
+/// finds it because the rename didn't reach disk. The tmp+rename still
+/// provides atomicity within a single process lifetime; we just don't
+/// pay the per-file fsync cost (~2ms each on typical SSDs, which
+/// dominates cold-index time when cache puts are O(10⁴)).
+pub fn atomic_write_bytes_no_fsync(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp = tmp_sibling(path);
+    {
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&tmp)?;
+        f.write_all(bytes)?;
+        // Intentional: no sync_all. See doc comment.
+    }
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 /// Append `.tmp` to the path's last component. Unlike `with_extension`,
 /// this preserves the original extension — `graph.bin` → `graph.bin.tmp`
 /// (not `graph.tmp`) — so two writers targeting different file types in
