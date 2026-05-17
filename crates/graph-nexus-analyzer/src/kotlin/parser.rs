@@ -39,6 +39,44 @@ pub struct KotlinProvider {
     idx_variable: Option<u32>,
 }
 
+/// True when `func` is a Kotlin `fun` declared directly inside a class body
+/// (so its kind should be `Method`, not `Function`). Walks the tree-sitter
+/// parent chain `function_declaration → class_body → class_declaration`.
+fn is_class_method(func: tree_sitter::Node) -> bool {
+    let Some(parent) = func.parent() else {
+        return false;
+    };
+    if parent.kind() != "class_body" {
+        return false;
+    }
+    parent
+        .parent()
+        .is_some_and(|p| p.kind() == "class_declaration")
+}
+
+/// True when the `class_declaration` carries an `annotation` modifier — i.e.
+/// `annotation class Foo`. Distinct from plain `class Foo`.
+fn is_annotation_class(class_decl: tree_sitter::Node, source: &[u8]) -> bool {
+    for i in 0..class_decl.child_count() {
+        let Some(c) = class_decl.child(i) else { continue };
+        if c.kind() == "modifiers" {
+            for j in 0..c.child_count() {
+                let Some(m) = c.child(j) else { continue };
+                if m.kind() == "class_modifier" || m.kind() == "modifier" {
+                    if let Ok(t) =
+                        std::str::from_utf8(&source[m.start_byte()..m.end_byte()])
+                    {
+                        if t == "annotation" {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 impl KotlinProvider {
     pub fn new() -> anyhow::Result<Self> {
         let language = tree_sitter_kotlin::LANGUAGE.into();
@@ -194,6 +232,24 @@ impl LanguageProvider for KotlinProvider {
                     && root_span_node.is_none()
                 {
                     root_span_node = Some(cap.node);
+                }
+            }
+
+            // Demote `Function` to `Method` when the `function_declaration` is
+            // a direct child of `class_body`. Promote `Class` to `Annotation`
+            // when the `class_declaration` carries the `annotation` modifier.
+            // Mirrors the Python class-method fix landed in this PR (see
+            // `python/parser.rs::is_class_method`).
+            if let (Some(k_val), Some(root)) = (kind, root_span_node) {
+                let new_kind = match k_val {
+                    NodeKind::Function if is_class_method(root) => Some(NodeKind::Method),
+                    NodeKind::Class if is_annotation_class(root, source) => {
+                        Some(NodeKind::Annotation)
+                    }
+                    _ => None,
+                };
+                if let Some(nk) = new_kind {
+                    kind = Some(nk);
                 }
             }
 
