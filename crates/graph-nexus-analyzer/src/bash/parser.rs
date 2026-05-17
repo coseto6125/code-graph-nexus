@@ -64,14 +64,18 @@ impl LanguageProvider for BashProvider {
             let mut import_src = None;
 
             for cap in m.captures {
-                let cap_idx = cap.index as usize;
-                if let Some(k) = self.capture_kind_by_idx.get(cap_idx).and_then(|opt| *opt) {
-                    // This is a .name capture with a NodeKind
+                let cap_idx = cap.index;
+                if let Some(k_from_spec) = self
+                    .capture_kind_by_idx
+                    .get(cap_idx as usize)
+                    .copied()
+                    .flatten()
+                {
                     name_node = Some(cap.node);
-                    kind = Some(k);
-                } else if Some(cap_idx as u32) == idx_import_source {
+                    kind = Some(k_from_spec);
+                } else if Some(cap_idx) == idx_import_source {
                     import_src = Some(cap.node);
-                } else if Some(cap_idx as u32) == idx_function || Some(cap_idx as u32) == idx_const {
+                } else if Some(cap_idx) == idx_function || Some(cap_idx) == idx_const {
                     root_span_node = Some(cap.node);
                 }
             }
