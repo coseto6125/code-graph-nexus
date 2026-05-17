@@ -216,11 +216,15 @@ fn invalidate_matching_l1(
                 spawn_delayed_rm_rf(&stale_path, Duration::from_secs(2));
                 report.invalidated += 1;
             }
-            SessionState::Stale { .. } => {
+            SessionState::Stale { reason } if matches_sha_hint(repo_root, &sid, target_sha) => {
+                // 僅當該 Stale session 的原 base_sha 對應到 target 才計入 —
+                // 否則 unrelated repos / SHA 的 stale session 會混入 report，
+                // 對使用者形成噪音。matches_sha_hint 讀 raw session_meta；
+                // 讀失敗時保守地視為 in-scope（Err → true）。
+                tracing::warn!("stale session {sid} for sha={sha8}: {reason:?}");
                 report.stale_skipped += 1;
-                // GC 該管的，不在此處清
             }
-            _ => {}  // base_sha 不匹配，略過
+            _ => {}  // base_sha 不匹配 / Stale 但非此 SHA，略過
         }
     }
     Ok(report)

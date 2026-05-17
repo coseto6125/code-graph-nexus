@@ -25,7 +25,7 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
     if !sessions_dir.exists() {
         return Ok(InvalidateReport::default());
     }
-    let sha8 = &target_sha[..8];
+    let sha8 = target_sha.get(..8).unwrap_or(target_sha);
     let mut report = InvalidateReport::default();
 
     for entry in fs::read_dir(&sessions_dir)? {
