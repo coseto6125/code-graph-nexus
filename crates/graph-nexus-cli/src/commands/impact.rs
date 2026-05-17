@@ -104,16 +104,12 @@ fn parse_csv_lower(s: Option<&str>) -> Option<Vec<String>> {
 /// emitted by `run` so that library callers via `build_payload` stay stderr-clean.
 #[derive(Default)]
 struct ImpactStderrHints {
-    /// If `Some`, emit the "0 incoming references" hint with this symbol name.
     empty_hint_name: Option<String>,
     /// If > 0, emit the hidden-edges footer.
     hidden_edges: u64,
 }
 
-pub fn run(mut args: ImpactArgs, engine: &Engine) -> Result<(), GnxError> {
-    if args.name.is_none() && args.target.is_some() {
-        args.name = args.target.take();
-    }
+pub fn run(args: ImpactArgs, engine: &Engine) -> Result<(), GnxError> {
     let format = OutputFormat::parse(args.format.as_deref());
     let (payload, hints) = build_payload_with_hints(&args, engine)?;
     if let Some(name) = &hints.empty_hint_name {
