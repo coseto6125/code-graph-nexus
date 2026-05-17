@@ -28,6 +28,7 @@ fn setup_repo_with_l2(tmp: &Path) {
         embedding_status: graph_nexus_core::registry::EmbeddingStatus::None,
         refs_at_build: vec![],
         refs_seen_since: vec![],
+        builder_fingerprint: None,
     };
     graph_nexus_core::registry::CommitBuildMeta::write_atomic(&commits.join("meta.json"), &cm)
         .unwrap();
@@ -45,6 +46,8 @@ fn add_session(tmp: &Path, sid: &str, base_sha: &str, with_dirty: bool) {
         base_sha: base_sha.into(),
         source_worktree: "/tmp/wt".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sd.join("session_meta.json"), &sm).unwrap();
     let df = if with_dirty {
@@ -57,6 +60,7 @@ fn add_session(tmp: &Path, sid: &str, base_sha: &str, with_dirty: bool) {
                 fragment_id: "frag1".into(),
                 tantivy_delta_segment: None,
                 parse_failed: false,
+                dirty_symbols: vec![],
             },
         );
         d

@@ -58,6 +58,7 @@ fn admin_sessions_list_shows_pure_reference_state() {
         embedding_status: graph_nexus_core::registry::EmbeddingStatus::None,
         refs_at_build: vec![],
         refs_seen_since: vec![],
+        builder_fingerprint: None,
     };
     graph_nexus_core::registry::CommitBuildMeta::write_atomic(
         &commit_dir.join("meta.json"),
@@ -76,6 +77,8 @@ fn admin_sessions_list_shows_pure_reference_state() {
         base_sha: "abc123def456789012345678901234567890abcd".into(),
         source_worktree: "/tmp/wt".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     graph_nexus_core::session::SessionMeta::write_atomic(
         &sd.join("session_meta.json"),

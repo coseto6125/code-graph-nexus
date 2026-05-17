@@ -21,6 +21,7 @@ fn setup_repo(tmp: &Path, sha: &str, dirname: &str) {
         embedding_status: graph_nexus_core::registry::EmbeddingStatus::None,
         refs_at_build: vec![],
         refs_seen_since: vec![],
+        builder_fingerprint: None,
     };
     graph_nexus_core::registry::CommitBuildMeta::write_atomic(&commits.join("meta.json"), &cm)
         .unwrap();
@@ -38,6 +39,8 @@ fn setup_session(tmp: &Path, sid: &str, base_sha: &str, dirty: DirtyFiles) {
         base_sha: base_sha.into(),
         source_worktree: "/tmp/wt".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sd.join("session_meta.json"), &sm).unwrap();
     DirtyFiles::write_atomic(&sd.join("dirty_files.json"), &dirty).unwrap();
@@ -53,6 +56,7 @@ fn one_dirty_entry() -> DirtyFiles {
             fragment_id: "frag1".into(),
             tantivy_delta_segment: None,
             parse_failed: false,
+            dirty_symbols: vec![],
         },
     );
     df
@@ -103,6 +107,8 @@ fn classify_missing_dirty_file_returns_pure_reference() {
         base_sha: SHA.into(),
         source_worktree: "/tmp/wt".into(),
         overlay_version: 0,
+        watcher_pid: None,
+        last_drained_offset: 0,
     };
     SessionMeta::write_atomic(&sd.join("session_meta.json"), &sm).unwrap();
     assert!(matches!(
