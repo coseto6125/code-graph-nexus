@@ -47,16 +47,8 @@ pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildRe
     // fingerprint → reuse without touching the analyzer pipeline.
     // L2 is SHA-pure (v2 layout, PR #55); working-tree drift goes through
     // the L1 session overlay, not here.
-    if commit_dir.join("meta.json").is_file() {
-        if let Ok(meta) = CommitBuildMeta::read(&commit_dir.join("meta.json")) {
-            if meta.builder_fingerprint.as_deref() == Some(BUILDER_FINGERPRINT) {
-                return Ok(BuildResult {
-                    commit_dir,
-                    sha_hex,
-                    source_type: meta.source_type,
-                });
-            }
-        }
+    if let Some(attached) = attach_if_fingerprint_matches(&commit_dir) {
+        return Ok(attached);
     }
 
     // Acquire build lock; attach pattern if locked
@@ -148,6 +140,27 @@ pub(crate) fn build_inside_locked(
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: sha_hex.to_string(),
         source_type,
+    })
+}
+
+/// Cheap pre-build check: if `commit_dir/meta.json` exists and its
+/// `builder_fingerprint` matches the current binary, the published L2 at
+/// this SHA was made by an equivalent build — return it instead of
+/// rebuilding. Shared between `build_l2` (skip-if-exists fast path) and
+/// `force_rebuild_l2` (after `wait_for_completion`, lets N concurrent
+/// `--force` callers attach to one winner instead of each rebuilding).
+pub(crate) fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildResult> {
+    if !commit_dir.join("meta.json").is_file() {
+        return None;
+    }
+    let meta = CommitBuildMeta::read(&commit_dir.join("meta.json")).ok()?;
+    if meta.builder_fingerprint.as_deref() != Some(BUILDER_FINGERPRINT) {
+        return None;
+    }
+    Some(BuildResult {
+        commit_dir: commit_dir.to_path_buf(),
+        sha_hex: meta.sha,
+        source_type: meta.source_type,
     })
 }
 

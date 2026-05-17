@@ -113,6 +113,7 @@ fn collect_rows(home_gnx: &std::path::Path) -> io::Result<Vec<ListRow>> {
         // instead of re-walking commits/ per session. scan_cached reuses across
         // repeated `admin sessions list` calls when commits/ hasn't changed.
         let idx = crate::commit_lookup::CommitIndex::scan_cached(&repo_dir.join("commits")).ok();
+        let idx_ref = idx.as_deref();
         for s_entry in fs::read_dir(&sessions_dir)? {
             let s_entry = s_entry?;
             let s_path = s_entry.path();
@@ -133,10 +134,7 @@ fn collect_rows(home_gnx: &std::path::Path) -> io::Result<Vec<ListRow>> {
             let sm = SessionMeta::read(&s_path.join("session_meta.json")).ok();
             let state = match &sm {
                 Some(sm) => crate::session::state::classify_with_meta(
-                    &repo_dir,
-                    sid,
-                    sm,
-                    idx.as_ref(),
+                    &repo_dir, sid, sm, idx_ref,
                 ),
                 None => SessionState::Stale {
                     reason: graph_nexus_core::session::StaleReason::MetaUnreadable,

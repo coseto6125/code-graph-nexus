@@ -2,14 +2,14 @@
 //! before re-running the standard build pipeline.
 
 use crate::build::dirname_picker::pick_dirname;
-use crate::build::orchestrator::{build_inside_locked, wait_for_completion, BuildResult};
+use crate::build::orchestrator::{
+    attach_if_fingerprint_matches, build_inside_locked, wait_for_completion, BuildResult,
+};
 use crate::commit_lookup::CommitIndex;
 use crate::repo_identity::repo_dir_name_for_cwd;
 use crate::session::state::classify_with_index;
 use fs2::FileExt;
-use graph_nexus_core::registry::{
-    resolve_home_gnx, CommitBuildMeta, SourceType, BUILDER_FINGERPRINT,
-};
+use graph_nexus_core::registry::{resolve_home_gnx, SourceType};
 use graph_nexus_core::session::SessionState;
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -39,6 +39,7 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
     // sessions instead of re-walking commits/ per session. scan_cached lets
     // back-to-back --force invocations also skip the readdir.
     let idx = CommitIndex::scan_cached(&repo_root.join("commits")).ok();
+    let idx_ref = idx.as_deref();
 
     for entry in fs::read_dir(&sessions_dir)? {
         let entry = entry?;
@@ -54,7 +55,7 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
             continue;
         }
 
-        match classify_with_index(repo_root, name, idx.as_ref()) {
+        match classify_with_index(repo_root, name, idx_ref) {
             SessionState::PureReference { base_sha, .. } if base_sha == target_sha => {
                 report.kept += 1;
             }
@@ -102,20 +103,6 @@ fn spawn_delayed_rm_rf(path: PathBuf, delay: Duration) {
     });
 }
 
-/// Read the winner's meta.json after wait_for_completion. Returns the build
-/// result if `meta.builder_fingerprint == BUILDER_FINGERPRINT` — letting
-/// `force_rebuild_l2` attach instead of producing a duplicate rebuild.
-fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildResult> {
-    let meta = CommitBuildMeta::read(&commit_dir.join("meta.json")).ok()?;
-    if meta.builder_fingerprint.as_deref() != Some(BUILDER_FINGERPRINT) {
-        return None;
-    }
-    Some(BuildResult {
-        commit_dir: commit_dir.to_path_buf(),
-        sha_hex: meta.sha,
-        source_type: meta.source_type,
-    })
-}
 
 #[derive(Debug)]
 pub struct ForceRebuildResult {

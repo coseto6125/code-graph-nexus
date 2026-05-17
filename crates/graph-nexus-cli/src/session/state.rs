@@ -10,9 +10,9 @@ use std::path::Path;
 pub fn classify(repo_root: &Path, sid: &str) -> SessionState {
     // scan_cached: per-process cache keyed on commits/ mtime. Cuts
     // hot-path Engine::open from N readdir/query down to N stat/query
-    // when many queries hit the same SHA.
+    // when many queries hit the same SHA. Arc deref gives back &CommitIndex.
     let idx = CommitIndex::scan_cached(&repo_root.join("commits")).ok();
-    classify_with_index(repo_root, sid, idx.as_ref())
+    classify_with_index(repo_root, sid, idx.as_deref())
 }
 
 /// Hot-loop variant: callers that classify multiple sessions for the same
