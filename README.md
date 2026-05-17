@@ -235,28 +235,28 @@ This matrix is *not* a parity scorecard against any other tool. We took design i
 | C++ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Dart | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | ─── *structural-only rows below* ─── | | | | | | | | | | | |
-| Bash | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| Lua | ✓ | — | — | ✓ | — | — | — | — | — | ✓ | ✓ |
-| Solidity | ✓ | — | ✓ | ✓ | — | — | — | — | — | ✓ | ✓ |
-| Crystal | ✓ | — | — | ✓ | — | — | — | — | — | ✓ | ✓ |
-| Nim | ✓ | — | — | ✓ | — | — | — | — | — | ✓ | ✓ |
-| Cairo | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| Move | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| Zig | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| HCL | ✓ | — | — | — | — | — | ✓ | — | — | ✓ | ✓ |
-| SQL | — | — | — | ✓ | — | — | — | — | — | ✓ | ✓ |
-| Verilog | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| Vyper | ✓ | — | — | — | — | — | — | — | — | ✓ | ✓ |
-| Markdown | — | — | — | — | — | — | — | — | — | — | — |
-| GitHub Actions | ✓ | — | — | — | — | — | ✓ | — | — | — | — |
-| Docker Compose | — | — | — | — | — | — | ✓ | — | — | — | — |
-| Dockerfile | ✓ | — | — | — | — | — | ✓ | — | — | — | — |
-| YAML | — | — | — | — | — | — | ✓ | — | — | — | — |
+| Bash | ✓ | — | n/a | n/a | n/a | n/a | n/a | — | — | ✓ | ✓ |
+| Lua | ✓ | — | — | ✓ | n/a | — | n/a | — | — | ✓ | ✓ |
+| Solidity | ✓ | — | ✓ | ✓ | — | — | n/a | — | — | ✓ | ✓ |
+| Crystal | ✓ | — | — | ✓ | — | — | n/a | — | — | ✓ | ✓ |
+| Nim | ✓ | — | — | ✓ | — | — | n/a | — | — | ✓ | ✓ |
+| Cairo | ✓ | — | — | — | — | — | n/a | — | — | ✓ | ✓ |
+| Move | ✓ | — | — | n/a | — | n/a | n/a | — | — | ✓ | ✓ |
+| Zig | ✓ | — | — | n/a | — | — | n/a | — | — | ✓ | ✓ |
+| HCL | ✓ | — | — | n/a | — | n/a | ✓ | — | — | ✓ | ✓ |
+| SQL | n/a | — | n/a | ✓ | — | n/a | n/a | n/a | n/a | ✓ | ✓ |
+| Verilog | ✓ | — | — | — | — | — | n/a | — | — | ✓ | ✓ |
+| Vyper | ✓ | — | — | n/a | — | — | n/a | — | — | ✓ | ✓ |
+| Markdown | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
+| GitHub Actions | ✓ | — | — | n/a | n/a | n/a | ✓ | n/a | — | n/a | n/a |
+| Docker Compose | — | — | n/a | n/a | n/a | n/a | ✓ | n/a | n/a | n/a | n/a |
+| Dockerfile | ✓ | — | n/a | n/a | n/a | n/a | ✓ | n/a | — | n/a | n/a |
+| YAML | n/a | n/a | n/a | n/a | n/a | n/a | ✓ | n/a | n/a | n/a | n/a |
 
 **Per-cell notes** (where the cell shape needs context):
-Bash Imports `source`/`.`; Lua Imports `require` + binding alias; Lua Heritage = `setmetatable(...,{__index=Parent})` heuristic; Ruby Named = `alias` keyword + `alias_method` + constant assignment (`MyConst = Other::Constant`) + `def_delegator`/`def_delegators`/`delegate` (with Forwardable mixin detection; cross-file `include Foo` propagation resolved via resolver Tier 2.75 HeritageScoped); Solidity Heritage = `is X, Y, Z`; SQL Heritage = FK `REFERENCES` clauses (inline, table-level, and named-constraint forms); GitHub Actions Imports = `uses:` directives (public tag/SHA refs, local composites, reusable workflows, cross-repo workflows); Dockerfile Imports = `FROM <base>`; C Named = `typedef` + `#define` / `preproc_function_def` + `extern` declarations (include-guard macros filtered; classified as Alias/Constant/Macro/Flag); Swift Named = `typealias` declarations + `@objc(extName)` rename attributes. Rename `—` on the 5 markup/config rows (Markdown, GitHub Actions, Docker Compose, Dockerfile, YAML) reflects that these formats carry keys/literal strings rather than re-bindable code identifiers — `gnx rename` would have nothing to rewrite.
+Bash Imports `source`/`.`; Lua Imports `require` + binding alias; Lua Heritage = `setmetatable(...,{__index=Parent})` heuristic; Ruby Named = `alias` keyword + `alias_method` + constant assignment (`MyConst = Other::Constant`) + `def_delegator`/`def_delegators`/`delegate` (with Forwardable mixin detection; cross-file `include Foo` propagation resolved via resolver Tier 2.75 HeritageScoped); Solidity Heritage = `is X, Y, Z`; SQL Heritage = FK `REFERENCES` clauses (inline, table-level, and named-constraint forms); GitHub Actions Imports = `uses:` directives (public tag/SHA refs, local composites, reusable workflows, cross-repo workflows); Dockerfile Imports = `FROM <base>`; C Named = `typedef` + `#define` / `preproc_function_def` + `extern` declarations (include-guard macros filtered; classified as Alias/Constant/Macro/Flag); Swift Named = `typealias` declarations + `@objc(extName)` rename attributes. Rename `n/a` on the 5 markup/config rows (Markdown, GitHub Actions, Docker Compose, Dockerfile, YAML) reflects that these formats carry keys/literal strings rather than re-bindable code identifiers — `gnx rename` would have nothing to rewrite. **Cell legend**: `✓` implemented · `—` concept exists in the language but not yet implemented · `n/a` language linguistically lacks this concept (e.g., Bash has no class system, so Heritage/Ctor/Types are n/a).
 
-**Roadmap** — the matrix is now fully resolved to `✓`/`—`. No `☐` (feasible-but-not-implemented) cells remain.
+**Roadmap** — the matrix is now fully resolved to `✓` / `—` / `n/a`. No `☐` (feasible-but-not-implemented) cells remain — every `—` is a concrete gap, every `n/a` is a non-target.
 
 **Recently shipped** (history, for context):
 - Cross-language Constructor Inference (14 langs) with Python's `4e4fb1b` receiver-type binding as the reference prototype.
