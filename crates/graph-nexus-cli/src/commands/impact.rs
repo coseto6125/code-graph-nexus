@@ -100,19 +100,40 @@ fn parse_csv_lower(s: Option<&str>) -> Option<Vec<String>> {
     })
 }
 
+/// Stderr hints produced during impact computation. Collected by helpers and
+/// emitted by `run` so that library callers via `build_payload` stay stderr-clean.
+#[derive(Default)]
+struct ImpactStderrHints {
+    /// If `Some`, emit the "0 incoming references" hint with this symbol name.
+    empty_hint_name: Option<String>,
+    /// If > 0, emit the hidden-edges footer.
+    hidden_edges: u64,
+}
+
 pub fn run(mut args: ImpactArgs, engine: &Engine) -> Result<(), GnxError> {
     if args.name.is_none() && args.target.is_some() {
         args.name = args.target.take();
     }
     let format = OutputFormat::parse(args.format.as_deref());
-    let payload = build_payload(&args, engine)?;
+    let (payload, hints) = build_payload_with_hints(&args, engine)?;
+    if let Some(name) = &hints.empty_hint_name {
+        eprintln!(
+            "→ \"{name}\" exists but has 0 incoming references. Possible: entry point, dead code, or recent rename. Try --direction both / --include-tests"
+        );
+    }
+    emit_hidden_edges_footer(hints.hidden_edges);
     emit(&payload, format)
 }
 
+#[allow(dead_code)]
 pub fn build_payload(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError> {
+    build_payload_with_hints(args, engine).map(|(v, _)| v)
+}
+
+fn build_payload_with_hints(args: &ImpactArgs, engine: &Engine) -> Result<(Value, ImpactStderrHints), GnxError> {
     match (args.name.as_ref(), args.baseline.as_ref()) {
         (Some(_), None) => impact_by_name(args, engine),
-        (None, Some(_)) => impact_with_baseline(args, engine),
+        (None, Some(_)) => impact_with_baseline(args, engine).map(|v| (v, ImpactStderrHints::default())),
         (None, None) => Err(GnxError::InvalidArgument(
             "impact requires a symbol (positional <name> or --target <name>) or --baseline <ref>"
                 .into(),
@@ -121,7 +142,7 @@ pub fn build_payload(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxErr
     }
 }
 
-fn impact_by_name(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError> {
+fn impact_by_name(args: &ImpactArgs, engine: &Engine) -> Result<(Value, ImpactStderrHints), GnxError> {
     let name = args.name.as_deref().unwrap();
     let graph = engine.graph().map_err(|e| GnxError::Rkyv(e.to_string()))?;
 
@@ -157,10 +178,10 @@ fn impact_by_name(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError>
         .collect();
 
     if matches.is_empty() {
-        return Ok(json!({
+        return Ok((json!({
             "error": format!("No symbol named '{name}' found in graph"),
             "hint": "Try `gnx find <name> --mode fuzzy` to find candidates, or check --file / --kind filters"
-        }));
+        }), ImpactStderrHints::default()));
     }
 
     // Multiple matches without disambiguation → report candidates then fail.
@@ -179,10 +200,10 @@ fn impact_by_name(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError>
                 })
             })
             .collect();
-        return Ok(json!({
+        return Ok((json!({
             "error": format!("'{name}' is ambiguous ({} candidates) — add --file or --kind to disambiguate", matches.len()),
             "candidates": candidates,
-        }));
+        }), ImpactStderrHints::default()));
     }
 
     let min_conf = resolve_min_conf(&args);
@@ -257,14 +278,10 @@ fn impact_by_name(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError>
         });
     }
 
-    if emit_empty_hint {
-        eprintln!(
-            "→ \"{name}\" exists but has 0 incoming references. Possible: entry point, dead code, or recent rename. Try --direction both / --include-tests"
-        );
-    }
-    emit_hidden_edges_footer(hidden_edges_total);
-
-    Ok(result_obj)
+    Ok((result_obj, ImpactStderrHints {
+        empty_hint_name: emit_empty_hint.then(|| name.to_string()),
+        hidden_edges: hidden_edges_total,
+    }))
 }
 
 fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, GnxError> {
@@ -439,7 +456,6 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Gnx
         "impact_by_symbol": impact_by_symbol,
     });
     attach_hidden_edges(&mut result, hidden_edges_total);
-    emit_hidden_edges_footer(hidden_edges_total);
     Ok(result)
 }
 
