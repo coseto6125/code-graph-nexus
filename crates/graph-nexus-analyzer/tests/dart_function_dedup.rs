@@ -19,7 +19,7 @@ fn parse(src: &str) -> LocalGraph {
         .expect("parse")
 }
 
-fn functions<'a>(g: &'a LocalGraph) -> Vec<&'a str> {
+fn functions(g: &LocalGraph) -> Vec<&str> {
     g.nodes
         .iter()
         .filter(|n| n.kind == NodeKind::Function)

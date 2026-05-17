@@ -241,14 +241,13 @@ impl LanguageProvider for DartProvider {
                 // (parent `method_signature`), duplicating those outer emits.
                 // Skip the inner cases — they're already covered by @function /
                 // @method patterns that anchor on the outer node.
-                if k == NodeKind::Function && root.kind() == "function_signature" {
-                    if let Some(parent_kind) = root.parent().map(|p| p.kind()) {
-                        if parent_kind == "function_declaration"
-                            || parent_kind == "method_signature"
-                        {
-                            continue;
-                        }
-                    }
+                if k == NodeKind::Function
+                    && root.kind() == "function_signature"
+                    && root.parent().is_some_and(|p| {
+                        matches!(p.kind(), "function_declaration" | "method_signature")
+                    })
+                {
+                    continue;
                 }
                 if let Ok(name_str) = std::str::from_utf8(&source[n.start_byte()..n.end_byte()]) {
                     let name_str = name_str.trim();
