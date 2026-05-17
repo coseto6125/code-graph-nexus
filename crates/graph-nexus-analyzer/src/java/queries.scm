@@ -62,12 +62,6 @@
     name: (identifier) @variable.name)
 ) @variable
 
-;; Formal parameters — `int x` in `void foo(int x)`. Same Variable kind.
-(formal_parameter
-  type: (_) @type
-  name: (identifier) @variable.name
-) @variable
-
 ;; Imports — regular named import
 (import_declaration
   [

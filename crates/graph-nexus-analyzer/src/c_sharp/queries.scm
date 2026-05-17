@@ -87,12 +87,6 @@
       name: (identifier) @variable.name))
 ) @variable
 
-;; Formal parameters — `int x` in `void Foo(int x)`. Same Variable kind.
-(parameter
-  type: (_) @type
-  name: (identifier) @variable.name
-) @variable
-
 ;; Using directives (Imports). Three patterns:
 ;; - `using X;` / `using X.Y;` — plain
 ;; - `using static X.Alpha;` — static-member import (the `static` modifier
