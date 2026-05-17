@@ -81,6 +81,21 @@ fn class_with_method_and_constructor() {
         "class `Foo` must be NodeKind::Class; nodes: {:#?}",
         g.nodes
     );
+    // Regression hardening (matches class_method_emits_method): neither
+    // the method `bar` nor the constructor `Foo` should leak through the
+    // bare `function_signature` capture as Function. The parser.rs
+    // parent.kind filter blocks the method path; the constructor uses a
+    // separate `constructor_signature` AST node entirely.
+    assert!(
+        !find(&g, "bar", NodeKind::Function),
+        "`bar` is a class method and must not also appear as Function; nodes: {:#?}",
+        g.nodes
+    );
+    assert!(
+        !find(&g, "Foo", NodeKind::Function),
+        "`Foo` is a constructor and must not also appear as Function; nodes: {:#?}",
+        g.nodes
+    );
 }
 
 #[test]
