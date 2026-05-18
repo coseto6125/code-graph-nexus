@@ -6,6 +6,7 @@ tests/parity/fixtures/*/sample_project/
 
 # Parity per-symbol diff output (transient analysis artefacts, regenerated on demand)
 scripts/parity/symbol_diffs/
+scripts/parity/review/
 
 # Rust build
 target/
