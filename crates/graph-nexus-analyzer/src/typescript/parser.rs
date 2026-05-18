@@ -156,8 +156,8 @@ impl LanguageProvider for TypeScriptProvider {
         let mut pending_nestjs_handlers: Vec<NestJsHandler> = Vec::new();
         // NestJS decorator-routes pending `has_nestjs` import gate.
         // (HTTP_METHOD, raw_path_with_quotes_stripped_by_capture, decorator_span)
-        let mut pending_nestjs_decorator_routes: Vec<(String, String, (u32, u32, u32, u32))> =
-            Vec::new();
+        type NestJsDecoratorRoute = (String, String, (u32, u32, u32, u32));
+        let mut pending_nestjs_decorator_routes: Vec<NestJsDecoratorRoute> = Vec::new();
 
         let idx = &self.indices;
 

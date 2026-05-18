@@ -98,9 +98,7 @@ fn build_comment_mask(source: &[u8]) -> Vec<bool> {
             while i < n && source[i] != b'\n' {
                 i += 1;
             }
-            for j in start..i {
-                mask[j] = true;
-            }
+            mask[start..i].fill(true);
             continue;
         }
         // Block comment `/* ... */` → mask through closing `*/`.
@@ -114,9 +112,7 @@ fn build_comment_mask(source: &[u8]) -> Vec<bool> {
             if i + 1 < n {
                 i += 2;
             }
-            for j in start..i.min(n) {
-                mask[j] = true;
-            }
+            mask[start..i.min(n)].fill(true);
             continue;
         }
         // String literal `"..."` → mask interior, honor `\"` escapes.
@@ -133,9 +129,7 @@ fn build_comment_mask(source: &[u8]) -> Vec<bool> {
             if i < n {
                 i += 1;
             }
-            for j in start..i.min(n) {
-                mask[j] = true;
-            }
+            mask[start..i.min(n)].fill(true);
             continue;
         }
         i += 1;
