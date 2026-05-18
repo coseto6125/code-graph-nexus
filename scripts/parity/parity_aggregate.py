@@ -46,7 +46,12 @@ _EQUIV_CLASSES: list[set[str]] = [
     {"Method", "Function", "Template", "Constructor"},
     {"Typedef", "TypeAlias"},
     {"Const", "Variable", "Property", "Static"},
-    {"Interface", "Struct", "Enum", "Annotation", "Class"},
+    # Trait joins this class so Swift `protocol P {}` (gnx-rs emits Trait,
+    # ref emits Interface) pairs as label_diff. Rust `trait` still falls
+    # through to MODEL_RS_ONLY because ref-gitnexus emits no equiv-class
+    # kind for Rust traits — model_diff classification kicks in after
+    # EQUIV pairing fails.
+    {"Interface", "Struct", "Enum", "Annotation", "Class", "Trait"},
     {"Delegate", "Function"},
 ]
 
