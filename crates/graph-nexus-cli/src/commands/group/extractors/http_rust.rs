@@ -4,6 +4,7 @@ use crate::commands::group::types::{
     ContractRole, ContractType, ExtractedContract, SymbolRef,
 };
 use std::path::Path;
+use std::sync::LazyLock;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -39,6 +40,16 @@ const ACTIX_QUERY: &str = r#"
         (string_content) @path))))
 "#;
 
+static AXUM_QUERY_COMPILED: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    Query::new(&lang, AXUM_QUERY).expect("http_rust: compile AXUM_QUERY")
+});
+
+static ACTIX_QUERY_COMPILED: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    Query::new(&lang, ACTIX_QUERY).expect("http_rust: compile ACTIX_QUERY")
+});
+
 pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
@@ -64,16 +75,10 @@ fn extract_axum(
     file_path: &Path,
     source: &[u8],
     tree: &tree_sitter::Tree,
-    lang: &tree_sitter::Language,
+    _lang: &tree_sitter::Language,
     out: &mut Vec<ExtractedContract>,
 ) {
-    let query = match Query::new(lang, AXUM_QUERY) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (rust): axum Query::new failed: {e:?}");
-            return;
-        }
-    };
+    let query: &tree_sitter::Query = &AXUM_QUERY_COMPILED;
 
     let route_fn_idx = match query.capture_index_for_name("route_fn") {
         Some(i) => i,
@@ -93,19 +98,19 @@ fn extract_axum(
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
 
     while let Some(m) = matches.next() {
-        let route_fn = capture_text(m, route_fn_idx, source);
+        let route_fn = super::capture_text(m, route_fn_idx, source);
         if route_fn != "route" {
             continue;
         }
-        let method_name = capture_text(m, method_idx, source);
+        let method_name = super::capture_text(m, method_idx, source);
         let Some(http_method) = http_method_from_fn(method_name) else {
             continue;
         };
-        let route_path = capture_text(m, path_idx, source);
-        let handler = capture_text(m, handler_idx, source);
+        let route_path = super::capture_text(m, path_idx, source);
+        let handler = super::capture_text(m, handler_idx, source);
         let id = format!("http:{http_method}:{route_path}");
         out.push(ExtractedContract {
             contract_id: id,
@@ -127,16 +132,10 @@ fn extract_actix(
     file_path: &Path,
     source: &[u8],
     tree: &tree_sitter::Tree,
-    lang: &tree_sitter::Language,
+    _lang: &tree_sitter::Language,
     out: &mut Vec<ExtractedContract>,
 ) {
-    let query = match Query::new(lang, ACTIX_QUERY) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (rust): actix Query::new failed: {e:?}");
-            return;
-        }
-    };
+    let query: &tree_sitter::Query = &ACTIX_QUERY_COMPILED;
 
     let method_idx = match query.capture_index_for_name("method") {
         Some(i) => i,
@@ -148,14 +147,14 @@ fn extract_actix(
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
 
     while let Some(m) = matches.next() {
-        let method_name = capture_text(m, method_idx, source);
+        let method_name = super::capture_text(m, method_idx, source);
         let Some(http_method) = http_method_from_fn(method_name) else {
             continue;
         };
-        let route_path = capture_text(m, path_idx, source);
+        let route_path = super::capture_text(m, path_idx, source);
         // For actix, the function name follows the attribute_item as a sibling function_item.
         // Resolve via next-sibling walk on the attribute's parent node.
         let handler = actix_handler_name(m, method_idx, source);
@@ -212,19 +211,6 @@ fn actix_handler_name<'a>(
         }
     }
     "<unknown>".to_string()
-}
-
-fn capture_text<'a>(
-    m: &tree_sitter::QueryMatch<'a, 'a>,
-    idx: u32,
-    source: &'a [u8],
-) -> &'a str {
-    for c in m.captures {
-        if c.index == idx {
-            return std::str::from_utf8(&source[c.node.byte_range()]).unwrap_or("");
-        }
-    }
-    ""
 }
 
 /// Maps axum/actix function name → HTTP method string.

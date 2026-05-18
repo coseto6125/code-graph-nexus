@@ -165,7 +165,7 @@ fn contracts_type_http_filters_by_type() {
     let contracts = v["contracts"].as_array().unwrap();
     assert_eq!(contracts.len(), 2);
     for c in contracts {
-        assert_eq!(c["contract_type"].as_str(), Some("Http"));
+        assert_eq!(c["contract_type"].as_str(), Some("http"));
     }
 }
 

@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 
 use crate::commands::group::{lookup_member, storage};
+use crate::commands::group::types::{ArchivedContractRegistry, ArchivedMatchType, MatchType};
 use crate::commands::impact as local_impact;
 use crate::commit_lookup::CommitIndex;
 use crate::engine::Engine;
@@ -102,10 +103,9 @@ pub fn run(args: ImpactArgs) -> Result<(), GnxError> {
         args.include_tests,
     )?;
 
-    // 5. Read contracts.rkyv.
+    // 5. Read contracts.rkyv via zero-copy mmap.
     let group_dir = storage::group_dir(&home_gnx, &args.name);
-    let contract_reg = storage::read_contracts(&group_dir)
-        .map_err(|e| GnxError::Io(std::io::Error::other(format!("read contracts: {e}"))))?;
+    let contracts_path = group_dir.join(storage::CONTRACTS_FILE);
 
     // 6. Build local_uids set.
     let local_uids: HashSet<&str> = local.direct_symbol_uids().into_iter().collect();
@@ -122,11 +122,15 @@ pub fn run(args: ImpactArgs) -> Result<(), GnxError> {
         None
     };
 
-    // 8. Fan out through cross_links.
+    // 8. Fan out through cross_links — zero-copy mmap iteration.
     let min_conf = args.min_confidence.unwrap_or(0.0);
-    let cross_hits: Vec<Value> = if depth_cap >= 1 {
-        contract_reg
-            .cross_links
+    let cross_hits: Vec<Value> = if depth_cap >= 1 && contracts_path.exists() {
+        let mmap = storage::read_contracts_archived(&group_dir)
+            .map_err(|e| GnxError::Io(std::io::Error::other(format!("read contracts: {e}"))))?;
+        let arch: &ArchivedContractRegistry = mmap
+            .archived()
+            .map_err(|e| GnxError::Io(std::io::Error::other(format!("rkyv access: {e}"))))?;
+        arch.cross_links
             .iter()
             .filter(|link| link.confidence >= min_conf)
             .filter(|link| {
@@ -134,21 +138,21 @@ pub fn run(args: ImpactArgs) -> Result<(), GnxError> {
                     || local_uids.contains(link.to.symbol_uid.as_str())
             })
             .map(|link| {
-                let match_type = match &link.match_type {
-                    crate::commands::group::types::MatchType::Exact => "Exact",
-                    crate::commands::group::types::MatchType::Manifest => "Manifest",
-                    crate::commands::group::types::MatchType::Wildcard => "Wildcard",
-                    crate::commands::group::types::MatchType::Bm25 => "Bm25",
-                    crate::commands::group::types::MatchType::Embedding => "Embedding",
+                let mt = match link.match_type {
+                    ArchivedMatchType::Exact => MatchType::Exact,
+                    ArchivedMatchType::Manifest => MatchType::Manifest,
+                    ArchivedMatchType::Wildcard => MatchType::Wildcard,
+                    ArchivedMatchType::Bm25 => MatchType::Bm25,
+                    ArchivedMatchType::Embedding => MatchType::Embedding,
                 };
                 json!({
-                    "from_repo": link.from.repo,
-                    "to_repo": link.to.repo,
-                    "contract_id": link.contract_id,
-                    "match_type": match_type,
-                    "confidence": link.confidence,
-                    "from_symbol_uid": link.from.symbol_uid,
-                    "to_symbol_uid": link.to.symbol_uid,
+                    "from_repo": link.from.repo.as_str(),
+                    "to_repo": link.to.repo.as_str(),
+                    "contract_id": link.contract_id.as_str(),
+                    "match_type": mt.to_string(),
+                    "confidence": f32::from(link.confidence),
+                    "from_symbol_uid": link.from.symbol_uid.as_str(),
+                    "to_symbol_uid": link.to.symbol_uid.as_str(),
                 })
             })
             .collect()

@@ -4,6 +4,7 @@ use crate::commands::group::types::{
     ContractRole, ContractType, ExtractedContract, SymbolRef,
 };
 use std::path::Path;
+use std::sync::LazyLock;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -21,6 +22,11 @@ const QUERY_SRC: &str = r#"
     (_) @handler))
 "#;
 
+static QUERY: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    Query::new(&lang, QUERY_SRC).expect("http_node: compile QUERY_SRC")
+});
+
 pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
@@ -35,13 +41,7 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
         );
         return Vec::new();
     };
-    let query = match Query::new(&lang, QUERY_SRC) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (node): Query::new failed: {e:?}");
-            return Vec::new();
-        }
-    };
+    let query: &tree_sitter::Query = &QUERY;
 
     let method_idx = match query.capture_index_for_name("method") {
         Some(i) => i,
@@ -57,18 +57,18 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
     let mut out: Vec<ExtractedContract> = Vec::new();
 
     while let Some(m) = matches.next() {
-        let method_name = capture_text(m, method_idx, source);
+        let method_name = super::capture_text(m, method_idx, source);
         let Some(http_method) = http_method_from_property(method_name) else {
             continue;
         };
-        let route_path = capture_text(m, path_idx, source);
+        let route_path = super::capture_text(m, path_idx, source);
         // handler capture is the third arg — could be arrow function, identifier, etc.
         // Use its text as a symbol hint; for arrow functions this is verbose but honest.
-        let handler_text = capture_text(m, handler_idx, source);
+        let handler_text = super::capture_text(m, handler_idx, source);
         let handler_name = first_identifier(handler_text);
         let id = format!("http:{http_method}:{route_path}");
         out.push(ExtractedContract {
@@ -86,19 +86,6 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
         });
     }
     out
-}
-
-fn capture_text<'a>(
-    m: &tree_sitter::QueryMatch<'a, 'a>,
-    idx: u32,
-    source: &'a [u8],
-) -> &'a str {
-    for c in m.captures {
-        if c.index == idx {
-            return std::str::from_utf8(&source[c.node.byte_range()]).unwrap_or("");
-        }
-    }
-    ""
 }
 
 /// Maps Express/Fastify method property name → HTTP method string.

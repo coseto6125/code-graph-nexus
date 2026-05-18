@@ -32,6 +32,18 @@ pub enum MatchType {
     Embedding,
 }
 
+impl std::fmt::Display for MatchType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MatchType::Exact => "exact",
+            MatchType::Manifest => "manifest",
+            MatchType::Wildcard => "wildcard",
+            MatchType::Bm25 => "bm25",
+            MatchType::Embedding => "embedding",
+        })
+    }
+}
+
 #[derive(Archive, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[rkyv(compare(PartialEq), derive(Debug))]
 pub struct SymbolRef {

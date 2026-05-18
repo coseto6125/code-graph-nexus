@@ -4,6 +4,7 @@ use crate::commands::group::types::{
     ContractRole, ContractType, ExtractedContract, SymbolRef,
 };
 use std::path::Path;
+use std::sync::LazyLock;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -55,6 +56,21 @@ const QUERY_ROUTE_METHODS: &str = r#"
     name: (identifier) @handler))
 "#;
 
+static QUERY_VERB_COMPILED: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
+    Query::new(&lang, QUERY_VERB).expect("http_python: compile QUERY_VERB")
+});
+
+static QUERY_ROUTE_PATH_COMPILED: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
+    Query::new(&lang, QUERY_ROUTE_PATH).expect("http_python: compile QUERY_ROUTE_PATH")
+});
+
+static QUERY_ROUTE_METHODS_COMPILED: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
+    Query::new(&lang, QUERY_ROUTE_METHODS).expect("http_python: compile QUERY_ROUTE_METHODS")
+});
+
 pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
@@ -83,15 +99,9 @@ fn extract_verb_routes(
     file_path: &Path,
     source: &[u8],
     tree: &tree_sitter::Tree,
-    lang: &tree_sitter::Language,
+    _lang: &tree_sitter::Language,
 ) -> Vec<ExtractedContract> {
-    let query = match Query::new(lang, QUERY_VERB) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (python): verb Query::new failed: {e:?}");
-            return Vec::new();
-        }
-    };
+    let query: &tree_sitter::Query = &QUERY_VERB_COMPILED;
 
     let method_idx = match query.capture_index_for_name("method") {
         Some(i) => i,
@@ -107,17 +117,17 @@ fn extract_verb_routes(
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
     let mut out: Vec<ExtractedContract> = Vec::new();
 
     while let Some(m) = matches.next() {
-        let method_name = capture_text(m, method_idx, source);
+        let method_name = super::capture_text(m, method_idx, source);
         // Only emit for non-route verb decorators; `route` is handled by pass 2.
         let Some(http_method) = http_verb_from_decorator(method_name) else {
             continue;
         };
-        let route_path = capture_text(m, path_idx, source);
-        let handler = capture_text(m, handler_idx, source);
+        let route_path = super::capture_text(m, path_idx, source);
+        let handler = super::capture_text(m, handler_idx, source);
         push_contract(file_path, route_path, http_method, handler, &mut out);
     }
     out
@@ -127,17 +137,11 @@ fn extract_flask_routes(
     file_path: &Path,
     source: &[u8],
     tree: &tree_sitter::Tree,
-    lang: &tree_sitter::Language,
+    _lang: &tree_sitter::Language,
     out: &mut Vec<ExtractedContract>,
 ) {
     // Step 1: collect all @app.route(...) handler → path pairs.
-    let path_query = match Query::new(lang, QUERY_ROUTE_PATH) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (python): route path Query::new failed: {e:?}");
-            return;
-        }
-    };
+    let path_query: &tree_sitter::Query = &QUERY_ROUTE_PATH_COMPILED;
 
     let route_kw_idx = match path_query.capture_index_for_name("route_kw") {
         Some(i) => i,
@@ -160,12 +164,12 @@ fn extract_flask_routes(
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&path_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
-            let kw = capture_text(m, route_kw_idx, source);
+            let kw = super::capture_text(m, route_kw_idx, source);
             if kw != "route" {
                 continue;
             }
-            let path = capture_text(m, path_idx, source).to_string();
-            let handler = capture_text(m, handler_idx, source).to_string();
+            let path = super::capture_text(m, path_idx, source).to_string();
+            let handler = super::capture_text(m, handler_idx, source).to_string();
             handler_to_path.entry(handler).or_insert(path);
         }
     }
@@ -175,13 +179,7 @@ fn extract_flask_routes(
     }
 
     // Step 2: collect methods=[...] per handler.
-    let methods_query = match Query::new(lang, QUERY_ROUTE_METHODS) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (python): route methods Query::new failed: {e:?}");
-            return;
-        }
-    };
+    let methods_query: &tree_sitter::Query = &QUERY_ROUTE_METHODS_COMPILED;
 
     let kw_name_idx = match methods_query.capture_index_for_name("kw_name") {
         Some(i) => i,
@@ -203,12 +201,12 @@ fn extract_flask_routes(
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&methods_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
-            let kw_name = capture_text(m, kw_name_idx, source);
+            let kw_name = super::capture_text(m, kw_name_idx, source);
             if kw_name != "methods" {
                 continue;
             }
-            let http_method = capture_text(m, http_method_idx, source).to_uppercase();
-            let handler = capture_text(m, m_handler_idx, source).to_string();
+            let http_method = super::capture_text(m, http_method_idx, source).to_uppercase();
+            let handler = super::capture_text(m, m_handler_idx, source).to_string();
             handler_to_methods
                 .entry(handler)
                 .or_default()
@@ -248,19 +246,6 @@ fn push_contract(
         service: None,
         meta: vec![("method".into(), http_method.into())],
     });
-}
-
-fn capture_text<'a>(
-    m: &tree_sitter::QueryMatch<'a, 'a>,
-    idx: u32,
-    source: &'a [u8],
-) -> &'a str {
-    for c in m.captures {
-        if c.index == idx {
-            return std::str::from_utf8(&source[c.node.byte_range()]).unwrap_or("");
-        }
-    }
-    ""
 }
 
 /// Maps FastAPI/Blueprint verb decorator name → HTTP method.

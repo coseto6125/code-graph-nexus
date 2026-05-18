@@ -9,8 +9,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::Path;
-use tantivy::schema::{Schema, Value, STORED, STRING, TEXT};
-use tantivy::{collector::TopDocs, query::QueryParser, Index, IndexWriter, ReloadPolicy};
+use tantivy::schema::{Field, Schema, Value, STORED, STRING, TEXT};
+use tantivy::{
+    collector::TopDocs, query::QueryParser, Index, IndexWriter, ReloadPolicy, Searcher,
+};
 
 pub fn match_contracts(
     contracts: &[StoredContract],
@@ -78,9 +80,15 @@ pub fn match_contracts(
             build_bm25_index(&index_dir, &kept)
                 .map_err(io::Error::other)?;
 
+            // Open index + build searcher/parser ONCE — reused across all consumers.
+            let (searcher, parser, uid_field) =
+                open_bm25_searcher(&index_dir).map_err(io::Error::other)?;
+
             for cons in &unmatched_consumers {
                 let candidates = bm25_search(
-                    &index_dir,
+                    &searcher,
+                    &parser,
+                    uid_field,
                     &cons.inner.contract_id,
                     cfg.max_candidates_per_step as usize,
                 );
@@ -210,40 +218,43 @@ fn build_bm25_index(index_dir: &Path, kept: &[&StoredContract]) -> Result<(), St
     Ok(())
 }
 
-/// Search the contracts Tantivy index. Returns `(uid, score)` pairs
-/// ranked by BM25 score, capped at `limit`. Returns empty vec if the
-/// index is missing or any Tantivy step fails (graceful degradation).
-fn bm25_search(index_dir: &Path, contract_id: &str, limit: usize) -> Vec<(String, f32)> {
-    if !index_dir.exists() {
-        return Vec::new();
-    }
-    let index = match Index::open_in_dir(index_dir) {
-        Ok(idx) => idx,
-        Err(e) => {
-            tracing::warn!("group::bm25_search: Index::open_in_dir failed: {e:?}");
-            return Vec::new();
-        }
-    };
-    let Ok(reader) = index
+/// Open the contracts Tantivy index and return a cached (Searcher, QueryParser, uid_field)
+/// bundle. Called once per `match_contracts` invocation — not per consumer.
+fn open_bm25_searcher(
+    index_dir: &Path,
+) -> Result<(Searcher, QueryParser, Field), String> {
+    let index = Index::open_in_dir(index_dir)
+        .map_err(|e| format!("group::bm25_search: Index::open_in_dir failed: {e:?}"))?;
+    let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()
-    else {
-        return Vec::new();
-    };
-    let searcher = reader.searcher();
+        .map_err(|e| format!("group::bm25_search: reader build failed: {e:?}"))?;
     let schema = index.schema();
-    let Some(contract_id_field) = schema.get_field("contract_id").ok() else {
-        return Vec::new();
-    };
-    let Some(uid_field) = schema.get_field("uid").ok() else {
-        return Vec::new();
-    };
+    let contract_id_field = schema
+        .get_field("contract_id")
+        .map_err(|e| format!("group::bm25_search: missing contract_id field: {e:?}"))?;
+    let uid_field = schema
+        .get_field("uid")
+        .map_err(|e| format!("group::bm25_search: missing uid field: {e:?}"))?;
+    let parser = QueryParser::for_index(&index, vec![contract_id_field]);
+    let searcher = reader.searcher();
+    Ok((searcher, parser, uid_field))
+}
 
-    let query_parser = QueryParser::for_index(&index, vec![contract_id_field]);
+/// Search the contracts Tantivy index using a pre-built searcher + parser.
+/// Returns `(uid, score)` pairs ranked by BM25 score, capped at `limit`.
+/// Returns empty vec on any Tantivy failure (graceful degradation).
+fn bm25_search(
+    searcher: &Searcher,
+    parser: &QueryParser,
+    uid_field: Field,
+    contract_id: &str,
+    limit: usize,
+) -> Vec<(String, f32)> {
     // Escape `:` same way as at index time.
     let escaped = contract_id.replace(':', " ");
-    let Ok(query) = query_parser.parse_query(&escaped) else {
+    let Ok(query) = parser.parse_query(&escaped) else {
         return Vec::new();
     };
 

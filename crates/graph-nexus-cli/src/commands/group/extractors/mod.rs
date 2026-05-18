@@ -52,6 +52,21 @@ fn grpc_extractors() -> Vec<ExtractorEntry> {
     ]
 }
 
+/// Extract the UTF-8 text of the capture at `idx` from a query match.
+/// Returns `""` when the capture index is absent or the bytes are not valid UTF-8.
+pub(super) fn capture_text<'a>(
+    m: &tree_sitter::QueryMatch<'a, 'a>,
+    idx: u32,
+    source: &'a [u8],
+) -> &'a str {
+    for c in m.captures {
+        if c.index == idx {
+            return std::str::from_utf8(&source[c.node.byte_range()]).unwrap_or("");
+        }
+    }
+    ""
+}
+
 /// `(ext, lang)` mapping used by `sync.rs` when walking source files.
 /// Centralised here so add-a-language touches one place.
 pub fn lang_for_extension(ext: &str) -> Option<&'static str> {

@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::commands::group::lookup_member;
 use crate::commands::group::storage::{self, GroupMeta};
+use serde_json::json;
 
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {
@@ -172,38 +173,23 @@ fn emit_toon(name: &str, last_sync: Option<&str>, reports: &[MemberReport]) {
 }
 
 fn emit_json(name: &str, last_sync: Option<&str>, reports: &[MemberReport]) {
-    let last_sync_field = match last_sync {
-        Some(ts) => format!(r#""{ts}""#),
-        None => "null".to_string(),
-    };
-    let members_arr: Vec<String> = reports
+    let members_arr: Vec<_> = reports
         .iter()
-        .map(|r| {
-            let name_esc = r.name.replace('"', "\\\"");
-            match &r.status {
-                MemberStatus::Ok => {
-                    format!(r#"{{"name":"{name_esc}","status":"OK"}}"#)
-                }
-                MemberStatus::Stale { commits_behind } => match commits_behind {
-                    Some(n) => format!(
-                        r#"{{"name":"{name_esc}","status":"STALE","commits_behind":{n}}}"#
-                    ),
-                    None => format!(r#"{{"name":"{name_esc}","status":"STALE"}}"#),
-                },
-                MemberStatus::Missing => {
-                    format!(r#"{{"name":"{name_esc}","status":"MISSING"}}"#)
-                }
-                MemberStatus::NoSnapshot => {
-                    format!(r#"{{"name":"{name_esc}","status":"NO_SNAPSHOT"}}"#)
-                }
-                MemberStatus::NoMeta => {
-                    format!(r#"{{"name":"{name_esc}","status":"NO_META"}}"#)
-                }
-            }
+        .map(|r| match &r.status {
+            MemberStatus::Ok => json!({ "name": r.name, "status": "OK" }),
+            MemberStatus::Stale { commits_behind } => match commits_behind {
+                Some(n) => json!({ "name": r.name, "status": "STALE", "commits_behind": n }),
+                None => json!({ "name": r.name, "status": "STALE" }),
+            },
+            MemberStatus::Missing => json!({ "name": r.name, "status": "MISSING" }),
+            MemberStatus::NoSnapshot => json!({ "name": r.name, "status": "NO_SNAPSHOT" }),
+            MemberStatus::NoMeta => json!({ "name": r.name, "status": "NO_META" }),
         })
         .collect();
-    println!(
-        r#"{{"group":"{name}","last_sync":{last_sync_field},"members":[{}]}}"#,
-        members_arr.join(",")
-    );
+    let out = json!({
+        "group": name,
+        "last_sync": last_sync,
+        "members": members_arr,
+    });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()));
 }

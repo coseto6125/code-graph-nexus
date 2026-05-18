@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use crate::commands::group::storage;
 use crate::commands::group::types::{ContractRole, ContractType};
+use serde_json::json;
 
 #[derive(Args, Debug, Clone)]
 pub struct ContractsArgs {
@@ -126,35 +127,35 @@ fn emit_text(name: &str, records: &[ContractRecord]) {
 }
 
 fn emit_json(name: &str, records: &[ContractRecord]) {
-    let contracts_json: Vec<String> = records
+    let contracts_arr: Vec<_> = records
         .iter()
         .map(|r| {
             let contract_type_str = match r.contract_type {
-                ContractType::Http => "Http",
-                ContractType::Grpc => "Grpc",
-                ContractType::Thrift => "Thrift",
-                ContractType::Topic => "Topic",
-                ContractType::Lib => "Lib",
-                ContractType::Include => "Include",
-                ContractType::Custom => "Custom",
+                ContractType::Http => "http",
+                ContractType::Grpc => "grpc",
+                ContractType::Thrift => "thrift",
+                ContractType::Topic => "topic",
+                ContractType::Lib => "lib",
+                ContractType::Include => "include",
+                ContractType::Custom => "custom",
             };
             let role_str = match r.role {
-                ContractRole::Provider => "Provider",
-                ContractRole::Consumer => "Consumer",
+                ContractRole::Provider => "provider",
+                ContractRole::Consumer => "consumer",
             };
-            let repo_esc = r.repo.replace('"', "\\\"");
-            let contract_id_esc = r.contract_id.replace('"', "\\\"");
-            let symbol_esc = r.symbol.replace('"', "\\\"");
-            let file_esc = r.file.replace('"', "\\\"");
-            format!(
-                r#"{{"repo":"{repo_esc}","contract_id":"{contract_id_esc}","contract_type":"{contract_type_str}","role":"{role_str}","symbol":"{symbol_esc}","file":"{file_esc}","confidence":{:.2},"matched":{}}}"#,
-                r.confidence, r.matched
-            )
+            json!({
+                "repo": r.repo,
+                "contract_id": r.contract_id,
+                "contract_type": contract_type_str,
+                "role": role_str,
+                "symbol": r.symbol,
+                "file": r.file,
+                "confidence": r.confidence,
+                "matched": r.matched,
+            })
         })
         .collect();
 
-    println!(
-        r#"{{"group":"{name}","contracts":[{}]}}"#,
-        contracts_json.join(",")
-    );
+    let out = json!({ "group": name, "contracts": contracts_arr });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()));
 }

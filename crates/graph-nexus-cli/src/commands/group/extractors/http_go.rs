@@ -4,6 +4,7 @@ use crate::commands::group::types::{
     ContractRole, ContractType, ExtractedContract, SymbolRef,
 };
 use std::path::Path;
+use std::sync::LazyLock;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -20,6 +21,11 @@ const QUERY_SRC: &str = r#"
                (_) @handler))
 "#;
 
+static QUERY: LazyLock<Query> = LazyLock::new(|| {
+    let lang: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
+    Query::new(&lang, QUERY_SRC).expect("http_go: compile QUERY_SRC")
+});
+
 pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     let mut parser = Parser::new();
     let lang: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
@@ -31,13 +37,7 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
         tracing::warn!("group::extract_http (go): parser.parse returned None for {}", file_path.display());
         return Vec::new();
     };
-    let query = match Query::new(&lang, QUERY_SRC) {
-        Ok(q) => q,
-        Err(e) => {
-            tracing::warn!("group::extract_http (go): Query::new failed: {e:?}");
-            return Vec::new();
-        }
-    };
+    let query: &tree_sitter::Query = &QUERY;
 
     let method_idx = match query.capture_index_for_name("method") {
         Some(i) => i,
@@ -53,17 +53,17 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source);
+    let mut matches = cursor.matches(query, tree.root_node(), source);
     let mut out: Vec<ExtractedContract> = Vec::new();
 
     while let Some(m) = matches.next() {
-        let method = capture_text(m, method_idx, source);
+        let method = super::capture_text(m, method_idx, source);
         if !is_route_register(method) {
             continue;
         }
-        let raw_path = capture_text(m, path_idx, source);
+        let raw_path = super::capture_text(m, path_idx, source);
         let route_path = unquote(raw_path);
-        let handler = capture_text(m, handler_idx, source);
+        let handler = super::capture_text(m, handler_idx, source);
         let http_method = http_method_from_call(method);
         let id = format!("http:{http_method}:{route_path}");
         out.push(ExtractedContract {
@@ -81,19 +81,6 @@ pub fn extract_http(file_path: &Path, source: &[u8]) -> Vec<ExtractedContract> {
         });
     }
     out
-}
-
-fn capture_text<'a>(
-    m: &tree_sitter::QueryMatch<'a, 'a>,
-    idx: u32,
-    source: &'a [u8],
-) -> &'a str {
-    for c in m.captures {
-        if c.index == idx {
-            return std::str::from_utf8(&source[c.node.byte_range()]).unwrap_or("");
-        }
-    }
-    ""
 }
 
 fn is_route_register(method: &str) -> bool {

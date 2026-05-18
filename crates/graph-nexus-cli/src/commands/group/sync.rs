@@ -281,7 +281,7 @@ impl SyncSummary<'_> {
             for link in self.links {
                 println!(
                     "  {} -> {}  [{}, conf={:.2}]  {}",
-                    link.from.repo, link.to.repo, match_type_str(&link.match_type),
+                    link.from.repo, link.to.repo, link.match_type,
                     link.confidence, link.contract_id
                 );
             }
@@ -295,7 +295,7 @@ impl SyncSummary<'_> {
                 .iter()
                 .map(|l| format!(
                     r#"{{"from":"{}","to":"{}","match_type":"{}","confidence":{:.2},"contract_id":"{}"}}"#,
-                    l.from.repo, l.to.repo, match_type_str(&l.match_type), l.confidence, l.contract_id
+                    l.from.repo, l.to.repo, l.match_type, l.confidence, l.contract_id
                 ))
                 .collect();
             println!(
@@ -310,12 +310,3 @@ impl SyncSummary<'_> {
     }
 }
 
-fn match_type_str(mt: &MatchType) -> &'static str {
-    match mt {
-        MatchType::Exact => "Exact",
-        MatchType::Bm25 => "BM25",
-        MatchType::Manifest => "Manifest",
-        MatchType::Wildcard => "Wildcard",
-        MatchType::Embedding => "Embedding",
-    }
-}

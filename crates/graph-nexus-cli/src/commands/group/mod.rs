@@ -49,7 +49,8 @@ pub fn run(cmd: GroupCommands) -> Result<(), GnxError> {
 /// `member` may be either a `dir_name` or any of the aliases. Match order:
 /// (1) exact dir_name, (2) exact alias hit, (3) None (no fuzzy fallback).
 ///
-/// Used by T9 sync + T10 status + T12 impact — keep the logic single-sourced.
+/// Shared resolution logic — `dir_name` and `aliases` are both valid identifiers
+/// for a member; no fuzzy fallback to avoid prefix-collision risk.
 pub fn lookup_member<'a>(registry: &'a RegistryFile, member: &str) -> Option<&'a RepoAlias> {
     registry
         .repos

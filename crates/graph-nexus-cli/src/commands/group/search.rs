@@ -52,10 +52,10 @@ pub fn run(args: SearchArgs) -> Result<(), GnxError> {
             ))
         })?;
 
-    // 2. Resolve members → (member_name, Engine).
+    // 2. Resolve members → (member_name, Engine) — parallel mmap loads.
     let engines: Vec<(String, Engine)> = group
         .members
-        .iter()
+        .par_iter()
         .filter_map(|member| {
             let alias = lookup_member(&reg, member)?;
             let resolved = ResolvedRepo {
