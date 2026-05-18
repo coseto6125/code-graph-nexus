@@ -243,25 +243,30 @@ fn main() {
 /// (auto_ensure) or a single-repo selector that silently expands and fails
 /// later with an opaque message. Catch it here and exit with a clear hint.
 ///
-/// `hint` is the `gnx group <verb>` migration target. Commands without a
+/// The `hint` is the `gnx group <verb>` migration target. Commands without a
 /// group analog (inspect / rename / cypher / routes / shape-check / tool-map
-/// / review / diff) pass an empty hint and get redirected to `gnx group --help`.
+/// / review / diff) carry `None` and get redirected to `gnx group --help`.
 fn check_group_atom(cli: &Cli) {
-    let (repo_opt, hint): (Option<&str>, &str) = match &cli.command {
-        Commands::Find(a) => (a.repo.as_deref(), "find"),
-        Commands::Impact(a) => (a.repo.as_deref(), "impact"),
-        Commands::Inspect(a) => (a.repo.as_deref(), ""),
-        Commands::Rename(a) => (a.repo.as_deref(), ""),
-        Commands::Cypher(a) => (a.repo.as_deref(), ""),
-        Commands::Routes(a) => (a.repo.as_deref(), ""),
-        Commands::ShapeCheck(a) => (a.repo.as_deref(), ""),
-        Commands::ToolMap(a) => (a.repo.as_deref(), ""),
-        Commands::Review(a) => (a.repo.as_deref(), ""),
-        Commands::Diff(a) => (a.repo.as_deref(), ""),
-        // contracts/coverage already protected via resolve_top_level internally;
-        // peers takes Option<PathBuf>, not group-aware; admin handled separately.
+    // The `repo: Option<String>` accessor lives on each variant's args struct,
+    // so the match has to enumerate them. Pull the value out first; bail
+    // fast for commands without a `--repo` field (contracts/coverage are
+    // already protected via resolve_top_level; peers/admin/hooks don't expose
+    // a group-aware selector).
+    let (repo_opt, hint): (Option<&str>, Option<&str>) = match &cli.command {
+        Commands::Find(a) => (a.repo.as_deref(), Some("find")),
+        Commands::Impact(a) => (a.repo.as_deref(), Some("impact")),
+        Commands::Inspect(a) => (a.repo.as_deref(), None),
+        Commands::Rename(a) => (a.repo.as_deref(), None),
+        Commands::Cypher(a) => (a.repo.as_deref(), None),
+        Commands::Routes(a) => (a.repo.as_deref(), None),
+        Commands::ShapeCheck(a) => (a.repo.as_deref(), None),
+        Commands::ToolMap(a) => (a.repo.as_deref(), None),
+        Commands::Review(a) => (a.repo.as_deref(), None),
+        Commands::Diff(a) => (a.repo.as_deref(), None),
         _ => return,
     };
+    // The vast majority of invocations don't pass `--repo` at all, so the
+    // two early returns below fire before any further work.
     let Some(sel) = repo_opt else { return };
     let Some(group_name) = sel.strip_prefix('@') else {
         return;
@@ -269,14 +274,13 @@ fn check_group_atom(cli: &Cli) {
     if group_name == "all" {
         return;
     }
-    if hint.is_empty() {
-        eprintln!(
+    match hint {
+        Some(verb) => eprintln!(
+            "error: `@{group_name}` cannot be used at the top level — use `gnx group {verb}` instead"
+        ),
+        None => eprintln!(
             "error: `@{group_name}` cannot be used at the top level — this command is single-repo; see `gnx group --help` for cross-repo workflows"
-        );
-    } else {
-        eprintln!(
-            "error: `@{group_name}` cannot be used at the top level — use `gnx group {hint}` instead"
-        );
+        ),
     }
     std::process::exit(1);
 }

@@ -1,12 +1,6 @@
 //! `gnx group find <name> <pattern>` — BM25 symbol lookup across all group
 //! members. Single verb covers both per-repo bucketed concat (`--merge none`,
-//! default) and cross-repo RRF-merged top-K (`--merge rrf`). Supersedes the
-//! short-lived `gnx group search` verb — see PR-146 follow-up commit.
-//!
-//! `--batch` reads patterns from stdin (one per line, `#` for comments) and
-//! re-applies the active `--merge` mode per pattern. Engines are preloaded
-//! once outside the per-query loop so mmap + rkyv access amortises across
-//! the whole batch, mirroring `commands::find::run_batch`.
+//! default) and cross-repo RRF-merged top-K (`--merge rrf`).
 
 use clap::{Args, ValueEnum};
 use graph_nexus_core::registry::{resolve_home_gnx, RegistryFile};
@@ -85,20 +79,17 @@ pub fn run(args: FindArgs) -> Result<(), GnxError> {
     let engines: Vec<(String, Engine)> = resolve_member_engines(group, &reg, &home_gnx);
 
     if engines.is_empty() {
-        emit_empty(args.json, args.merge);
+        emit_empty(args.merge, args.json);
         return Ok(());
     }
 
-    // Resolve effective top-K once; only used in RRF path.
-    let rrf_limit = args.limit.unwrap_or(DEFAULT_RRF_LIMIT);
-
     if args.batch {
-        run_batch(&engines, args.merge, rrf_limit, args.json)
+        run_batch(&engines, args.merge, args.limit, args.json);
     } else {
         let pattern = args.pattern.as_deref().expect("clap required_unless_present");
-        run_one(&engines, pattern, args.merge, rrf_limit, args.json);
-        Ok(())
+        run_one(&engines, pattern, args.merge, args.limit, args.json);
     }
+    Ok(())
 }
 
 // ── Per-pattern dispatch ──────────────────────────────────────────────────────
@@ -107,22 +98,17 @@ fn run_one(
     engines: &[(String, Engine)],
     pattern: &str,
     mode: MergeMode,
-    rrf_limit: usize,
+    limit: Option<usize>,
     json: bool,
 ) {
     let per_repo = fan_out_per_repo(engines, pattern);
     match mode {
         MergeMode::None => emit_concat(&per_repo, json),
-        MergeMode::Rrf => emit_rrf(&per_repo, rrf_limit, json),
+        MergeMode::Rrf => emit_rrf(&per_repo, limit, json),
     }
 }
 
-fn run_batch(
-    engines: &[(String, Engine)],
-    mode: MergeMode,
-    rrf_limit: usize,
-    json: bool,
-) -> Result<(), GnxError> {
+fn run_batch(engines: &[(String, Engine)], mode: MergeMode, limit: Option<usize>, json: bool) {
     use std::io::BufRead;
 
     let stdin = std::io::stdin();
@@ -130,20 +116,21 @@ fn run_batch(
         .lock()
         .lines()
         .map_while(Result::ok)
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .filter_map(|s| {
+            let t = s.trim();
+            (!t.is_empty() && !t.starts_with('#')).then(|| t.to_string())
+        })
         .collect();
 
     if patterns.is_empty() {
         eprintln!("→ batch: no patterns on stdin (one per line, `#` for comments)");
-        return Ok(());
+        return;
     }
 
     for pattern in &patterns {
         println!("=== pattern: {pattern} ===");
-        run_one(engines, pattern, mode, rrf_limit, json);
+        run_one(engines, pattern, mode, limit, json);
     }
-    Ok(())
 }
 
 fn fan_out_per_repo<'a>(
@@ -198,7 +185,7 @@ fn rrf_merge<'a>(per_repo: &'a [(String, Vec<Hit>)], limit: usize) -> Vec<RrfHit
 
 // ── Emission ──────────────────────────────────────────────────────────────────
 
-fn emit_empty(json: bool, mode: MergeMode) {
+fn emit_empty(mode: MergeMode, json: bool) {
     if json {
         match mode {
             MergeMode::None => println!("{}", json!({ "per_repo": [] })),
@@ -252,8 +239,8 @@ fn emit_concat(per_repo: &[(String, Vec<Hit>)], json: bool) {
     }
 }
 
-fn emit_rrf(per_repo: &[(String, Vec<Hit>)], limit: usize, json: bool) {
-    let merged = rrf_merge(per_repo, limit);
+fn emit_rrf(per_repo: &[(String, Vec<Hit>)], limit: Option<usize>, json: bool) {
+    let merged = rrf_merge(per_repo, limit.unwrap_or(DEFAULT_RRF_LIMIT));
     let per_repo_summary: Vec<Value> = per_repo
         .iter()
         .map(|(repo, hits)| json!({ "repo": repo, "count": hits.len() }))
