@@ -18,6 +18,9 @@ pub struct GroupMeta {
     pub generated_at: String,
     pub repo_snapshots: BTreeMap<String, RepoSnapshot>,
     pub missing_repos: Vec<String>,
+    /// Which config source was used for this sync run.
+    /// `"default"` = built-in defaults; `"file"` = loaded from `~/.gnx/config.toml`.
+    pub config_source: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

@@ -102,6 +102,12 @@ enum Commands {
     /// egress (tool-map), shape-check, and resolver-diff over changed files in
     /// one shot, filtered to high-confidence signals only.
     Review(commands::review::ReviewArgs),
+    /// Multi-repo group contract extraction and cross-link matching
+    #[command(hide = true)]
+    Group {
+        #[command(subcommand)]
+        cmd: commands::group::GroupCommands,
+    },
 }
 
 fn main() {
@@ -153,6 +159,7 @@ fn main() {
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
         Commands::Watch(args) => run_no_graph!(commands::watch::run(args.clone())),
         Commands::Peers(args) => run_no_graph!(commands::peers::run(args.clone())),
+        Commands::Group { cmd } => run_no_graph!(commands::group::run(cmd.clone())),
         _ => {} // fall through to graph-loading path
     }
 
@@ -175,7 +182,8 @@ fn main() {
         | Commands::HookWatcher(_)
         | Commands::Hook(_)
         | Commands::Watch(_)
-        | Commands::Peers(_) => None,
+        | Commands::Peers(_)
+        | Commands::Group { .. } => None,
     };
     let cwd = repo_opt
         .map(std::path::PathBuf::from)
@@ -214,7 +222,8 @@ fn main() {
         | Commands::HookWatcher(_)
         | Commands::Hook(_)
         | Commands::Watch(_)
-        | Commands::Peers(_) => unreachable!("handled before graph load"),
+        | Commands::Peers(_)
+        | Commands::Group { .. } => unreachable!("handled before graph load"),
     };
     if let Err(e) = result {
         eprintln!("Command failed: {e}");
