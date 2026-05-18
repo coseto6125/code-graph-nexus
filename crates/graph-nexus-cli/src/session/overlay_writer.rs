@@ -21,11 +21,12 @@ use graph_nexus_core::graph::NodeKind;
 use graph_nexus_core::registry::atomic_write_json;
 use graph_nexus_core::session::overlay::{SymbolKind, SymbolRef};
 use graph_nexus_core::session::{DirtyEntry, DirtyFiles, SessionMeta};
-use sha2::{Digest, Sha256};
 use rayon::prelude::*;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 pub struct FragmentInput {
@@ -52,9 +53,7 @@ pub fn write_dirty_fragment(
     input: &FragmentInput,
 ) -> io::Result<FragmentOutcome> {
     let mut outcomes = write_dirty_fragments_batch(session_dir, std::slice::from_ref(input))?;
-    Ok(outcomes
-        .pop()
-        .expect("batch of 1 should return 1 outcome"))
+    Ok(outcomes.pop().expect("batch of 1 should return 1 outcome"))
 }
 
 /// Batched variant of `write_dirty_fragment`: writes N per-file fragments
@@ -65,6 +64,10 @@ pub fn write_dirty_fragment(
 /// The single trailing manifest + version write replaces N read-modify-write
 /// cycles in the L1 refresh path — the dominant cost on small dirty sets
 /// (each `atomic_write_json` is a write + fsync + rename).
+///
+/// The fragment tmp path is keyed by `(batch_seq, input_idx)` so identical
+/// content within the same batch (same `fragment_id`) cannot race on a
+/// shared `<fragment_id>.tmp` under the rayon `par_iter` fan-out below.
 ///
 /// `overlay_version` is bumped by `inputs.len()` to preserve the
 /// "increment per write" semantics that single-call sites + existing tests
@@ -79,12 +82,14 @@ pub fn write_dirty_fragments_batch(
 
     let overlay_dir = session_dir.join("graph_overlay");
     fs::create_dir_all(&overlay_dir)?;
+    let batch_seq = WRITE_BATCH_SEQ.fetch_add(1, Ordering::Relaxed);
 
     // Parallelise fragment writes: hashing and parsing (CPU) + atomic file write (IO).
     // Coalesces the per-file IO while keeping the final manifest commit atomic.
     let results: Vec<io::Result<(String, DirtyEntry, FragmentOutcome)>> = inputs
         .par_iter()
-        .map(|input| write_fragment_file(&overlay_dir, input))
+        .enumerate()
+        .map(|(idx, input)| write_fragment_file(&overlay_dir, batch_seq, idx as u64, input))
         .collect();
 
     let mut outcomes = Vec::with_capacity(inputs.len());
@@ -118,6 +123,8 @@ pub fn write_dirty_fragments_batch(
 
 fn write_fragment_file(
     overlay_dir: &Path,
+    batch_seq: u64,
+    input_idx: u64,
     input: &FragmentInput,
 ) -> io::Result<(String, DirtyEntry, FragmentOutcome)> {
     let content_hash = sha256_hex(&input.content);
@@ -126,7 +133,7 @@ fn write_fragment_file(
 
     let parse_failed = match parse_to_fragment(&input.rel_path, &input.content) {
         Ok(archive_bytes) => {
-            let tmp = overlay_dir.join(format!("{fragment_id}.tmp"));
+            let tmp = overlay_dir.join(format!("{fragment_id}.{batch_seq}.{input_idx}.tmp"));
             fs::write(&tmp, &archive_bytes)?;
             let f = fs::File::open(&tmp)?;
             f.sync_all()?;
@@ -162,6 +169,8 @@ fn parse_to_fragment(rel_path: &str, content: &[u8]) -> io::Result<Vec<u8>> {
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
+
+static WRITE_BATCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
 // Process-wide pipeline — built once, shared across all `OverlayWriter` calls.
 // OnceLock ensures construction happens exactly once even under concurrent access.
