@@ -25,7 +25,7 @@ from collections import defaultdict
 from pathlib import Path
 
 DIFF_DIR = Path(os.environ.get("PARITY_DIFF_DIR",
-    "/home/enor/gitnexus-rs/scripts/parity/symbol_diffs"))
+    str(Path(__file__).resolve().parent / "symbol_diffs")))
 LANGS = [
     "TypeScript", "JavaScript", "Python", "Java", "Kotlin",
     "CSharp", "Go", "Rust", "PHP", "Ruby",
@@ -50,8 +50,11 @@ _EQUIV_CLASSES: list[set[str]] = [
     # ref emits Interface) pairs as label_diff. Rust `trait` still falls
     # through to MODEL_RS_ONLY because ref-gitnexus emits no equiv-class
     # kind for Rust traits — model_diff classification kicks in after
-    # EQUIV pairing fails.
-    {"Interface", "Struct", "Enum", "Annotation", "Class", "Trait"},
+    # EQUIV pairing fails. Union joins the class because gnx-rs C parser
+    # emits `union T {}` as Struct (queries.scm:28 explicit design) while
+    # ref-gitnexus emits Union; without pairing, every C/Cpp union shows
+    # as ref_over (7 C + 7 Cpp in current `.sample_repo`).
+    {"Interface", "Struct", "Enum", "Annotation", "Class", "Trait", "Union"},
     {"Delegate", "Function"},
 ]
 

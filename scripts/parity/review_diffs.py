@@ -62,7 +62,7 @@ _EQUIV_CLASSES: list[set[str]] = [
     {"Method", "Function", "Template", "Constructor"},
     {"Typedef", "TypeAlias"},
     {"Const", "Variable", "Property", "Static"},
-    {"Interface", "Struct", "Enum", "Annotation", "Class", "Trait"},
+    {"Interface", "Struct", "Enum", "Annotation", "Class", "Trait", "Union"},
     {"Delegate", "Function"},
 ]
 

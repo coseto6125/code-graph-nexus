@@ -170,12 +170,12 @@ def dump_ref(lang: str) -> set[tuple[str, str, str]]:
     and ref-gitnexus's executor returns rows in a hash-table iteration
     order that changes between pages — that caused inconsistent ref totals
     across consecutive runs (observed 3032 vs 2625 vs 3323 for the same
-    corpus). Ordering by `(filePath, name, head(labels))` makes pages
-    stable; we use `head(labels(n))` rather than bare `labels(n)` because
-    Cypher list-as-sort-key comparison is engine-defined (some engines
-    sort element-wise stably, some don't), while `head(...)` always
-    returns a scalar string — matches the kind the downstream parser
-    extracts via `.split(',')[0]`.
+    corpus). Ordering by `(filePath, name, startLine)` makes pages stable
+    on a scalar tie-breaker. The previous `head(labels(n))` form silently
+    broke against ref-gitnexus 1.6.4-rc.41 (no `HEAD` function in catalog)
+    — ref returned `error` for every page and the script wrote empty
+    `_ref_only.txt` dumps. `n.startLine` is a property the engine always
+    accepts and gives the same scalar-string-comparable stability.
     """
     exts = LANG_EXTS.get(lang, [])
     if not exts:
@@ -188,7 +188,7 @@ def dump_ref(lang: str) -> set[tuple[str, str, str]]:
         q = (
             f"MATCH (n) WHERE {where} "
             f"RETURN labels(n), n.filePath, n.name "
-            f"ORDER BY n.filePath, n.name, head(labels(n)) "
+            f"ORDER BY n.filePath, n.name, n.startLine "
             f"SKIP {skip} LIMIT {REF_PAGE}"
         )
         out = run(["gitnexus", "cypher", "--repo", str(REPO), q])
