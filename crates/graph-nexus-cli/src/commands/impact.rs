@@ -8,6 +8,7 @@ use graph_nexus_core::algorithms::process_trace::is_test_path;
 use graph_nexus_core::config;
 use graph_nexus_core::graph::NodeKind;
 use graph_nexus_core::{GnxError, HIGH_TRUST_CONFIDENCE};
+use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -417,47 +418,70 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Gnx
         .map(|fd| fd.file_path.clone())
         .collect();
 
-    // Re-parse new side to detect changed symbols.
+    // Re-parse new and old side per changed file. Each iteration is
+    // independent (writes only into its own local vectors), and tree-sitter
+    // parse + `git show` subprocess dominate the work — fan out via rayon
+    // and merge at the end. `pipeline.parse_file_raw` is the same call path
+    // that `pipeline.analyze`'s `into_par_iter` already uses, so providers
+    // are Send + Sync by construction.
     let pipeline = make_pipeline();
-    let mut new_map: HashMap<(String, String, String), (u64, u32)> = HashMap::new();
-    let mut old_map: HashMap<(String, String, String), u64> = HashMap::new();
+    type NewEntry = ((String, String, String), (u64, u32));
+    type OldEntry = ((String, String, String), u64);
 
-    for rel_path in &changed_paths {
-        let abs = repo_path.join(rel_path);
-        if abs.exists() {
-            if let Ok(src) = std::fs::read(&abs) {
+    let per_file: Vec<(Vec<NewEntry>, Vec<OldEntry>)> = changed_paths
+        .par_iter()
+        .map(|rel_path| {
+            let mut new_local: Vec<NewEntry> = Vec::new();
+            let mut old_local: Vec<OldEntry> = Vec::new();
+
+            let abs = repo_path.join(rel_path);
+            if abs.exists() {
+                if let Ok(src) = std::fs::read(&abs) {
+                    let rel_pb = PathBuf::from(rel_path);
+                    if let Ok(lg) = pipeline.parse_file_raw(&rel_pb, &src) {
+                        let lines: Vec<&[u8]> = src.split(|&b| b == b'\n').collect();
+                        for raw in &lg.nodes {
+                            if matches!(raw.kind, NodeKind::File | NodeKind::Process) {
+                                continue;
+                            }
+                            let h = hash_node_lines(&lines, raw.span.0, raw.span.2);
+                            let kind_str = node_kind_to_str(&raw.kind).to_string();
+                            new_local.push((
+                                (kind_str, rel_path.clone(), raw.name.clone()),
+                                (h, raw.span.0),
+                            ));
+                        }
+                    }
+                }
+            }
+
+            if let Some(old_src) = head_blob_at(&repo_path, rel_path, baseline_ref) {
                 let rel_pb = PathBuf::from(rel_path);
-                if let Ok(lg) = pipeline.parse_file_raw(&rel_pb, &src) {
-                    let lines: Vec<&[u8]> = src.split(|&b| b == b'\n').collect();
+                if let Ok(lg) = pipeline.parse_file_raw(&rel_pb, &old_src) {
+                    let lines: Vec<&[u8]> = old_src.split(|&b| b == b'\n').collect();
                     for raw in &lg.nodes {
                         if matches!(raw.kind, NodeKind::File | NodeKind::Process) {
                             continue;
                         }
                         let h = hash_node_lines(&lines, raw.span.0, raw.span.2);
                         let kind_str = node_kind_to_str(&raw.kind).to_string();
-                        new_map.insert(
+                        old_local.push((
                             (kind_str, rel_path.clone(), raw.name.clone()),
-                            (h, raw.span.0),
-                        );
+                            h,
+                        ));
                     }
                 }
             }
-        }
 
-        if let Some(old_src) = head_blob_at(&repo_path, rel_path, baseline_ref) {
-            let rel_pb = PathBuf::from(rel_path);
-            if let Ok(lg) = pipeline.parse_file_raw(&rel_pb, &old_src) {
-                let lines: Vec<&[u8]> = old_src.split(|&b| b == b'\n').collect();
-                for raw in &lg.nodes {
-                    if matches!(raw.kind, NodeKind::File | NodeKind::Process) {
-                        continue;
-                    }
-                    let h = hash_node_lines(&lines, raw.span.0, raw.span.2);
-                    let kind_str = node_kind_to_str(&raw.kind).to_string();
-                    old_map.insert((kind_str, rel_path.clone(), raw.name.clone()), h);
-                }
-            }
-        }
+            (new_local, old_local)
+        })
+        .collect();
+
+    let mut new_map: HashMap<(String, String, String), (u64, u32)> = HashMap::new();
+    let mut old_map: HashMap<(String, String, String), u64> = HashMap::new();
+    for (new_local, old_local) in per_file {
+        new_map.extend(new_local);
+        old_map.extend(old_local);
     }
 
     // Build lookup from old graph: (kind_str, file_path, name) → node_idx.
