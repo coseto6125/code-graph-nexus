@@ -33,15 +33,18 @@ fn concurrent_atomic_write_bytes_never_corrupts_target() {
     let target = dir.join("payload.json");
 
     // 16 threads × 50 iterations alternating short (200 B) and long
-    // (~600 KB — matches the real dirty_files.json size that triggered
-    // the original flake) payloads.
+    // (~60 KB) payloads. The original flake was reproducible with 600 KB
+    // (20k entries) but the corruption signal fires the same way at 60 KB
+    // (2k entries) — the race depends on inode-truncate timing, not
+    // payload size — so we keep the 2k size to amortise the 800 probe
+    // deserializations within CI's per-test budget (~400 ms vs ~4 s).
     let n_threads = 16;
     let iters = 50;
     let short = serde_json::json!({"k": "short"});
     let short_bytes = serde_json::to_vec_pretty(&short).unwrap();
     let long: serde_json::Value = serde_json::json!({
         "version": 1,
-        "entries": (0..20_000)
+        "entries": (0..2_000)
             .map(|i| (format!("file_{i}.rs"), serde_json::Value::String(format!("hash_{i:032x}"))))
             .collect::<serde_json::Map<String, serde_json::Value>>(),
     });

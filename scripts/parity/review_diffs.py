@@ -113,6 +113,12 @@ EQUIV = _build_equiv_map()
 # `@bp.get("/path") def func():` captured as different kind+name on each side,
 # so EQUIV `(path, name)` lookup can't pair them). Per-file count match is the
 # deterministic alias; scope is intentionally narrow (`route@` prefix only).
+#
+# Return type differs from parity_aggregate.py BY DESIGN: aggregate only needs
+# the count for bucket tallies, so it returns `int`. This variant returns the
+# matched `(rs_row, ref_row)` pairs so `classify_lang` can synthesize label
+# entries that show the cross-side mapping in the review markdown. Keep the
+# `defaultdict` + `min(...)` body identical otherwise.
 def _pair_route_aliases(
     rs_only: set[tuple[str, str, str]],
     ref_only: set[tuple[str, str, str]],
