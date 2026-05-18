@@ -93,6 +93,15 @@
       (visibility_modifier)? @export
       name: (field_identifier) @property.name) @property))
 
+;; Enum variant struct-form fields: `enum E { V { f1: T, f2: U } }`. Each named
+;; field is a permanent type-level data member parallel to struct fields, and
+;; pattern-match destructuring `V { f1, f2 } => ...` references them by name.
+(enum_variant
+  body: (field_declaration_list
+    (field_declaration
+      (visibility_modifier)? @export
+      name: (field_identifier) @property.name) @property))
+
 ;; Modules (both inline `mod foo { }` and declaration `mod foo;`)
 (mod_item
   (visibility_modifier)? @export
@@ -108,12 +117,24 @@
   (visibility_modifier)? @export
   name: (identifier) @const_item.name) @const_decl
 
-;; Impl blocks: `impl T` / `impl Trait for T`  (inherent and trait impls)
+;; Statics: `static X: T = ...;` / `static mut X: T = ...;` — semantically
+;; another compile-time constant from the LLM's viewpoint. NodeKind::Static
+;; doesn't exist; map to Const (ref-gitnexus uses a `Static` label, so the
+;; per-side parity diff records this as a Const↔Static label_diff).
+(static_item
+  (visibility_modifier)? @export
+  name: (identifier) @const_item.name) @const_decl
+
+;; Impl blocks: `impl T` / `impl Trait for T`  (inherent and trait impls).
+;; For `impl Foo<'a>` / `impl<T> Foo<T>` descend into `generic_type` so we
+;; capture just the bare type_identifier — ref-gitnexus stores the type
+;; name without generic parameters, so including `<'a>` here produces
+;; spurious "Impl ref_only" parity drift on every generic impl block.
 (impl_item
   type: [
-    (type_identifier)
-    (generic_type)
-  ] @impl_item.name) @impl_block
+    (type_identifier) @impl_item.name
+    (generic_type type: (type_identifier) @impl_item.name)
+  ]) @impl_block
 
 ;; Imports (use std::collections::HashMap)
 (use_declaration

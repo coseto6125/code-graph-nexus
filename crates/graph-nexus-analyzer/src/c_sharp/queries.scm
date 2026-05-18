@@ -62,6 +62,18 @@
   name: (identifier) @name.function
 ) @function
 
+;; Delegates — `public delegate ReturnT Name(...);`. No `NodeKind::Delegate`
+;; in gnx-rs; emit as Function (closest semantic — a delegate IS a
+;; function-pointer type alias). ref-gitnexus uses a dedicated `Delegate`
+;; label; the cross-side label mismatch is handled by the parity
+;; aggregator's LABEL_PAIRS as Delegate↔Function.
+(delegate_declaration
+  (attribute_list)* @decorator
+  (modifier)* @export
+  returns: (_)? @type
+  name: (identifier) @name.function
+) @function
+
 ;; Fields (class-level variables) — one Property per declarator so
 ;; `private int x, y;` emits two Property nodes.
 (field_declaration
