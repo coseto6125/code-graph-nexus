@@ -141,6 +141,107 @@ def _pair_ref_const_function_double_emit(
     return ref_only - drop_ref, pairs
 
 
+# ref-side double-emit: `template<typename T> class Foo { ... }` surfaces twice
+# on ref-gitnexus — once as `Class` at the class_specifier, once as `Template`
+# at the enclosing `template_declaration` wrapper. gnx-rs emits only `Class`
+# (the inner kind). The leftover ref-only `(Template, p, n)` row is a label
+# mismatch, not a missing symbol. Same shape as the Const/Function double-emit
+# pairer above.
+#
+# Quantified on `.sample_repo` 2026-05-19: 19 Cpp Template rows match — all
+# have rs-side `Class` at same `(p, n)` (nlohmann json template classes,
+# doctest forward-declared template classes, regression test template
+# specializations).
+#
+# Narrow on purpose — requires the ref-side Class to be present at `(p, n)`,
+# the load-bearing signal they're the SAME source span. Does NOT widen EQUIV
+# to bridge `{Method, Function, Template, Constructor}` and `{Class, Struct,
+# Interface, Enum, Trait, Union}` (would create false `Method ↔ Struct` pairs
+# at unrelated source spans).
+_TEMPLATE_TYPE_PAIR_KINDS = frozenset(
+    {"Class", "Struct", "Interface", "Enum", "Trait", "Union"}
+)
+
+
+def _pair_ref_template_class_double_emit(
+    ref_only: set[tuple[str, str, str]],
+    rs_by_pn: dict[tuple[str, str], list[str]],
+    ref_by_pn: dict[tuple[str, str], list[str]],
+) -> tuple[set[tuple[str, str, str]], int]:
+    drop_ref: set[tuple[str, str, str]] = set()
+    pairs = 0
+    for row in ref_only:
+        if row[0] != "Template":
+            continue
+        ref_kinds = ref_by_pn.get((row[1], row[2]), [])
+        rs_kinds = rs_by_pn.get((row[1], row[2]), [])
+        if any(rk in _TEMPLATE_TYPE_PAIR_KINDS for rk in ref_kinds) and any(
+            rk in _TEMPLATE_TYPE_PAIR_KINDS for rk in rs_kinds
+        ):
+            drop_ref.add(row)
+            pairs += 1
+    return ref_only - drop_ref, pairs
+
+
+# rs-side `Route` name format is `"METHOD path"` (e.g., `"GET /users"`),
+# inherited from gnx-rs's `RawRoute { method, path }` flattening to a single
+# Route node name. ref-gitnexus emits `Route` with name = bare path (e.g.,
+# `"/users"`). For routes detected by both sides this surfaces as paired
+# rs_over (1 row per METHOD-flavor) + ref_over (1 row per path) at the same
+# `(path)`. Strip the leading `(GET|POST|...|HEAD) ` prefix from rs side
+# names and pair `(p, normalized_name)` against ref side, treating matches as
+# label_diff. Verified 2026-05-19: 20 JS rows pair, the rest (test-file routes
+# inside `it()` callbacks) stay unpaired as design drops.
+_HTTP_METHOD_PREFIXES = (
+    "GET ",
+    "POST ",
+    "PUT ",
+    "DELETE ",
+    "PATCH ",
+    "OPTIONS ",
+    "HEAD ",
+    "CONNECT ",
+    "TRACE ",
+    "ALL ",
+    "USE ",
+)
+
+
+def _strip_method_prefix(name: str) -> str:
+    for m in _HTTP_METHOD_PREFIXES:
+        if name.startswith(m):
+            return name[len(m):]
+    return name
+
+
+def _pair_route_method_prefix(
+    rs_only: set[tuple[str, str, str]],
+    ref_only: set[tuple[str, str, str]],
+) -> tuple[set[tuple[str, str, str]], set[tuple[str, str, str]], int]:
+    ref_route_pn: set[tuple[str, str]] = set()
+    for fk, p, n in ref_only:
+        if fk == "Route":
+            ref_route_pn.add((p, n))
+    drop_rs: set[tuple[str, str, str]] = set()
+    drop_ref: set[tuple[str, str, str]] = set()
+    paired_ref_names: set[tuple[str, str]] = set()
+    for row in rs_only:
+        if row[0] != "Route":
+            continue
+        normalized = _strip_method_prefix(row[2])
+        if normalized == row[2]:
+            continue
+        key = (row[1], normalized)
+        if key in ref_route_pn and key not in paired_ref_names:
+            drop_rs.add(row)
+            paired_ref_names.add(key)
+    for row in ref_only:
+        if row[0] == "Route" and (row[1], row[2]) in paired_ref_names:
+            drop_ref.add(row)
+    pairs = len(drop_ref)
+    return rs_only - drop_rs, ref_only - drop_ref, pairs
+
+
 def _pair_route_aliases(
     rs_only: set[tuple[str, str, str]],
     ref_only: set[tuple[str, str, str]],
@@ -213,13 +314,24 @@ def lang_summary(lang: str) -> dict:
     rs_only = rs_set - ref_set
     ref_only = ref_set - rs_set
     rs_only, ref_only, route_alias_pairs = _pair_route_aliases(rs_only, ref_only)
+    rs_only, ref_only, route_method_prefix_pairs = _pair_route_method_prefix(
+        rs_only, ref_only
+    )
     ref_only, const_fn_double_emit_pairs = _pair_ref_const_function_double_emit(
+        ref_only, rs_by_pn, ref_by_pn
+    )
+    ref_only, template_class_pairs = _pair_ref_template_class_double_emit(
         ref_only, rs_by_pn, ref_by_pn
     )
 
     buckets = {
         "model": 0,
-        "label": route_alias_pairs + const_fn_double_emit_pairs,
+        "label": (
+            route_alias_pairs
+            + route_method_prefix_pairs
+            + const_fn_double_emit_pairs
+            + template_class_pairs
+        ),
         "real_rs": 0,
         "real_ref": 0,
     }
