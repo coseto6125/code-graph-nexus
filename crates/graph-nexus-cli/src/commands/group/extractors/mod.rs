@@ -3,6 +3,10 @@
 //! Other 9 mainstream langs are BlindSpot stubs (registered but emit nothing).
 
 pub mod http_go;
+pub mod http_python;
+pub mod http_node;
+pub mod http_java;
+pub mod http_rust;
 
 use crate::commands::group::types::ExtractedContract;
 use std::path::Path;
@@ -26,10 +30,10 @@ pub fn registry() -> Vec<ExtractorEntry> {
 fn http_extractors() -> Vec<ExtractorEntry> {
     vec![
         ExtractorEntry { lang: "go",     kind: ExtractorKind::Http, extract: http_go::extract_http },
-        ExtractorEntry { lang: "python", kind: ExtractorKind::Http, extract: blind_spot_extractor },
-        ExtractorEntry { lang: "node",   kind: ExtractorKind::Http, extract: blind_spot_extractor },
-        ExtractorEntry { lang: "java",   kind: ExtractorKind::Http, extract: blind_spot_extractor },
-        ExtractorEntry { lang: "rust",   kind: ExtractorKind::Http, extract: blind_spot_extractor },
+        ExtractorEntry { lang: "python", kind: ExtractorKind::Http, extract: http_python::extract_http },
+        ExtractorEntry { lang: "node",   kind: ExtractorKind::Http, extract: http_node::extract_http },
+        ExtractorEntry { lang: "java",   kind: ExtractorKind::Http, extract: http_java::extract_http },
+        ExtractorEntry { lang: "rust",   kind: ExtractorKind::Http, extract: http_rust::extract_http },
     ]
 }
 
