@@ -33,62 +33,87 @@ through the `gnx` CLI.
 
 ## § 1 Architecture
 
+The SKILL pack lives **inside the `gitnexus-rs` repo itself**, not in a
+separate `gnx-onboard` repo. This keeps the SKILL and the `gnx` CLI on the
+same release cycle (zero drift) and halves maintenance burden. The cost —
+distribution outlets (c) and (d) pulling extra repo weight — is mitigated
+with `--depth=1` + sparse-checkout instructions in the README.
+
 ```
-gnx-onboard/                                      ← public GitHub repo (canonical)
+gitnexus-rs/                                      ← existing repo; new content added in two locations
 │
-├── README.md                                      ← human-facing: 4 distribution paths
-├── ONBOARDING.md                                  ← CI build artifact (SKILL.md + main guides aggregated)
-├── .github/workflows/aggregate.yml                ← regenerates ONBOARDING.md on push to main
-├── .github/workflows/cli-ref.yml                  ← regenerates _shared/cli/<ver>/ on graph-nexus release tag
+├── docs/skills/
+│   ├── gnx.md                                     ← existing — agent cheatsheet for already-installed gnx
+│   └── gnx-onboard/                               ← NEW — onboarding SKILL pack
+│       │
+│       ├── ONBOARDING.md                          ← CI build artifact (SKILL.md + guides aggregated)
+│       ├── SKILL.md                               ← Layer 1 (only file with frontmatter, ~80 lines)
+│       │
+│       ├── guides/                                ← Layer 2 (phase guides, pure markdown, no frontmatter)
+│       │   ├── 01-install.md
+│       │   ├── 02-first-index.md
+│       │   ├── 03-group.md
+│       │   ├── 04-mcp.md
+│       │   └── 05-summary.md
+│       │
+│       └── _shared/                               ← Layer 3 (on-demand reference cards)
+│           ├── cli/
+│           │   ├── manifest.json                  ← {"latest": "0.1.5", "versions": [...]}
+│           │   ├── 0.1.5/
+│           │   │   ├── find.md
+│           │   │   ├── impact.md
+│           │   │   ├── admin-index.md
+│           │   │   ├── admin-group.md
+│           │   │   ├── admin-mcp.md
+│           │   │   └── group-find.md
+│           │   └── 0.1.4/                         ← old versions retained
+│           │       └── ...
+│           └── refs/
+│               ├── env-detect.md                   ← probe snippets + "common failures" table
+│               ├── persona-inference.md            ← signal → persona-dimension rule table
+│               └── recommendation-templates.md     ← "next-step" sentence library
 │
-├── tools/
+├── tools/                                         ← NEW — bash tooling (no language runtime needed)
 │   ├── aggregate.sh                               ← concatenates SKILL.md + guides → ONBOARDING.md
 │   ├── gen-cli-ref.sh                             ← scrapes `gnx <cmd> --help` → _shared/cli/<ver>/
 │   ├── lint-skill.sh                              ← T1 structural lint (see § 5)
 │   └── test-persona-rules.sh                      ← T4 persona-rule self-consistency (see § 5)
 │
-└── skills/gnx-onboard/                            ← source-of-truth SKILL pack
-    │
-    ├── SKILL.md                                   ← Layer 1 (only file with frontmatter, ~80 lines)
-    │
-    ├── guides/                                    ← Layer 2 (phase guides, pure markdown, no frontmatter)
-    │   ├── 01-install.md
-    │   ├── 02-first-index.md
-    │   ├── 03-group.md
-    │   ├── 04-mcp.md
-    │   └── 05-summary.md
-    │
-    └── _shared/                                   ← Layer 3 (on-demand reference cards)
-        ├── cli/
-        │   ├── manifest.json                      ← {"latest": "0.1.5", "versions": [...]}
-        │   ├── 0.1.5/
-        │   │   ├── find.md
-        │   │   ├── impact.md
-        │   │   ├── admin-index.md
-        │   │   ├── admin-group.md
-        │   │   ├── admin-mcp.md
-        │   │   └── group-find.md
-        │   └── 0.1.4/                             ← old versions retained
-        │       └── ...
-        └── refs/
-            ├── env-detect.md                       ← system probe snippets + "common failures" table
-            ├── persona-inference.md                ← signal → persona-dimension rule table
-            └── recommendation-templates.md         ← "next-step" sentence library
+├── tests/skill/                                   ← NEW — SKILL-specific fixtures
+│   ├── persona-fixtures.yaml                      ← T4 fixture set
+│   └── smoke-playbook.md                          ← T5 manual end-to-end checklist
+│
+└── .github/workflows/
+    ├── skill-aggregate.yml                        ← NEW — regenerates ONBOARDING.md on push (touching docs/skills/gnx-onboard/)
+    └── skill-cli-ref.yml                          ← NEW — regenerates _shared/cli/<ver>/ on graph-nexus release tag
 ```
 
 ### 4 distribution outlets, same source
 
 | Outlet | Audience | Mechanism |
 |---|---|---|
-| (a) URL bootstrap | Any LLM agent | User pastes `Fetch <raw URL>/SKILL.md and follow it` into chat |
-| (b) ShareOnboardingGuide | Claude Code, lowest friction | Run from repo cwd → short-code link → recipient opens in Claude Code |
-| (c) Plugin (`/plugin install`) | Claude Code power user | `~/.claude/plugins/gnx-onboard/`; auto-updates |
-| (d) `git clone` | Offline / hacker | Clone to corresponding agent's skill / rule directory |
+| (a) URL bootstrap | Any LLM agent | User pastes `Fetch <raw URL>/docs/skills/gnx-onboard/SKILL.md and follow it` into chat |
+| (b) ShareOnboardingGuide | Claude Code, lowest friction | Run from `docs/skills/gnx-onboard/` cwd → short-code link → recipient opens in Claude Code |
+| (c) Plugin (`/plugin install`) | Claude Code power user | Pulls full repo into `~/.claude/plugins/gitnexus-rs/`; SKILL is a subpath. **Recommended:** README documents `--depth=1` + sparse-checkout to pull only `docs/skills/gnx-onboard/` |
+| (d) `git clone` | Offline / hacker | Sparse-checkout `docs/skills/gnx-onboard/` to corresponding agent's skill / rule directory |
 
-All 4 outlets derive from the same `skills/gnx-onboard/` source. The
+All 4 outlets derive from the same `docs/skills/gnx-onboard/` source. The
 aggregator (`tools/aggregate.sh`) generates `ONBOARDING.md` for (b);
 `_shared/` is **not** aggregated (size). (a) / (c) / (d) consume the
 source directly.
+
+### Why same-repo (decision log entry)
+
+- **Zero version drift**: gnx CLI and the SKILL ship in lockstep; § 4 D
+  divergence path becomes a near-empty branch.
+- **One PR, one CI**: aggregator + CLI-ref regen pipelines reuse existing
+  repo's GitHub Actions setup.
+- **`gen-cli-ref.sh` is trivial**: builds `gnx` locally with `cargo build`
+  and points the generator at the freshly-built binary — no need to
+  download a release or run `cargo install`.
+- Trade-off: (c)/(d) outlets pull ~hundreds of MB of Rust source. Mitigated
+  via `git clone --depth=1 --filter=blob:none --sparse <url> && cd ... &&
+  git sparse-checkout set docs/skills/gnx-onboard` — documented in README.
 
 ## § 2 Components & responsibilities
 
@@ -447,3 +472,4 @@ Runs pre-release; not per-PR (cost).
 | 2026-05-18 | Batch-collect-then-apply (don't block on install) | Reduce wait time; user answers later phases while binary downloads |
 | 2026-05-18 | CLI reference cards auto-generated per gnx version | Avoid hand-written drift; supports older-version recipients |
 | 2026-05-18 | CI is future work; manual generator runs first | Get to MVP fast; wire CI after pattern stabilizes |
+| 2026-05-18 | Same-repo (live in `gitnexus-rs/docs/skills/gnx-onboard/`), not a separate `gnx-onboard` repo | Zero version drift between gnx CLI and SKILL, single CI, single PR; cost on outlets (c)/(d) mitigated by sparse-checkout instructions |
