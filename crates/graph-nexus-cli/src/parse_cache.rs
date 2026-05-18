@@ -15,18 +15,18 @@
 //! live. The fingerprint subdir is the only invalidation lever; LRU /
 //! quota / orphan sweep belong to a separate GC pass.
 
-use crate::repo_identity::sha256_hex8;
+use crate::repo_identity::short_hash_hex8;
 use graph_nexus_core::analyzer::types::LocalGraph;
 use graph_nexus_core::registry::{atomic_write_bytes_no_fsync, BUILDER_FINGERPRINT};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// First 8 hex chars of `sha256(BUILDER_FINGERPRINT)` — short, filesystem-
-/// safe, stable for the life of the process. Memoised because
-/// `BUILDER_FINGERPRINT` is a compile-time constant.
+/// First 8 hex chars of a stable xxh3_64 digest of `BUILDER_FINGERPRINT` —
+/// short, filesystem-safe, stable for the life of the process. Memoised
+/// because `BUILDER_FINGERPRINT` is a compile-time constant.
 fn fingerprint_dir_name() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE.get_or_init(|| sha256_hex8(BUILDER_FINGERPRINT.as_bytes()))
+    CACHE.get_or_init(|| short_hash_hex8(BUILDER_FINGERPRINT.as_bytes()))
 }
 
 pub struct ParseCache {
@@ -45,7 +45,7 @@ impl ParseCache {
 
     /// Filesystem location for a given content hash. Exposed for tests
     /// that need to seed corrupted blobs or inspect on-disk layout.
-    pub fn path_for(&self, content_hash: &[u8; 32]) -> PathBuf {
+    pub fn path_for(&self, content_hash: &[u8; 8]) -> PathBuf {
         self.root.join(format!("{}.rkyv", hex::encode(content_hash)))
     }
 
@@ -54,7 +54,7 @@ impl ParseCache {
     /// a safe fall-through to the regular parse path. Corrupt entries
     /// are deleted so the next `put` for the same key writes clean
     /// (without this, a single bad blob poisons that key forever).
-    pub fn get(&self, content_hash: &[u8; 32]) -> Option<LocalGraph> {
+    pub fn get(&self, content_hash: &[u8; 8]) -> Option<LocalGraph> {
         let path = self.path_for(content_hash);
         let bytes = std::fs::read(&path).ok()?;
         match rkyv::from_bytes::<LocalGraph, rkyv::rancor::Error>(&bytes) {

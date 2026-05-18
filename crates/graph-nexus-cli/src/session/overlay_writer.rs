@@ -21,7 +21,7 @@ use graph_nexus_core::graph::NodeKind;
 use graph_nexus_core::registry::atomic_write_json;
 use graph_nexus_core::session::overlay::{SymbolKind, SymbolRef};
 use graph_nexus_core::session::{DirtyEntry, DirtyFiles, SessionMeta};
-use sha2::{Digest, Sha256};
+use xxhash_rust::xxh3::xxh3_64;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -50,7 +50,7 @@ pub fn write_dirty_fragment(
     session_dir: &Path,
     input: &FragmentInput,
 ) -> io::Result<FragmentOutcome> {
-    let content_hash = sha256_hex(&input.content);
+    let content_hash = content_hash_hex(&input.content);
     let fragment_id = content_hash[..16].to_string();
 
     let overlay_dir = session_dir.join("graph_overlay");
@@ -144,8 +144,8 @@ fn bump_overlay_version(session_dir: &Path) -> io::Result<()> {
     atomic_write_json(&path, &sm)
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn content_hash_hex(bytes: &[u8]) -> String {
+    format!("{:016x}", xxh3_64(bytes))
 }
 
 // Process-wide pipeline — built once, shared across all `OverlayWriter` calls.

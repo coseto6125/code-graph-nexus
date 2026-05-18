@@ -1477,7 +1477,7 @@ mod tests {
     fn l0_relative_import_produces_import_scoped_edge() {
         let caller = LocalGraph {
             file_path: "src/a.ts".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![RawNode {
                 name: "useThing".into(),
                 kind: NodeKind::Function,
@@ -1502,7 +1502,7 @@ mod tests {
         };
         let target = LocalGraph {
             file_path: "src/b.ts".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![RawNode {
                 name: "thing".into(),
                 kind: NodeKind::Function,
@@ -1613,7 +1613,7 @@ mod tests {
 
         let g = LocalGraph {
             file_path: "test.py".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![
                 RawNode {
                     name: "dispatch".into(),
@@ -1736,7 +1736,7 @@ mod tests {
         }
         let g = LocalGraph {
             file_path: "test.py".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes,
             documents: vec![],
             imports: vec![],
@@ -1775,7 +1775,7 @@ mod tests {
     fn framework_ref_produces_edge_with_confidence_and_reason() {
         let g = LocalGraph {
             file_path: "test.py".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![
                 RawNode {
                     name: "handler".into(),
@@ -1834,7 +1834,7 @@ mod tests {
     fn mk_file(path: &str, name: &str, kind: NodeKind, calls: Vec<String>) -> LocalGraph {
         LocalGraph {
             file_path: path.into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![RawNode {
                 name: name.into(),
                 kind,
@@ -1926,7 +1926,7 @@ mod tests {
 
         let g = LocalGraph {
             file_path: "test.py".into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![],
             documents: vec![],
             imports: vec![],
@@ -2011,7 +2011,7 @@ mod tests {
             vec![
                 LocalGraph {
                     file_path: "src/foo.rs".into(),
-                    content_hash: [0; 32],
+                    content_hash: [0; 8],
                     nodes: vec![RawNode {
                         name: "Foo".into(),
                         kind: NodeKind::Class,
@@ -2043,7 +2043,7 @@ mod tests {
                 },
                 LocalGraph {
                     file_path: "src/bar.rs".into(),
-                    content_hash: [0; 32],
+                    content_hash: [0; 8],
                     nodes: vec![
                         RawNode {
                             name: "Bar".into(),
@@ -2184,7 +2184,7 @@ mod tests {
     ) -> LocalGraph {
         LocalGraph {
             file_path: rel_path.into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![RawNode {
                 name: handler.into(),
                 kind: NodeKind::Function,
@@ -2212,7 +2212,7 @@ mod tests {
     fn consumer_local_graph(rel_path: &str) -> LocalGraph {
         LocalGraph {
             file_path: rel_path.into(),
-            content_hash: [0; 32],
+            content_hash: [0; 8],
             nodes: vec![RawNode {
                 name: "loadUsers".into(),
                 kind: NodeKind::Function,
