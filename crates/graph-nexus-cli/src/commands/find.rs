@@ -985,14 +985,9 @@ fn resolve_targets(selector: Option<&str>) -> Result<Vec<(String, String)>, GnxE
     let dir_names: Vec<String> = if sel == "@all" {
         snapshot.repos.keys().cloned().collect()
     } else if let Some(group_name) = sel.strip_prefix('@') {
-        match snapshot.groups.iter().find(|g| g.name == group_name) {
-            Some(g) => g.members.clone(),
-            None => {
-                return Err(GnxError::InvalidArgument(format!(
-                    "unknown group '{group_name}' — run `gnx admin group list` to see registered groups"
-                )));
-            }
-        }
+        return Err(GnxError::InvalidArgument(format!(
+            "`@{group_name}` cannot be used at the top level — use `gnx group find` instead"
+        )));
     } else {
         // Comma-separated list of names or dir_names.
         sel.split(',')

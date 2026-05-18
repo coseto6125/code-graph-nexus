@@ -64,12 +64,9 @@ pub fn build_payload(args: &CoverageArgs, _graph_arg: &Path) -> Result<Value, Gn
         let selector = crate::repo_selector::parse(repo_sel)
             .map_err(|e| GnxError::Output(format!("selector: {e}")))?;
         let cwd_str = cwd.to_string_lossy();
-        let resolved = crate::repo_selector::resolve(&selector, reg, &cwd_str).map_err(|e| {
-            // For unknown group/name: emit graceful empty result rather than
-            // a hard error, so `--repo @test-group` on a fresh machine
-            // doesn't blow up integration tests.
-            GnxError::Output(format!("selector: {e}"))
-        })?;
+        let resolved =
+            crate::repo_selector::resolve_top_level(&selector, reg, &cwd_str, "coverage")
+                .map_err(|e| GnxError::Output(format!("selector: {e}")))?;
         let per_repo: Vec<Value> = resolved
             .iter()
             .map(|r| build_repo_health(r, args.detailed))

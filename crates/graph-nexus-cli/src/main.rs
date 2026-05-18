@@ -163,6 +163,24 @@ fn main() {
         _ => {} // fall through to graph-loading path
     }
 
+    // Reject `@<group>` on top-level `find` before auto_ensure uses it as
+    // cwd. `@all` is fine — it resolves to the registered repo set, not a
+    // group. This mirrors the equivalent check inside `find::resolve_targets`
+    // but must happen here because main.rs feeds `args.repo` to auto_ensure
+    // before `find::run` is called.
+    if let Commands::Find(args) = &cli.command {
+        if let Some(sel) = args.repo.as_deref() {
+            if let Some(group_name) = sel.strip_prefix('@') {
+                if group_name != "all" {
+                    eprintln!(
+                        "error: `@{group_name}` cannot be used at the top level — use `gnx group find` instead"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     // Agent commands + ShapeCheck (hidden internal) — need graph
     let repo_opt = match &cli.command {
         Commands::Inspect(args) => args.repo.as_deref(),
