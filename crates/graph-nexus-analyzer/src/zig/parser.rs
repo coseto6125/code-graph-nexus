@@ -9,40 +9,23 @@ use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor};
 
-/// Walk a `variable_declaration` node's named children to find the RHS
-/// expression (the child after the `=` token).  Returns the tree-sitter kind
-/// string of that expression child, or `""` if there is no initializer.
-///
-/// Zig grammar: `optional(pub/export/extern/threadlocal), const/var, identifier,
-///              optional(: type), optional(= expression), ;`
-///
-/// The `=` is an anonymous (unnamed) token, so we iterate named children and
-/// pick the one whose kind is neither `identifier` (the variable name) nor a
-/// type_expression / type annotation marker.  The heuristic: the second named
-/// child that is NOT part of the header (i.e., not the var-name identifier and
-/// not a type that appears right after `:`).
-///
-/// Simpler approach: walk all named children and return the last one that is not
-/// the `identifier` at the head of the declaration.
+/// Returns the tree-sitter kind of the RHS expression in a
+/// `variable_declaration`, used to distinguish `const X = SomeType` (alias →
+/// Typedef) from `const x = 42` (value → Const). Empty when the declaration
+/// has only a name (no initializer).
 fn zig_typedef_rhs_kind(decl: Node<'_>) -> &'static str {
-    // Named children of variable_declaration:
-    //   [identifier(name), optional(type_expression), optional(expr-rhs)]
-    // The first named child is always the variable name (identifier).
-    // The last named child (if different from the first) is the RHS expression.
     let mut cursor = decl.walk();
-    let named: Vec<Node<'_>> = decl.named_children(&mut cursor).collect();
-    // Find the RHS: last named child that is not at position 0 (the var name).
-    // In practice: if there are 2+ named children, the last one is the RHS.
-    // If there is only 1 named child (no initializer or no type annotation),
-    // return "" — no RHS.
-    if named.len() < 2 {
+    let mut iter = decl.named_children(&mut cursor);
+    let Some(first) = iter.next() else {
+        return "";
+    };
+    let last = iter.last().unwrap_or(first);
+    if last.start_byte() == first.start_byte() {
         return "";
     }
-    // The second named child could be a type annotation or the RHS expression.
-    // We want the last named child.
-    match named.last().map(|n| n.kind()) {
-        Some("identifier") => "identifier",
-        Some("field_expression") => "field_expression",
+    match last.kind() {
+        "identifier" => "identifier",
+        "field_expression" => "field_expression",
         _ => "",
     }
 }

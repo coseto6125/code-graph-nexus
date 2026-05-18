@@ -62,6 +62,18 @@ fn test_nim_object_not_typedef() {
 }
 
 #[test]
+fn test_nim_enum_not_typedef() {
+    // `type Foo = enum` parses as type_declaration with an enum_declaration
+    // child; the Typedef filter must reject it so it doesn't shadow the
+    // Class/Enum path.
+    let nodes = parse("type Color = enum\n  Red\n  Blue\n");
+    assert!(
+        nodes.iter().all(|(_, k)| *k != NodeKind::Typedef),
+        "enum type must not emit Typedef, got: {nodes:#?}"
+    );
+}
+
+#[test]
 fn test_nim_multiple_aliases_in_type_section() {
     let src = "type\n  Score = int\n  Person = object\n    name: string\n";
     let nodes = parse(src);

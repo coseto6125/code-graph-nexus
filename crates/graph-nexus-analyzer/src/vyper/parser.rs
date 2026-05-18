@@ -23,11 +23,10 @@ fn extract_as_alias(s: &str) -> Option<&str> {
     // Find ` as ` (with surrounding spaces) to distinguish from names
     // that happen to contain "as" (e.g. "class", "base").
     let as_pos = s.find(" as ")?;
-    let after = s[as_pos + 4..].trim();
-    // Strip inline comment and trailing whitespace
-    let alias = after.split_whitespace().next()?;
-    // Strip comment char if accidentally included
-    let alias = alias.trim_start_matches('#');
+    // Strip inline comment first — works whether or not there's a space
+    // before `#` (`as m # c` and `as m#c` both yield "m").
+    let before_comment = s[as_pos + 4..].split('#').next().unwrap_or("");
+    let alias = before_comment.split_whitespace().next()?;
     if alias.is_empty() { None } else { Some(alias) }
 }
 

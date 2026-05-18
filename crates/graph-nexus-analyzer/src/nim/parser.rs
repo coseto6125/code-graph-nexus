@@ -97,16 +97,21 @@ impl LanguageProvider for NimProvider {
             // Emit a node for proc/func/method/iterator/template/macro/type/const.
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
                 // For Typedef candidates: skip if the parent type_declaration has
-                // object_declaration, distinct_type, or ref_type child — those stay Class.
+                // an object/distinct/ref/enum child — those stay Class/Enum.
                 if k == NodeKind::Typedef {
-                    // root is the type_symbol_declaration node; its parent is type_declaration.
                     if let Some(type_decl) = root.parent() {
                         let mut wc = type_decl.walk();
                         let has_class_child = type_decl.named_children(&mut wc).any(|c| {
-                            matches!(c.kind(), "object_declaration" | "distinct_type" | "ref_type")
+                            matches!(
+                                c.kind(),
+                                "object_declaration"
+                                    | "distinct_type"
+                                    | "ref_type"
+                                    | "enum_declaration"
+                            )
                         });
                         if has_class_child {
-                            continue; // Class pattern will handle this node
+                            continue;
                         }
                     }
                 }
