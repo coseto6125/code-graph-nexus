@@ -1,3 +1,4 @@
+pub mod contracts;
 pub mod extractors;
 pub mod matching;
 pub mod status;
@@ -15,12 +16,15 @@ pub enum GroupCommands {
     Sync(sync::SyncArgs),
     /// Show staleness of each member against the last-synced meta snapshot
     Status(status::StatusArgs),
+    /// List contracts with optional filtering
+    Contracts(contracts::ContractsArgs),
 }
 
 pub fn run(cmd: GroupCommands) -> Result<(), GnxError> {
     match cmd {
         GroupCommands::Sync(args) => sync::run(args),
         GroupCommands::Status(args) => status::run(args),
+        GroupCommands::Contracts(args) => contracts::run(args),
     }
 }
 
