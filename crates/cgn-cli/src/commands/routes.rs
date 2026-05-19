@@ -9,9 +9,9 @@
 use crate::commands::format::kind_to_str;
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
-use clap::Args;
 use cgn_core::graph::{ArchivedFileCategory, ArchivedNodeKind, ArchivedRelType};
 use cgn_core::CgnError;
+use clap::Args;
 use std::collections::{HashSet, VecDeque};
 
 #[derive(Args, Debug, Clone)]
@@ -319,7 +319,7 @@ fn inspect_route(
         // Smallest containing scope of the route registration call. Used
         // for both the per-route `enclosingScope` field and as the BFS seed
         // for inline-anonymous handlers (which have no node of their own).
-        let enclosing_idx = find_enclosing_scope(&graph, route_file_idx, route_line);
+        let enclosing_idx = find_enclosing_scope(graph, route_file_idx, route_line);
 
         routes_out.push(serde_json::json!({
             "method": route_method,
@@ -327,7 +327,7 @@ fn inspect_route(
             "uid": route_node.uid.resolve(&graph.string_pool),
             "filePath": route_file_path,
             "line": route_line,
-            "enclosingScope": enclosing_scope_json(&graph, enclosing_idx),
+            "enclosingScope": enclosing_scope_json(graph, enclosing_idx),
         }));
 
         // Handler: incoming HandlesRoute edge on the Route node.
@@ -357,11 +357,11 @@ fn inspect_route(
                 "filePath": route_file_path,
                 "line": route_line,
                 "route": route_name,
-                "enclosingScope": enclosing_scope_json(&graph, enclosing_idx),
+                "enclosingScope": enclosing_scope_json(graph, enclosing_idx),
             }));
             if let Some(scope_idx) = enclosing_idx {
                 bfs_upstream(
-                    &graph,
+                    graph,
                     scope_idx,
                     depth,
                     route_node.uid.resolve(&graph.string_pool),
@@ -386,11 +386,11 @@ fn inspect_route(
                 "filePath": handler_file.path.resolve(&graph.string_pool),
                 "line": handler_node.span.0.to_native(),
                 "route": route_name,
-                "enclosingScope": enclosing_scope_json(&graph, enclosing_idx),
+                "enclosingScope": enclosing_scope_json(graph, enclosing_idx),
             }));
 
             bfs_upstream(
-                &graph,
+                graph,
                 handler_idx,
                 depth,
                 handler_node.uid.resolve(&graph.string_pool),

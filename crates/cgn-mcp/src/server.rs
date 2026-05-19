@@ -68,9 +68,8 @@ struct RmcpHandler(Arc<CgnMcpServer>);
 impl rmcp::ServerHandler for RmcpHandler {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(
-            Implementation::new("cgn-mcp", env!("CARGO_PKG_VERSION")),
-        )
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("cgn-mcp", env!("CARGO_PKG_VERSION")))
     }
 
     fn list_tools(

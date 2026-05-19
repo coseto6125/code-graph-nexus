@@ -50,9 +50,23 @@ DEFAULT_RUNTIME = REPO_ROOT / "scripts" / "parity" / "final_baseline.txt"
 # — these are framework-level or document-structure kinds emitted via paths
 # orthogonal to the spec table, so 3-way comparison on them is noise.
 TRACKED_KINDS = {
-    "Function", "Class", "Method", "Interface", "Constructor", "Property",
-    "Variable", "Const", "Struct", "Enum", "Typedef", "Namespace", "Macro",
-    "Annotation", "Trait", "Module", "Impl",
+    "Function",
+    "Class",
+    "Method",
+    "Interface",
+    "Constructor",
+    "Property",
+    "Variable",
+    "Const",
+    "Struct",
+    "Enum",
+    "Typedef",
+    "Namespace",
+    "Macro",
+    "Annotation",
+    "Trait",
+    "Module",
+    "Impl",
 }
 
 CAPTURE_KIND_BLOCK_RE = re.compile(
@@ -60,9 +74,7 @@ CAPTURE_KIND_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 KIND_REF_RE = re.compile(r"NodeKind::(\w+)\b")
-RUNTIME_HEADER_RE = re.compile(
-    r"=== (\w+)\s+\(rs total \d+, ref total \d+, delta [+-]\d+\) ==="
-)
+RUNTIME_HEADER_RE = re.compile(r"=== (\w+)\s+\(rs total \d+, ref total \d+, delta [+-]\d+\) ===")
 RUNTIME_ROW_RE = re.compile(r"^\s+(\w+)\s+(\d+)\s+\d+\s+[+-]\d+", re.MULTILINE)
 
 
@@ -122,16 +134,26 @@ def runtime_lang_name(dir_name: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--runtime", type=Path, default=DEFAULT_RUNTIME,
-                    help="Path to runtime dump (default: scripts/parity/final_baseline.txt)")
-    ap.add_argument("--only", type=str, default="",
-                    help="Comma-separated lang dirs to limit output (e.g. 'kotlin,swift')")
-    ap.add_argument("--consistent", action="store_true",
-                    help="Include consistent (YYY / NNN) rows in output")
+    ap.add_argument(
+        "--runtime",
+        type=Path,
+        default=DEFAULT_RUNTIME,
+        help="Path to runtime dump (default: scripts/parity/final_baseline.txt)",
+    )
+    ap.add_argument(
+        "--only",
+        type=str,
+        default="",
+        help="Comma-separated lang dirs to limit output (e.g. 'kotlin,swift')",
+    )
+    ap.add_argument(
+        "--consistent", action="store_true", help="Include consistent (YYY / NNN) rows in output"
+    )
     args = ap.parse_args()
 
-    lang_dirs = [p for p in sorted(ANALYZER_SRC.iterdir())
-                 if p.is_dir() and (p / "parser.rs").exists()]
+    lang_dirs = [
+        p for p in sorted(ANALYZER_SRC.iterdir()) if p.is_dir() and (p / "parser.rs").exists()
+    ]
     if args.only:
         wanted = {s.strip() for s in args.only.split(",") if s.strip()}
         lang_dirs = [p for p in lang_dirs if p.name in wanted]
@@ -163,14 +185,14 @@ def main() -> int:
             triple = (in_spec, in_parser, in_runtime)
             if not args.consistent:
                 if triple in {
-                    (True, True, True),    # aligned (spec + parser-ref)
-                    (True, False, True),   # aligned (spec-dispatched, post-LangSpec normal)
-                    (False, False, False), # lang doesn't have this kind
+                    (True, True, True),  # aligned (spec + parser-ref)
+                    (True, False, True),  # aligned (spec-dispatched, post-LangSpec normal)
+                    (False, False, False),  # lang doesn't have this kind
                     (False, True, False),  # parser match arm, no emit on corpus
                     (True, False, False),  # spec lists, no emit — ambiguous (corpus lacks
-                                           # instances OR spec entry unused). Too noisy
-                                           # to surface; rely on YYN (with parser ref) to
-                                           # flag truly dead entries.
+                    # instances OR spec entry unused). Too noisy
+                    # to surface; rely on YYN (with parser ref) to
+                    # flag truly dead entries.
                 }:
                     continue
 
@@ -183,9 +205,11 @@ def main() -> int:
             print(f"{lang_dir.name:<16} {kind:<14} {s:>4} {p:>6} {r_str:>8}  {diagnosis}")
 
     print("-" * 70)
-    print(f"\n{drift_count} drift row(s) reported. "
-          "Hidden post-process kinds (NYY) are usually intentional — verify by reading parser.rs. "
-          "Dead spec entries (YYN) suggest the capture isn't firing on this corpus.")
+    print(
+        f"\n{drift_count} drift row(s) reported. "
+        "Hidden post-process kinds (NYY) are usually intentional — verify by reading parser.rs. "
+        "Dead spec entries (YYN) suggest the capture isn't firing on this corpus."
+    )
     return 0
 
 

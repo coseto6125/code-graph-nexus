@@ -35,6 +35,7 @@ Usage
 Outputs land at ``scripts/parity/review/<Lang>_review.md``. Re-running
 overwrites — these are derived artefacts, not source-of-truth.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,9 +50,20 @@ DIFF_DIR = SCRIPT_DIR / "symbol_diffs"
 OUT_DIR = SCRIPT_DIR / "review"
 
 LANGS = [
-    "TypeScript", "JavaScript", "Python", "Java", "Kotlin",
-    "CSharp", "Go", "Rust", "PHP", "Ruby",
-    "Swift", "C", "Cpp", "Dart",
+    "TypeScript",
+    "JavaScript",
+    "Python",
+    "Java",
+    "Kotlin",
+    "CSharp",
+    "Go",
+    "Rust",
+    "PHP",
+    "Ruby",
+    "Swift",
+    "C",
+    "Cpp",
+    "Dart",
 ]
 
 # Mirror parity_aggregate.py — keep in sync. Anything here is a
@@ -69,12 +81,31 @@ _EQUIV_CLASSES: list[set[str]] = [
 # Markdown fence languages — best-effort syntax tag. Falls back to "" when
 # the file extension isn't in the table (still produces a fenced block).
 EXT_TO_FENCE: dict[str, str] = {
-    ".ts": "typescript", ".tsx": "tsx", ".js": "javascript", ".mjs": "javascript",
-    ".cjs": "javascript", ".jsx": "jsx", ".py": "python", ".pyi": "python",
-    ".java": "java", ".kt": "kotlin", ".kts": "kotlin", ".cs": "csharp",
-    ".go": "go", ".rs": "rust", ".php": "php", ".rb": "ruby",
-    ".swift": "swift", ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp",
-    ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".jsx": "jsx",
+    ".py": "python",
+    ".pyi": "python",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".cs": "csharp",
+    ".go": "go",
+    ".rs": "rust",
+    ".php": "php",
+    ".rb": "ruby",
+    ".swift": "swift",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
+    ".hxx": "cpp",
     ".dart": "dart",
 }
 
@@ -194,14 +225,23 @@ def classify_lang(lang: str) -> dict[str, list[dict]]:
     # the bare path. Strip method prefix to surface as label_diff instead of
     # appearing as both rs_over (METHOD-prefixed) and ref_over (bare path).
     HTTP_METHOD_PREFIXES = (
-        "GET ", "POST ", "PUT ", "DELETE ", "PATCH ",
-        "OPTIONS ", "HEAD ", "CONNECT ", "TRACE ", "ALL ", "USE ",
+        "GET ",
+        "POST ",
+        "PUT ",
+        "DELETE ",
+        "PATCH ",
+        "OPTIONS ",
+        "HEAD ",
+        "CONNECT ",
+        "TRACE ",
+        "ALL ",
+        "USE ",
     )
 
     def _strip_method(n: str) -> str:
         for m in HTTP_METHOD_PREFIXES:
             if n.startswith(m):
-                return n[len(m):]
+                return n[len(m) :]
         return n
 
     ref_route_pn: set[tuple[str, str]] = set()
@@ -255,7 +295,12 @@ def classify_lang(lang: str) -> dict[str, list[dict]]:
     # rs-side type-family kind at same `(p, n)` so we only pair true
     # double-emits.
     TEMPLATE_TYPE_PAIR_KINDS = {
-        "Class", "Struct", "Interface", "Enum", "Trait", "Union",
+        "Class",
+        "Struct",
+        "Interface",
+        "Enum",
+        "Trait",
+        "Union",
     }
     template_class_pairs: list[tuple[str, str]] = []
     drop_ref_template: set[tuple[str, str, str]] = set()
@@ -272,41 +317,50 @@ def classify_lang(lang: str) -> dict[str, list[dict]]:
     ref_only -= drop_ref_template
 
     buckets: dict[str, list[dict]] = {
-        "label": [], "model": [], "real_rs": [], "real_ref": [],
+        "label": [],
+        "model": [],
+        "real_rs": [],
+        "real_ref": [],
     }
     # Surface METHOD-prefix route pairings so the markdown shows both sides.
     for rs_row, ref_row in method_prefix_pairs:
         _, p, rs_name = rs_row
         _, _, ref_name = ref_row
-        buckets["label"].append({
-            "kind": "Route",
-            "path": p,
-            "name": ref_name,
-            "rs_kinds": [f"Route[{rs_name}]"],
-            "ref_kinds": ["Route"],
-        })
+        buckets["label"].append(
+            {
+                "kind": "Route",
+                "path": p,
+                "name": ref_name,
+                "rs_kinds": [f"Route[{rs_name}]"],
+                "ref_kinds": ["Route"],
+            }
+        )
     # Surface paired Template↔Class double-emits as label entries.
     for p, n in template_class_pairs:
         rs_kinds = sorted(set(rs_by_pn.get((p, n), [])))
         ref_kinds = sorted(set(ref_by_pn.get((p, n), [])))
-        buckets["label"].append({
-            "kind": "Template",
-            "path": p,
-            "name": n,
-            "rs_kinds": rs_kinds,
-            "ref_kinds": ref_kinds,
-        })
+        buckets["label"].append(
+            {
+                "kind": "Template",
+                "path": p,
+                "name": n,
+                "rs_kinds": rs_kinds,
+                "ref_kinds": ref_kinds,
+            }
+        )
     # Surface paired Const↔Function double-emits as label entries so the
     # review markdown still shows the cross-side mapping the reviewer
     # would otherwise have to discover manually.
     for p, n in const_fn_pairs:
-        buckets["label"].append({
-            "kind": "Const",
-            "path": p,
-            "name": n,
-            "rs_kinds": ["Function"],
-            "ref_kinds": ["Const", "Function"],
-        })
+        buckets["label"].append(
+            {
+                "kind": "Const",
+                "path": p,
+                "name": n,
+                "rs_kinds": ["Function"],
+                "ref_kinds": ["Const", "Function"],
+            }
+        )
 
     # Render route aliases as label entries keyed on the ref-side Route row
     # (URL path is what the reviewer wants to verify); annotate `rs_kinds`
@@ -315,17 +369,21 @@ def classify_lang(lang: str) -> dict[str, list[dict]]:
     for rs_row, ref_row in route_pairs:
         _, p, ref_name = ref_row
         _, _, rs_name = rs_row
-        buckets["label"].append({
-            "kind": "Route",
-            "path": p,
-            "name": ref_name,
-            "rs_kinds": [f"EntryPoint[{rs_name}]"],
-            "ref_kinds": ["Route"],
-        })
+        buckets["label"].append(
+            {
+                "kind": "Route",
+                "path": p,
+                "name": ref_name,
+                "rs_kinds": [f"EntryPoint[{rs_name}]"],
+                "ref_kinds": ["Route"],
+            }
+        )
 
     def entry(kind: str, path: str, name: str) -> dict:
         return {
-            "kind": kind, "path": path, "name": name,
+            "kind": kind,
+            "path": path,
+            "name": name,
             "rs_kinds": sorted(set(rs_by_pn.get((path, name), []))),
             "ref_kinds": sorted(set(ref_by_pn.get((path, name), []))),
         }
@@ -379,7 +437,9 @@ def _name_re(name: str) -> re.Pattern[str]:
 
 
 def find_declaration(
-    file_path: Path, name: str, context: int,
+    file_path: Path,
+    name: str,
+    context: int,
 ) -> tuple[int, list[str]] | None:
     """Grep ``\\bname\\b`` in the file, return (1-indexed line, snippet)
     centred on the FIRST match. ``None`` when the name doesn't appear.
@@ -423,7 +483,7 @@ def render_entry(lang: str, bucket: str, e: dict, context: int) -> list[str]:
     scrolling past bullets. The diff itself is one line; the verdict
     prompt is one line. Everything else is the code.
     """
-    path, name, kind = e["path"], e["name"], e["kind"]
+    path, name = e["path"], e["name"]
     rs_label = ", ".join(e["rs_kinds"]) or "—"
     ref_label = ", ".join(e["ref_kinds"]) or "—"
 
@@ -465,7 +525,9 @@ def render_entry(lang: str, bucket: str, e: dict, context: int) -> list[str]:
 
 
 def filter_entries(
-    entries: list[dict], kind_filter: str | None, limit_per_kind: int,
+    entries: list[dict],
+    kind_filter: str | None,
+    limit_per_kind: int,
 ) -> list[dict]:
     if kind_filter:
         entries = [e for e in entries if e["kind"] == kind_filter]
@@ -481,8 +543,11 @@ def filter_entries(
 
 
 def render_lang(
-    lang: str, buckets_wanted: list[str],
-    kind_filter: str | None, limit_per_kind: int, context: int,
+    lang: str,
+    buckets_wanted: list[str],
+    kind_filter: str | None,
+    limit_per_kind: int,
+    context: int,
 ) -> str | None:
     classified = classify_lang(lang)
     sections: list[str] = []
@@ -491,8 +556,7 @@ def render_lang(
     for b in ("real_rs", "real_ref", "label", "model"):
         summary_counts.append(f"{b}={len(classified[b])}")
     for bucket in buckets_wanted:
-        entries = filter_entries(classified.get(bucket, []), kind_filter,
-                                 limit_per_kind)
+        entries = filter_entries(classified.get(bucket, []), kind_filter, limit_per_kind)
         if not entries:
             continue
         by_kind: dict[str, list[dict]] = defaultdict(list)
@@ -537,20 +601,33 @@ def render_lang(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--lang", default=None,
-                    help="One of " + ", ".join(LANGS) + " (default: all 14)")
-    ap.add_argument("--kind", default=None,
-                    help="Restrict to a single kind label (eg Function)")
     ap.add_argument(
-        "--bucket", default="real_rs,real_ref",
+        "--lang", default=None, help="One of " + ", ".join(LANGS) + " (default: all 14)"
+    )
+    ap.add_argument("--kind", default=None, help="Restrict to a single kind label (eg Function)")
+    ap.add_argument(
+        "--bucket",
+        default="real_rs,real_ref",
         help="Comma list of buckets to include: real_rs, real_ref, label, model "
-             "(default: real_rs,real_ref)")
-    ap.add_argument("--limit", type=int, default=50,
-                    help="Max entries per kind per lang. 0 = no cap. Default 50.")
-    ap.add_argument("--context", type=int, default=10,
-                    help="±N source lines around the matched declaration. Default 10.")
-    ap.add_argument("--out-dir", default=str(OUT_DIR),
-                    help=f"Where to write <Lang>_review.md (default: {OUT_DIR})")
+        "(default: real_rs,real_ref)",
+    )
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Max entries per kind per lang. 0 = no cap. Default 50.",
+    )
+    ap.add_argument(
+        "--context",
+        type=int,
+        default=10,
+        help="±N source lines around the matched declaration. Default 10.",
+    )
+    ap.add_argument(
+        "--out-dir",
+        default=str(OUT_DIR),
+        help=f"Where to write <Lang>_review.md (default: {OUT_DIR})",
+    )
     args = ap.parse_args()
 
     if args.lang and args.lang not in LANGS:
@@ -575,7 +652,9 @@ def main() -> int:
         out_file.write_text(body)
         n_blocks = body.count("\n### `")
         written.append((lang, out_file, n_blocks))
-        print(f"{lang:<12} → {out_file.relative_to(SCRIPT_DIR.parent.parent) if out_file.is_absolute() else out_file}  ({n_blocks} entries)")
+        print(
+            f"{lang:<12} → {out_file.relative_to(SCRIPT_DIR.parent.parent) if out_file.is_absolute() else out_file}  ({n_blocks} entries)"
+        )
     if not written:
         print("no review packets written (everything filtered out).")
         return 1

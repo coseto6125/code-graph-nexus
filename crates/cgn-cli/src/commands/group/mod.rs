@@ -9,9 +9,9 @@ pub mod storage;
 pub mod sync;
 pub mod types;
 
-use clap::Subcommand;
-use cgn_core::CgnError;
 use cgn_core::registry::{GroupEntry, RegistryFile, RepoAlias};
+use cgn_core::CgnError;
+use clap::Subcommand;
 use rayon::prelude::*;
 use std::path::Path;
 

@@ -4,19 +4,30 @@
 Run from code-graph-nexus repo root. Assumes `.sample_repo/` contains 14 mainstream
 language subdirectories already indexed by both binaries.
 """
+
 from __future__ import annotations
 
 import json
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 REPO = "/home/enor/code-graph-nexus/.sample_repo"
 LANGS = [
-    "TypeScript", "JavaScript", "Python", "Java", "Kotlin",
-    "CSharp", "Go", "Rust", "PHP", "Ruby",
-    "Swift", "C", "Cpp", "Dart",
+    "TypeScript",
+    "JavaScript",
+    "Python",
+    "Java",
+    "Kotlin",
+    "CSharp",
+    "Go",
+    "Rust",
+    "PHP",
+    "Ruby",
+    "Swift",
+    "C",
+    "Cpp",
+    "Dart",
 ]
 
 # Per-lang source file extensions. Used to filter out cross-category
@@ -52,6 +63,7 @@ def _ext_filter_clause(lang: str) -> str:
         return ""
     ored = " OR ".join(f"n.filePath ENDS WITH '{e}'" for e in exts)
     return f" AND ({ored})"
+
 
 ROW_RE = re.compile(r"\|\s*([A-Za-z][A-Za-z0-9_]*)\s*\|\s*(\d+)\s*\|")
 
@@ -127,7 +139,9 @@ def print_lang_table(lang: str, rs: dict[str, int], ref: dict[str, int]) -> None
     kinds = sorted(set(rs) | set(ref))
     rs_total = sum(rs.values())
     ref_total = sum(ref.values())
-    print(f"\n=== {lang}  (rs total {rs_total}, ref total {ref_total}, delta {rs_total - ref_total:+}) ===")
+    print(
+        f"\n=== {lang}  (rs total {rs_total}, ref total {ref_total}, delta {rs_total - ref_total:+}) ==="
+    )
     print(f"  {'kind':<15} {'rs':>8} {'ref':>8} {'delta':>8}  flag")
     for k in kinds:
         r, x = rs.get(k, 0), ref.get(k, 0)

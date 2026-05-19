@@ -227,21 +227,33 @@ mod tests {
 
     #[test]
     fn lax_strips_quotes_and_prepends_slash() {
-        assert_eq!(clean_route_path_lax("'register'"), Some("/register".to_string()));
-        assert_eq!(clean_route_path_lax("\"users\""), Some("/users".to_string()));
+        assert_eq!(
+            clean_route_path_lax("'register'"),
+            Some("/register".to_string())
+        );
+        assert_eq!(
+            clean_route_path_lax("\"users\""),
+            Some("/users".to_string())
+        );
     }
 
     #[test]
     fn lax_preserves_leading_slash() {
         assert_eq!(clean_route_path_lax("'/users'"), Some("/users".to_string()));
-        assert_eq!(clean_route_path_lax("\"/api/v1\""), Some("/api/v1".to_string()));
+        assert_eq!(
+            clean_route_path_lax("\"/api/v1\""),
+            Some("/api/v1".to_string())
+        );
     }
 
     #[test]
     fn lax_handles_python_blueprint_shorthand() {
         // Flask `@bp.route('/block')` and `@app.route('users/<id>')` —
         // both shapes valid Flask bare paths.
-        assert_eq!(clean_route_path_lax("'users/<id>'"), Some("/users/<id>".to_string()));
+        assert_eq!(
+            clean_route_path_lax("'users/<id>'"),
+            Some("/users/<id>".to_string())
+        );
         assert_eq!(clean_route_path_lax("'/block'"), Some("/block".to_string()));
     }
 
@@ -256,8 +268,14 @@ mod tests {
     fn lax_handles_java_spring_request_mapping() {
         // Spring `@GetMapping("users")` / `@RequestMapping("api")`.
         // JAX-RS `@Path("users")` (Jakarta REST) has the same shape.
-        assert_eq!(clean_route_path_lax("\"users\""), Some("/users".to_string()));
-        assert_eq!(clean_route_path_lax("\"api/v1\""), Some("/api/v1".to_string()));
+        assert_eq!(
+            clean_route_path_lax("\"users\""),
+            Some("/users".to_string())
+        );
+        assert_eq!(
+            clean_route_path_lax("\"api/v1\""),
+            Some("/api/v1".to_string())
+        );
     }
 
     #[test]
@@ -274,7 +292,10 @@ mod tests {
         // ASP.NET `[HttpGet("users")]`, `[Route("api/[controller]")]`.
         // `[controller]` is a template token that ref-gitnexus retains
         // verbatim; we shouldn't mangle the bracket contents.
-        assert_eq!(clean_route_path_lax("\"users\""), Some("/users".to_string()));
+        assert_eq!(
+            clean_route_path_lax("\"users\""),
+            Some("/users".to_string())
+        );
         assert_eq!(
             clean_route_path_lax("\"api/[controller]\""),
             Some("/api/[controller]".to_string()),

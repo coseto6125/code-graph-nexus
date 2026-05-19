@@ -5,12 +5,12 @@
 //! logged with backtrace and the loop continues.
 
 use crate::peer::dispatch::dispatch_peer_dirty_event;
-use chrono::Utc;
-use fs2::FileExt;
 use cgn_core::peer::concern::ImpactCache;
 use cgn_core::peer::registry::alive_peers;
 use cgn_core::session::overlay::DirtyFiles;
 use cgn_core::session::SessionMeta;
+use chrono::Utc;
+use fs2::FileExt;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -69,9 +69,7 @@ pub fn run_watcher(cfg: WatcherCfg) -> std::io::Result<()> {
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        if event_count
-            .is_multiple_of(cgn_core::peer::retention::ROTATE_CHECK_EVERY_N_EVENTS)
-        {
+        if event_count.is_multiple_of(cgn_core::peer::retention::ROTATE_CHECK_EVERY_N_EVENTS) {
             let _ = cgn_core::peer::retention::rotate_if_needed(
                 &cfg.my_session_dir.join("msg.log"),
                 cgn_core::peer::retention::MSG_LOG_ROTATE_BYTES,

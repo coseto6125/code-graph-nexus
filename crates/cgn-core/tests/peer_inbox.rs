@@ -1,6 +1,4 @@
-use cgn_core::peer::inbox::{
-    append_entry, drain, truncate_inbox, ConcernKindSer, InboxEntry,
-};
+use cgn_core::peer::inbox::{append_entry, drain, truncate_inbox, ConcernKindSer, InboxEntry};
 use cgn_core::session::overlay::{SymbolKind, SymbolRef};
 use tempfile::tempdir;
 

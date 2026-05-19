@@ -10,6 +10,7 @@ design drops).
 
 Invoke: `python3 -m pytest scripts/parity/test_route_method_prefix.py`
 """
+
 from __future__ import annotations
 
 import sys

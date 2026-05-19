@@ -36,8 +36,9 @@ DEFAULT_REPO = Path("/home/enor/code-graph-nexus/.sample_repo")
 @dataclass
 class Sample:
     """One benched command (one tool × one phase × N runs)."""
-    tool: str          # "cgn" | "gitnexus"
-    phase: str         # "cold-index" | "context" | "impact" | "cypher"
+
+    tool: str  # "cgn" | "gitnexus"
+    phase: str  # "cold-index" | "context" | "impact" | "cypher"
     cmd: list[str]
     cwd: str | None = None
     runs: list[float] = field(default_factory=list)
@@ -58,16 +59,15 @@ def _fmt(seconds: float | None) -> str:
 def _run_one(cmd: list[str], cwd: Path | None, timeout_s: int) -> tuple[float, int, bytes, bytes]:
     start = time.perf_counter()
     try:
-        proc = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, timeout=timeout_s
-        )
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:
         return time.perf_counter() - start, 124, b"", b"timeout"
     return time.perf_counter() - start, proc.returncode, proc.stdout, proc.stderr
 
 
-def _bench(tool: str, phase: str, cmd: list[str], cwd: Path, runs: int,
-           timeout_s: int = CMD_TIMEOUT_S) -> Sample:
+def _bench(
+    tool: str, phase: str, cmd: list[str], cwd: Path, runs: int, timeout_s: int = CMD_TIMEOUT_S
+) -> Sample:
     s = Sample(tool=tool, phase=phase, cmd=cmd, cwd=str(cwd))
     last_stdout = b""
     for _ in range(runs):
@@ -82,15 +82,15 @@ def _bench(tool: str, phase: str, cmd: list[str], cwd: Path, runs: int,
 
 
 def _drop_cgn(cgn: Path, repo: Path) -> None:
-    subprocess.run([str(cgn), "admin", "drop", "--repo", str(repo)],
-                   capture_output=True, timeout=30)
+    subprocess.run(
+        [str(cgn), "admin", "drop", "--repo", str(repo)], capture_output=True, timeout=30
+    )
 
 
 def _drop_gitnexus(repo: Path) -> None:
     # gitnexus clean operates on cwd-resolved repo. Run from inside .sample_repo
     # and use --skip-git semantics so it targets the sample_repo, not the parent.
-    subprocess.run(["gitnexus", "clean", "--force"], cwd=repo,
-                   capture_output=True, timeout=60)
+    subprocess.run(["gitnexus", "clean", "--force"], cwd=repo, capture_output=True, timeout=60)
 
 
 def _probe_shared_symbol(cgn: Path, gn: Path, repo: Path) -> dict[str, str]:
@@ -102,10 +102,18 @@ def _probe_shared_symbol(cgn: Path, gn: Path, repo: Path) -> dict[str, str]:
     the first one gitnexus can find (probably under `Struct`).
     """
     proc = subprocess.run(
-        [str(cgn), "cypher",
-         "MATCH (a:Class) RETURN a.name LIMIT 50",
-         "--format", "json", "--repo", str(repo)],
-        capture_output=True, text=True, timeout=60,
+        [
+            str(cgn),
+            "cypher",
+            "MATCH (a:Class) RETURN a.name LIMIT 50",
+            "--format",
+            "json",
+            "--repo",
+            str(repo),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if proc.returncode != 0:
         return {}
@@ -117,20 +125,23 @@ def _probe_shared_symbol(cgn: Path, gn: Path, repo: Path) -> dict[str, str]:
     # (not nested arrays). Drop single-char names + names with spaces /
     # special chars — those are typically workflow-name labels rather than
     # canonical code symbols both tools will agree on.
-    names = [
-        r for r in rows
-        if isinstance(r, str) and len(r) >= 4 and r.replace("_", "").isalnum()
-    ]
+    names = [r for r in rows if isinstance(r, str) and len(r) >= 4 and r.replace("_", "").isalnum()]
     # Probe gitnexus for each candidate. Match success by parsing the
     # `row_count` field; gitnexus emits `"row_count": 1` (or higher) on a hit
     # and `"row_count": 0` (or omits the field) on a miss.
     row_count_re = re.compile(r'"row_count":\s*(\d+)')
     for name in names:
         check = subprocess.run(
-            [str(gn), "cypher",
-             f"MATCH (a) WHERE a.name='{name}' RETURN a LIMIT 1",
-             "--repo", str(repo)],
-            capture_output=True, text=True, timeout=30,
+            [
+                str(gn),
+                "cypher",
+                f"MATCH (a) WHERE a.name='{name}' RETURN a LIMIT 1",
+                "--repo",
+                str(repo),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if check.returncode != 0:
             continue
@@ -141,15 +152,19 @@ def _probe_shared_symbol(cgn: Path, gn: Path, repo: Path) -> dict[str, str]:
 
 
 def _hardware() -> dict[str, str]:
-    import platform, os
+    import os
+    import platform
+
     try:
         with open("/proc/cpuinfo") as f:
-            cpu = next((l.split(":", 1)[1].strip() for l in f if l.startswith("model name")), "?")
+            cpu = next(
+                (line.split(":", 1)[1].strip() for line in f if line.startswith("model name")), "?"
+            )
     except OSError:
         cpu = "?"
     try:
         with open("/proc/meminfo") as f:
-            kb = next((int(l.split()[1]) for l in f if l.startswith("MemTotal")), 0)
+            kb = next((int(line.split()[1]) for line in f if line.startswith("MemTotal")), 0)
         mem = f"{kb / 1024 / 1024:.1f} GiB"
     except OSError:
         mem = "?"
@@ -167,11 +182,15 @@ def main() -> int:
     ap.add_argument("--gitnexus-binary", type=Path, default=DEFAULT_GITNEXUS)
     ap.add_argument("--repo", type=Path, default=DEFAULT_REPO)
     ap.add_argument("--runs", type=int, default=3, help="runs per query phase")
-    ap.add_argument("--skip-cold", action="store_true",
-                    help="reuse existing indexes; only measure per-query latency")
+    ap.add_argument(
+        "--skip-cold",
+        action="store_true",
+        help="reuse existing indexes; only measure per-query latency",
+    )
     ap.add_argument("--json", type=Path, help="dump full results to this path")
-    ap.add_argument("--symbol", type=str,
-                    help="explicit symbol to use for per-query phases (skips auto-probe)")
+    ap.add_argument(
+        "--symbol", type=str, help="explicit symbol to use for per-query phases (skips auto-probe)"
+    )
     args = ap.parse_args()
 
     if not args.cgn_binary.exists():
@@ -186,7 +205,9 @@ def main() -> int:
 
     hw = _hardware()
     print(f"cgn       : {args.cgn_binary}")
-    print(f"gitnexus  : {args.gitnexus_binary}  (v{subprocess.run([str(args.gitnexus_binary), '--version'], capture_output=True, text=True).stdout.strip()})")
+    print(
+        f"gitnexus  : {args.gitnexus_binary}  (v{subprocess.run([str(args.gitnexus_binary), '--version'], capture_output=True, text=True).stdout.strip()})"
+    )
     print(f"repo      : {args.repo}")
     print(f"cpu       : {hw['cpu']}  (logical {hw['cpu_count_logical']})")
     print(f"mem       : {hw['mem']}")
@@ -201,16 +222,25 @@ def main() -> int:
         _drop_gitnexus(args.repo)
 
         print("→ cgn cold index")
-        s = _bench("cgn", "cold-index",
-                   [str(args.cgn_binary), "admin", "index", "--repo", str(args.repo)],
-                   cwd=args.repo, runs=1)
+        s = _bench(
+            "cgn",
+            "cold-index",
+            [str(args.cgn_binary), "admin", "index", "--repo", str(args.repo)],
+            cwd=args.repo,
+            runs=1,
+        )
         samples.append(s)
         print(f"  {_fmt(s.median_s)}" if s.runs else f"  FAIL: {s.err}")
 
         print("→ gitnexus cold analyze")
-        s = _bench("gitnexus", "cold-index",
-                   [str(args.gitnexus_binary), "analyze", str(args.repo), "--skip-git"],
-                   cwd=args.repo, runs=1, timeout_s=CMD_TIMEOUT_S)
+        s = _bench(
+            "gitnexus",
+            "cold-index",
+            [str(args.gitnexus_binary), "analyze", str(args.repo), "--skip-git"],
+            cwd=args.repo,
+            runs=1,
+            timeout_s=CMD_TIMEOUT_S,
+        )
         samples.append(s)
         print(f"  {_fmt(s.median_s)}" if s.runs else f"  FAIL: {s.err}")
 
@@ -237,30 +267,63 @@ def main() -> int:
     # Unified phase names (`symbol-context`, `blast-radius`, `cypher`) so cgn
     # and gitnexus rows merge into a single row per phase in the summary.
     queries: list[tuple[str, str, list[str], Path]] = [
-        ("cgn", "symbol-context",
-         [str(args.cgn_binary), "inspect", "--name", class_name, "--repo", str(args.repo)],
-         args.repo),
-        ("gitnexus", "symbol-context",
-         [str(args.gitnexus_binary), "context", class_name, *gn_repo],
-         args.repo),
-        ("cgn", "blast-radius",
-         [str(args.cgn_binary), "impact", class_name, "--direction", "up", "--repo", str(args.repo)],
-         args.repo),
-        ("gitnexus", "blast-radius",
-         [str(args.gitnexus_binary), "impact", class_name, *gn_repo],
-         args.repo),
+        (
+            "cgn",
+            "symbol-context",
+            [str(args.cgn_binary), "inspect", "--name", class_name, "--repo", str(args.repo)],
+            args.repo,
+        ),
+        (
+            "gitnexus",
+            "symbol-context",
+            [str(args.gitnexus_binary), "context", class_name, *gn_repo],
+            args.repo,
+        ),
+        (
+            "cgn",
+            "blast-radius",
+            [
+                str(args.cgn_binary),
+                "impact",
+                class_name,
+                "--direction",
+                "up",
+                "--repo",
+                str(args.repo),
+            ],
+            args.repo,
+        ),
+        (
+            "gitnexus",
+            "blast-radius",
+            [str(args.gitnexus_binary), "impact", class_name, *gn_repo],
+            args.repo,
+        ),
         # cypher — use a schema-agnostic `MATCH (a)` so both tools answer
         # against their own labeling (cgn: Class; gitnexus: Struct/Class/Enum).
-        ("cgn", "cypher",
-         [str(args.cgn_binary), "cypher",
-          f"MATCH (a) WHERE a.name='{class_name}' RETURN a",
-          "--repo", str(args.repo)],
-         args.repo),
-        ("gitnexus", "cypher",
-         [str(args.gitnexus_binary), "cypher",
-          f"MATCH (a) WHERE a.name='{class_name}' RETURN a",
-          *gn_repo],
-         args.repo),
+        (
+            "cgn",
+            "cypher",
+            [
+                str(args.cgn_binary),
+                "cypher",
+                f"MATCH (a) WHERE a.name='{class_name}' RETURN a",
+                "--repo",
+                str(args.repo),
+            ],
+            args.repo,
+        ),
+        (
+            "gitnexus",
+            "cypher",
+            [
+                str(args.gitnexus_binary),
+                "cypher",
+                f"MATCH (a) WHERE a.name='{class_name}' RETURN a",
+                *gn_repo,
+            ],
+            args.repo,
+        ),
     ]
 
     for tool, phase, cmd, cwd in queries:

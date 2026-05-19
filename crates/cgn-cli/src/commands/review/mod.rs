@@ -6,8 +6,8 @@
 
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
-use clap::Args;
 use cgn_core::CgnError;
+use clap::Args;
 
 pub mod aggregate;
 pub mod findings;

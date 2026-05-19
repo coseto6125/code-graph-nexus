@@ -130,7 +130,7 @@ fn slash_in_branch_name_sanitized_to_dash() {
 #[test]
 fn returns_commit_fallback_when_no_refs() {
     let tmp = tempfile::tempdir().unwrap();
-    let sha = git_init_with_commit(tmp.path());
+    let _sha = git_init_with_commit(tmp.path());
     // Pass a fake sha that no ref points at
     let fake = "0".repeat(40);
     let name = pick_dirname(tmp.path(), &fake).unwrap();

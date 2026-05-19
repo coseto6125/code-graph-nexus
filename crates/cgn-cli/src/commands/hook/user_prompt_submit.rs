@@ -2,7 +2,7 @@
 //! files, then unlink them so each event fires only once. Failure takes
 //! priority over success because it is more actionable.
 
-use super::common::{emit_additional_context, cgn_state_dir, lookup_index_dir, HookInput};
+use super::common::{cgn_state_dir, emit_additional_context, lookup_index_dir, HookInput};
 use cgn_core::CgnError;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};

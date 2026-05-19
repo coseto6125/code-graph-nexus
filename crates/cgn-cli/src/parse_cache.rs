@@ -75,13 +75,12 @@ impl ParseCache {
     /// Persist a freshly parsed `LocalGraph`. Uses `atomic_write_bytes_no_fsync`
     /// (tmp + rename, no `sync_all`): parse-cache blobs are content-addressable
     /// + fully regeneratable from source, so a torn write on crash is
-    /// recoverable (the corrupt-entry guard in `get()` deletes and the next
-    /// miss reparses). Skipping the fsync converts a per-file ~2ms sync syscall
-    /// into a kernel-deferred write — on cold-index over 14k files this drops
-    /// the cache-write phase from ~30s to <1s.
+    ///   recoverable (the corrupt-entry guard in `get()` deletes and the next
+    ///   miss reparses). Skipping the fsync converts a per-file ~2ms sync syscall
+    ///   into a kernel-deferred write — on cold-index over 14k files this drops
+    ///   the cache-write phase from ~30s to <1s.
     pub fn put(&self, graph: &LocalGraph) -> std::io::Result<()> {
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(graph)
-            .map_err(std::io::Error::other)?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(graph).map_err(std::io::Error::other)?;
         atomic_write_bytes_no_fsync(&self.path_for(&graph.content_hash), &bytes)
     }
 }

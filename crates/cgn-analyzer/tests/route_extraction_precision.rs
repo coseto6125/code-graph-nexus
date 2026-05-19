@@ -983,11 +983,7 @@ fn ts_nestjs_decorator_routes_emit_with_bare_paths() {
     "#;
     assert_routes(
         &ts_routes(src),
-        &[
-            ("GET", "/list"),
-            ("POST", "/create"),
-            ("DELETE", "/:id"),
-        ],
+        &[("GET", "/list"), ("POST", "/create"), ("DELETE", "/:id")],
     );
 }
 
@@ -1006,10 +1002,7 @@ fn ts_nestjs_decorator_route_without_nestjs_import_emits_zero() {
             getConfig() {}
         }
     "#;
-    assert_no_routes(
-        &ts_routes(src),
-        "@Get decorator without @nestjs/* import",
-    );
+    assert_no_routes(&ts_routes(src), "@Get decorator without @nestjs/* import");
 }
 
 #[test]

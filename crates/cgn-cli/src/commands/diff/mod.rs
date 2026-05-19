@@ -4,8 +4,8 @@
 //! (bindings / routes / contracts / all). See spec
 //! `docs/superpowers/specs/2026-05-16-tier-b-surface-and-diff-design.md` §5.
 
-use clap::{Args, ValueEnum};
 use cgn_core::CgnError;
+use clap::{Args, ValueEnum};
 
 pub mod baseline;
 pub mod bindings;

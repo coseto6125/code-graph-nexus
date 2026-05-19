@@ -21,10 +21,10 @@
 //! agents read inline). JSON / TOON are for programmatic consumers.
 
 use crate::output::{emit, OutputFormat};
-use clap::Args;
 use cgn_analyzer::fetch_shape::parse_reason;
 use cgn_core::graph::ArchivedRelType;
 use cgn_core::CgnError;
+use clap::Args;
 use std::collections::HashMap;
 
 /// Detect drift between HTTP consumer access patterns and the Route shapes
@@ -224,10 +224,7 @@ fn render_text(value: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({ "results": lines })
 }
 
-pub fn run(
-    args: ShapeCheckArgs,
-    engine: &crate::engine::Engine,
-) -> Result<(), cgn_core::CgnError> {
+pub fn run(args: ShapeCheckArgs, engine: &crate::engine::Engine) -> Result<(), cgn_core::CgnError> {
     let format = crate::output::OutputFormat::parse(args.format.as_deref());
     let (value, hints) = build_payload_with_hints(&args, engine)?;
     if let Some(filter) = &hints.unmatched_route_filter {

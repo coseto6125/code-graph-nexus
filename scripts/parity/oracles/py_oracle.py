@@ -30,23 +30,26 @@ import importlib.machinery
 import importlib.util
 import json
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
-SKIP_DIRS: frozenset[str] = frozenset({
-    ".venv",
-    "venv",
-    "env",
-    "__pycache__",
-    ".git",
-    "dist",
-    "build",
-    ".tox",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "node_modules",
-})
+SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        ".git",
+        "dist",
+        "build",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "node_modules",
+    }
+)
 
 SOURCE_SUFFIXES: tuple[str, ...] = (".py", ".pyi")
 
@@ -252,7 +255,9 @@ def emit_bindings_for_file(
                 else:
                     bound_name = specifier.split(".", 1)[0]
                 target = resolve_specifier(specifier, 0, package_context, finder, search_path)
-                record = make_record(src_file_rel, bound_name, specifier, target, repo_root_resolved)
+                record = make_record(
+                    src_file_rel, bound_name, specifier, target, repo_root_resolved
+                )
                 out_writer.write(json.dumps(record, ensure_ascii=False))
                 out_writer.write("\n")
                 bindings += 1

@@ -1,8 +1,10 @@
 //! Cross-session test fixture: spawn N cgn watcher processes against a shared temp repo.
 
-use chrono::Utc;
+#![allow(dead_code)]
+
 use cgn_core::peer::inbox::{drain, InboxEntry};
 use cgn_core::session::SessionMeta;
+use chrono::Utc;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -55,6 +57,7 @@ impl PeerHarness {
                 "--repo",
                 self.repo_root.path().to_str().unwrap(),
             ])
+            .env("CGN_SESSION_ID", id)
             .env("CLAUDE_CODE_SESSION_ID", id)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -141,6 +144,7 @@ impl PeerHarness {
         }
         Command::new(bin)
             .args(&args)
+            .env("CGN_SESSION_ID", from)
             .env("CLAUDE_CODE_SESSION_ID", from)
             .output()
             .expect("spawn cgn peers say")

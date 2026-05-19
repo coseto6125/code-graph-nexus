@@ -8,6 +8,7 @@ follow-up): 19 Cpp template-class definitions that previously surfaced as
 
 Invoke: `python3 -m pytest scripts/parity/test_template_class_pair.py`
 """
+
 from __future__ import annotations
 
 import sys
@@ -35,9 +36,7 @@ def test_pairs_ref_template_with_rs_class():
     rs_by_pn = _build_by_pn(rs_all)
     ref_by_pn = _build_by_pn(ref_all)
     ref_only = {("Template", "lexer.hpp", "lexer_base")}
-    new_ref, pairs = pa._pair_ref_template_class_double_emit(
-        ref_only, rs_by_pn, ref_by_pn
-    )
+    new_ref, pairs = pa._pair_ref_template_class_double_emit(ref_only, rs_by_pn, ref_by_pn)
     assert pairs == 1
     assert new_ref == set()
 
@@ -50,9 +49,7 @@ def test_does_not_pair_without_rs_type_kind():
     rs_by_pn = _build_by_pn(rs_all)
     ref_by_pn = _build_by_pn(ref_all)
     ref_only = {("Template", "tpl.hpp", "make_widget")}
-    new_ref, pairs = pa._pair_ref_template_class_double_emit(
-        ref_only, rs_by_pn, ref_by_pn
-    )
+    new_ref, pairs = pa._pair_ref_template_class_double_emit(ref_only, rs_by_pn, ref_by_pn)
     assert pairs == 0
     assert new_ref == ref_only
 
@@ -68,9 +65,7 @@ def test_does_not_pair_when_ref_lacks_class_double_emit():
     rs_by_pn = _build_by_pn(rs_all)
     ref_by_pn = _build_by_pn(ref_all)
     ref_only = {("Template", "x.hpp", "Foo")}
-    new_ref, pairs = pa._pair_ref_template_class_double_emit(
-        ref_only, rs_by_pn, ref_by_pn
-    )
+    new_ref, pairs = pa._pair_ref_template_class_double_emit(ref_only, rs_by_pn, ref_by_pn)
     assert pairs == 0
     assert new_ref == ref_only
 
@@ -87,9 +82,7 @@ def test_pairs_struct_and_other_type_kinds():
         rs_by_pn = _build_by_pn(rs_all)
         ref_by_pn = _build_by_pn(ref_all)
         ref_only = {("Template", p, n)}
-        new_ref, pairs = pa._pair_ref_template_class_double_emit(
-            ref_only, rs_by_pn, ref_by_pn
-        )
+        new_ref, pairs = pa._pair_ref_template_class_double_emit(ref_only, rs_by_pn, ref_by_pn)
         assert pairs == 1, f"failed to pair Template ↔ {kind}"
         assert new_ref == set()
 
@@ -102,8 +95,6 @@ def test_does_not_pair_non_template_rows():
     rs_by_pn = _build_by_pn(rs_all)
     ref_by_pn = _build_by_pn(ref_all)
     ref_only = {("Class", "x.hpp", "Bar")}  # contrived — wouldn't normally be in ref_only
-    new_ref, pairs = pa._pair_ref_template_class_double_emit(
-        ref_only, rs_by_pn, ref_by_pn
-    )
+    new_ref, pairs = pa._pair_ref_template_class_double_emit(ref_only, rs_by_pn, ref_by_pn)
     assert pairs == 0
     assert new_ref == ref_only

@@ -2,10 +2,10 @@
 
 use crate::peer::watcher::{run_watcher, WatcherCfg};
 use crate::session::resolver::resolve_session_id;
-use clap::Args;
 use cgn_core::peer::registry::pid_alive;
 use cgn_core::session::SessionMeta;
 use cgn_core::CgnError;
+use clap::Args;
 use std::path::PathBuf;
 
 fn default_repo_root() -> std::io::Result<PathBuf> {
@@ -59,7 +59,7 @@ fn start_foreground(repo_root: PathBuf, sid: String, session_dir: PathBuf) -> Re
         my_session_dir: session_dir.clone(),
         lock_path: session_dir.join("watcher.lock"),
     };
-    run_watcher(cfg).map_err(|e| CgnError::Io(e))
+    run_watcher(cfg).map_err(CgnError::Io)
 }
 
 #[cfg(unix)]

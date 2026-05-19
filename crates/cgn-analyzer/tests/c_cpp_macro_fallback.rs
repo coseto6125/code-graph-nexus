@@ -105,9 +105,8 @@ fn jemalloc_ro_mutex_ctl_gen_recovered_in_real_file() {
     // ERROR-recovers and drops the preproc_def wrapper; the regex
     // fallback walks raw bytes and captures the name regardless of
     // grammar state.
-    let bytes =
-        std::fs::read("/home/enor/code-graph-nexus/.sample_repo/C/deps/jemalloc/src/ctl.c")
-            .expect("sample_repo ctl.c missing — run scripts/parity bootstrap");
+    let bytes = std::fs::read("/home/enor/code-graph-nexus/.sample_repo/C/deps/jemalloc/src/ctl.c")
+        .expect("sample_repo ctl.c missing — run scripts/parity bootstrap");
     let macros: Vec<String> = c_macros(&bytes);
     assert!(
         macros.iter().any(|n| n == "RO_MUTEX_CTL_GEN"),

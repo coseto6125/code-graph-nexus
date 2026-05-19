@@ -5,8 +5,8 @@ pub mod gemini;
 
 use crate::admin::menu::{self, select};
 use crate::admin::status::HostStatus;
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 
 const HOSTS: &[menu::Item<'_>] = &[
     ("Codex CLI", "register cgn as a native tool in Codex CLI"),

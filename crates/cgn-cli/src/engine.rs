@@ -65,9 +65,7 @@ impl Engine {
                 eng.view = GraphView::L2Only;
                 Ok(eng)
             }
-            cgn_core::session::SessionState::AugmentedReference {
-                l2_dirname, ..
-            } => {
+            cgn_core::session::SessionState::AugmentedReference { l2_dirname, .. } => {
                 let l2_dir = repo_root.join("commits").join(&l2_dirname);
                 let overlay_dir = repo_root.join("sessions").join(sid);
                 let mut eng = Self::load(l2_dir.join("graph.bin"))?;
@@ -75,9 +73,9 @@ impl Engine {
                 eng.view = GraphView::L2WithOverlay;
                 Ok(eng)
             }
-            cgn_core::session::SessionState::Stale { reason } => Err(io::Error::other(
-                format!("session stale: {reason:?}; remove via `cgn admin sessions reset <id>`"),
-            )),
+            cgn_core::session::SessionState::Stale { reason } => Err(io::Error::other(format!(
+                "session stale: {reason:?}; remove via `cgn admin sessions reset <id>`"
+            ))),
         }
     }
 

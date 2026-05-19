@@ -1,8 +1,8 @@
 //! Claude Code MCP integration.
 
 use crate::admin::status::HostStatus;
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 use serde_json::json;
 use std::ffi::OsString;
 use std::io;

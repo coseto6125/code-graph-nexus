@@ -71,9 +71,8 @@ fn run_orphan_sweep_in(home_cgn: &std::path::Path) -> Result<(), cgn_core::CgnEr
                 .members
                 .retain(|member| !orphan_names.iter().any(|name| name == member));
         }
-        cgn_core::registry::RegistryFile::write_atomic(&registry_path, &registry).map_err(
-            |e| cgn_core::CgnError::InvalidArgument(format!("write registry: {e}")),
-        )?;
+        cgn_core::registry::RegistryFile::write_atomic(&registry_path, &registry)
+            .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("write registry: {e}")))?;
     }
 
     for repo_name in orphan_names {

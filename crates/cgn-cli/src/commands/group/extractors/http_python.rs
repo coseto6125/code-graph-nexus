@@ -1,8 +1,6 @@
 //! Python HTTP route extractor: Flask + FastAPI decorator patterns via tree-sitter.
 
-use crate::commands::group::types::{
-    ContractRole, ContractType, ExtractedContract, SymbolRef,
-};
+use crate::commands::group::types::{ContractRole, ContractType, ExtractedContract, SymbolRef};
 use std::path::Path;
 use std::sync::LazyLock;
 use streaming_iterator::StreamingIterator;
@@ -162,7 +160,7 @@ fn extract_flask_routes(
 
     {
         let mut cursor = QueryCursor::new();
-        let mut matches = cursor.matches(&path_query, tree.root_node(), source);
+        let mut matches = cursor.matches(path_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
             let kw = super::capture_text(m, route_kw_idx, source);
             if kw != "route" {
@@ -199,7 +197,7 @@ fn extract_flask_routes(
 
     {
         let mut cursor = QueryCursor::new();
-        let mut matches = cursor.matches(&methods_query, tree.root_node(), source);
+        let mut matches = cursor.matches(methods_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
             let kw_name = super::capture_text(m, kw_name_idx, source);
             if kw_name != "methods" {

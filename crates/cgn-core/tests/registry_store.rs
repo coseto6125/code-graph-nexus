@@ -68,8 +68,7 @@ fn v1_auto_migrates_via_rebuild_from_disk() {
         total_size_bytes: 0,
         last_touched: "2026-05-17T10:00:00Z".into(),
     };
-    cgn_core::registry::RepoMeta::write_atomic(&repo_dir.join("meta.json"), &repo_meta)
-        .unwrap();
+    cgn_core::registry::RepoMeta::write_atomic(&repo_dir.join("meta.json"), &repo_meta).unwrap();
 
     let reg = RegistryFile::read_or_empty(&registry_path).unwrap();
     assert_eq!(reg.version, 2, "auto-migrated registry must be v2");
@@ -144,8 +143,7 @@ fn rebuild_from_disk_walks_repo_meta_json() {
         total_size_bytes: 0,
         last_touched: "2026-05-17T10:00:00Z".into(),
     };
-    cgn_core::registry::RepoMeta::write_atomic(&repo_dir.join("meta.json"), &repo_meta)
-        .unwrap();
+    cgn_core::registry::RepoMeta::write_atomic(&repo_dir.join("meta.json"), &repo_meta).unwrap();
 
     let reg = RegistryFile::rebuild_from_disk(home).unwrap();
     assert_eq!(reg.repos.len(), 1);

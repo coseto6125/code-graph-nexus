@@ -111,9 +111,7 @@ fn resolve_home_cgn_from_env(home: Option<std::ffi::OsString>) -> PathBuf {
 }
 
 fn fallback_home() -> PathBuf {
-    std::env::temp_dir()
-        .join("cgn-fallback")
-        .join(".cgn")
+    std::env::temp_dir().join("cgn-fallback").join(".cgn")
 }
 
 fn probe_writable(dir: &Path) -> bool {

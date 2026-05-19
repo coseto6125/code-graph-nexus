@@ -10,9 +10,7 @@
 //! (3) the error is surfaced as `Err` rather than a panic.
 
 use cgn_cli::search::TantivyEngine;
-use cgn_core::graph::{
-    File, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
-};
+use cgn_core::graph::{File, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC};
 use cgn_core::pool::StringPool;
 use rkyv::rancor::Error;
 use std::fs;

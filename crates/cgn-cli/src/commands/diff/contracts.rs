@@ -22,8 +22,8 @@
 use crate::engine::Engine;
 use cgn_core::graph::{ArchivedNodeKind, ArchivedRelType};
 use cgn_core::CgnError;
-use serde::Serialize;
 use rustc_hash::FxHashMap;
+use serde::Serialize;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Clone, PartialEq)]

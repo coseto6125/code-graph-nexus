@@ -161,8 +161,7 @@ fn run_search(home: &Path, graph: &Path, args: &[&str]) -> std::process::Output 
 }
 
 fn run_search_multi(home: &Path, args: &[&str]) -> std::process::Output {
-    let alpha_graph = home
-        .join(".cgn/alpha__aabbccdd/commits/sha_alpha0001/graph.bin");
+    let alpha_graph = home.join(".cgn/alpha__aabbccdd/commits/sha_alpha0001/graph.bin");
     Command::new(cgn_bin())
         .arg("find")
         .arg("--mode")

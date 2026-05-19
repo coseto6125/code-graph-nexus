@@ -1,9 +1,9 @@
 //! `cgn group status <name>` — compare each group member's current HEAD
 //! against the last-synced snapshot in `meta.json`.
 
-use clap::Args;
 use cgn_core::registry::{resolve_home_cgn, RegistryFile};
 use cgn_core::CgnError;
+use clap::Args;
 use std::path::Path;
 
 use crate::commands::group::lookup_member;
@@ -59,7 +59,10 @@ pub fn run(args: StatusArgs) -> Result<(), CgnError> {
         let reports: Vec<MemberReport> = group_entry
             .members
             .iter()
-            .map(|m| MemberReport { name: m.clone(), status: MemberStatus::NoMeta })
+            .map(|m| MemberReport {
+                name: m.clone(),
+                status: MemberStatus::NoMeta,
+            })
             .collect();
         emit(&args.name, None, &reports, args.json);
         return Ok(());
@@ -72,7 +75,10 @@ pub fn run(args: StatusArgs) -> Result<(), CgnError> {
         .iter()
         .map(|member| {
             let status = resolve_member_status(member, &reg, &meta);
-            MemberReport { name: member.clone(), status }
+            MemberReport {
+                name: member.clone(),
+                status,
+            }
         })
         .collect();
 
@@ -191,5 +197,8 @@ fn emit_json(name: &str, last_sync: Option<&str>, reports: &[MemberReport]) {
         "last_sync": last_sync,
         "members": members_arr,
     });
-    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string())
+    );
 }

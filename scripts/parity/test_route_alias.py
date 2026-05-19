@@ -5,6 +5,7 @@ CLIs without a shared package). Tests run against both to keep them in sync.
 
 Invoke: `python3 -m pytest scripts/parity/test_route_alias.py`
 """
+
 from __future__ import annotations
 
 import sys

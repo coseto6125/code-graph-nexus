@@ -3,9 +3,9 @@
 //! Delegates to `commands::coverage::build_repo_health` per member; results
 //! are concatenated in parallel and emitted as a flat array.
 
-use clap::Args;
 use cgn_core::registry::{resolve_home_cgn, RegistryFile};
 use cgn_core::CgnError;
+use clap::Args;
 use rayon::prelude::*;
 use serde_json::{json, Value};
 

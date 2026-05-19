@@ -3,10 +3,10 @@
 
 mod common;
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
-use common::write_stub;
 use cgn_mcp::server::CgnMcpServer;
 use cgn_mcp::spawn::run_spawn;
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use common::{stub_guard, write_stub};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -109,6 +109,7 @@ fn peers_tool() -> cgn_mcp::schema::DerivedTool {
 
 #[test]
 fn status_subcmd_yields_peers_status_argv() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -121,6 +122,7 @@ fn status_subcmd_yields_peers_status_argv() {
 
 #[test]
 fn log_subcmd_passes_limit_flag() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -132,6 +134,7 @@ fn log_subcmd_passes_limit_flag() {
 
 #[test]
 fn say_subcmd_emits_body_as_positional() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -146,6 +149,7 @@ fn say_subcmd_emits_body_as_positional() {
 
 #[test]
 fn diff_subcmd_emits_peer_then_optional_symbol() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -163,6 +167,7 @@ fn diff_subcmd_emits_peer_then_optional_symbol() {
 
 #[test]
 fn thread_subcmd_emits_msg_id_positional() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -178,6 +183,7 @@ fn thread_subcmd_emits_msg_id_positional() {
 
 #[test]
 fn missing_subcmd_returns_err() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
@@ -187,12 +193,10 @@ fn missing_subcmd_returns_err() {
 
 #[test]
 fn invalid_subcmd_returns_err_without_spawning() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"$@\"\n");
     let tool = peers_tool();
     let err = run_spawn(&stub, &tool, &json!({"subcmd": "gc"})).unwrap_err();
-    assert!(
-        err.to_string().contains("must be one of"),
-        "got: {err:?}"
-    );
+    assert!(err.to_string().contains("must be one of"), "got: {err:?}");
 }

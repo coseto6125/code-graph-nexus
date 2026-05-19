@@ -1,10 +1,10 @@
 use crate::commands::format::{kind_to_str, rel_to_str};
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
-use clap::Args;
 use cgn_core::algorithms::process_trace::is_test_path;
 use cgn_core::graph::ArchivedZeroCopyGraph;
 use cgn_core::CgnError;
+use clap::Args;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
@@ -272,10 +272,7 @@ where
         let edge = &graph.edges[edge_idx];
         let src_idx = edge.source.to_native() as usize;
         let source_node = &graph.nodes[src_idx];
-        if matches!(
-            source_node.kind,
-            cgn_core::graph::ArchivedNodeKind::File
-        ) {
+        if matches!(source_node.kind, cgn_core::graph::ArchivedNodeKind::File) {
             continue;
         }
         let source_file = &graph.files[source_node.file_idx.to_native() as usize];

@@ -1,8 +1,8 @@
 //! `cgn peers` CLI surface.
 
 use crate::session::resolver::resolve_session_id;
-use clap::{Args, Subcommand};
 use cgn_core::peer::registry::alive_peers;
+use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 fn default_repo_root() -> std::io::Result<PathBuf> {

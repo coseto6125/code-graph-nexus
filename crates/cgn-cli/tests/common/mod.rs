@@ -1,6 +1,8 @@
 //! Shared scaffolding for integration tests. Lives under `tests/common/`
 //! so `cargo test` doesn't treat it as a standalone test binary.
 
+#![allow(dead_code)]
+
 pub mod peer_harness;
 
 use std::path::{Path, PathBuf};

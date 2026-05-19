@@ -1,6 +1,4 @@
-use cgn_cli::session::promotion::{
-    promote_case_a, promote_case_b, promotion_case, PromotionCase,
-};
+use cgn_cli::session::promotion::{promote_case_a, promote_case_b, promotion_case, PromotionCase};
 use cgn_core::session::{DirtyEntry, DirtyFiles, SessionMeta};
 use std::process::Command;
 
@@ -154,7 +152,10 @@ fn case_a_drops_fragment_when_content_matches_new_l2() {
 
     // Build a session with a dirty entry whose content_hash matches the new_sha's blob.
     let sid_dir = make_session(tmp_session_root.path(), &old_sha, wt_path);
-    let h = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(new_content.as_bytes()));
+    let h = format!(
+        "{:016x}",
+        xxhash_rust::xxh3::xxh3_64(new_content.as_bytes())
+    );
     let frag_id = h.clone();
     let frag_path = sid_dir.join("graph_overlay").join(format!("{frag_id}.bin"));
     std::fs::write(&frag_path, b"stub fragment").unwrap();

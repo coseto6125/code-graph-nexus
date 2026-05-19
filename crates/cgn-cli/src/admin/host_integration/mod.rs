@@ -5,8 +5,8 @@ pub mod native;
 
 use crate::admin::menu::{self, select};
 use crate::commands::admin::{claude_code, install_hook};
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 
 const MECHANISMS: &[menu::Item<'_>] = &[
     ("MCP", "shared side-car for any MCP-capable host"),
@@ -14,7 +14,10 @@ const MECHANISMS: &[menu::Item<'_>] = &[
         "Native",
         "no side-car; integrates into host's own tool registry",
     ),
-    ("Hooks", "shell hooks (Claude Code) for auto-reindex on edits"),
+    (
+        "Hooks",
+        "shell hooks (Claude Code) for auto-reindex on edits",
+    ),
     ("← Back", ""),
 ];
 
@@ -33,12 +36,18 @@ pub fn run(theme: &ColorfulTheme) -> Result<(), CgnError> {
 }
 
 const HOOK_HOSTS: &[menu::Item<'_>] = &[
-    ("Claude Code hooks", "PreToolUse + PostToolUse for auto-reindex"),
+    (
+        "Claude Code hooks",
+        "PreToolUse + PostToolUse for auto-reindex",
+    ),
     ("← Back", ""),
 ];
 const HOOK_ACTIONS: &[menu::Item<'_>] = &[
     ("install", "write hook entries to ~/.claude/settings.json"),
-    ("uninstall", "remove cgn hook entries from the host settings"),
+    (
+        "uninstall",
+        "remove cgn hook entries from the host settings",
+    ),
     ("status", "show whether cgn hooks are registered"),
     ("← Back", ""),
 ];

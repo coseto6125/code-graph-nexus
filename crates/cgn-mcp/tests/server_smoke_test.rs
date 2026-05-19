@@ -4,8 +4,8 @@
 //! subcommands, one hidden — so we can assert visibility filtering
 //! without linking the full CLI binary.
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
 use cgn_mcp::server::CgnMcpServer;
+use clap::{Args, CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "cgn")]

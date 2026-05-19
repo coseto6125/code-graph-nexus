@@ -1,8 +1,8 @@
-use chrono::Utc;
 use cgn_cli::peer::dispatch::dispatch_peer_dirty_event;
 use cgn_core::peer::concern::ImpactCache;
 use cgn_core::peer::inbox::{drain, InboxEntry};
 use cgn_core::session::overlay::{DirtyEntry, SymbolKind, SymbolRef};
+use chrono::Utc;
 use rustc_hash::FxHashSet;
 use tempfile::tempdir;
 
@@ -136,8 +136,23 @@ fn watcher_lock_rejects_second_holder() {
     use std::fs::OpenOptions;
     let dir = tempfile::tempdir().unwrap();
     let lock = dir.path().join("watcher.lock");
-    let f1 = OpenOptions::new().create(true).read(true).write(true).open(&lock).unwrap();
+    let f1 = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock)
+        .unwrap();
     f1.try_lock_exclusive().unwrap();
-    let f2 = OpenOptions::new().create(true).read(true).write(true).open(&lock).unwrap();
-    assert!(f2.try_lock_exclusive().is_err(), "second flock must fail while first holds it");
+    let f2 = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock)
+        .unwrap();
+    assert!(
+        f2.try_lock_exclusive().is_err(),
+        "second flock must fail while first holds it"
+    );
 }

@@ -269,7 +269,9 @@ impl GraphBuilder {
         let t_sort = std::time::Instant::now();
         self.local_graphs
             .sort_unstable_by(|a, b| a.file_path.cmp(&b.file_path));
-        if prof { eprintln!("prof build.sort: {:.3}s", t_sort.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!("prof build.sort: {:.3}s", t_sort.elapsed().as_secs_f32());
+        }
         let _t_pass1 = std::time::Instant::now();
 
         // Pre-size accumulators from known input cardinalities. Each
@@ -378,7 +380,12 @@ impl GraphBuilder {
         // O(N_files) scan per qualified call.
         symbol_table.build_stem_index();
 
-        if prof { eprintln!("prof build.pass1_register: {:.3}s", _t_pass1.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass1_register: {:.3}s",
+                _t_pass1.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass15 = std::time::Instant::now();
         // Pass 1.5: Extract Routes
         let mut route_edges = Vec::new();
@@ -479,7 +486,12 @@ impl GraphBuilder {
             }
         }
 
-        if prof { eprintln!("prof build.pass15_routes: {:.3}s", _t_pass15.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass15_routes: {:.3}s",
+                _t_pass15.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass16 = std::time::Instant::now();
         // Pass 1.6: Fetch-shape extraction.
         //
@@ -652,7 +664,12 @@ impl GraphBuilder {
             }
         }
 
-        if prof { eprintln!("prof build.pass16_fetch_shape: {:.3}s", _t_pass16.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass16_fetch_shape: {:.3}s",
+                _t_pass16.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass17 = std::time::Instant::now();
         // Pass 1.7: Entry-point scoring (cross-language).
         //
@@ -712,7 +729,12 @@ impl GraphBuilder {
             }
         }
 
-        if prof { eprintln!("prof build.pass17_entry_points: {:.3}s", _t_pass17.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass17_entry_points: {:.3}s",
+                _t_pass17.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass2 = std::time::Instant::now();
         // Pass 2: Resolve imports and build edges
         //
@@ -782,10 +804,10 @@ impl GraphBuilder {
         // by walking the filesystem mod tree from each crate root. Gated on
         // `repo_root` being set — test harnesses that don't set a repo root
         // simply skip module-tree resolution.
-        let mod_tree_opt: Option<crate::rust::module_tree::RustWorkspaceModTree> =
-            self.repo_root.as_ref().map(|root| {
-                crate::rust::module_tree::RustWorkspaceModTree::build(root)
-            });
+        let mod_tree_opt: Option<crate::rust::module_tree::RustWorkspaceModTree> = self
+            .repo_root
+            .as_ref()
+            .map(|root| crate::rust::module_tree::RustWorkspaceModTree::build(root));
 
         // When dumping is enabled we run the serial path so a single resolver
         // owns the decision stream. When disabled (the production case) we
@@ -888,7 +910,12 @@ impl GraphBuilder {
         edges.extend(entry_edges);
         edges.extend(fetches_edges);
 
-        if prof { eprintln!("prof build.pass2_imports_resolve: {:.3}s", _t_pass2.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass2_imports_resolve: {:.3}s",
+                _t_pass2.elapsed().as_secs_f32()
+            );
+        }
         let _t_blind = std::time::Instant::now();
         // Pass: blind spots — pure metadata passthrough, no edges created.
         // Each local_graph's blind_spots are interned and stored in the graph's
@@ -924,7 +951,12 @@ impl GraphBuilder {
             }
         }
 
-        if prof { eprintln!("prof build.blind_spots: {:.3}s", _t_blind.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.blind_spots: {:.3}s",
+                _t_blind.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass3 = std::time::Instant::now();
         // Pass 3: Community detection (Leiden) over Calls/Extends/Implements edges.
         // Leiden's refinement phase prevents the badly-connected-hub failure
@@ -939,7 +971,12 @@ impl GraphBuilder {
             node.community_id = c;
         }
 
-        if prof { eprintln!("prof build.pass3_community: {:.3}s", _t_pass3.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass3_community: {:.3}s",
+                _t_pass3.elapsed().as_secs_f32()
+            );
+        }
         let _t_pass4 = std::time::Instant::now();
         // Pass 4: Process detection (BFS forward via CALLS).
         // Produces traces; each trace becomes a NodeKind::Process node + N
@@ -1047,7 +1084,12 @@ impl GraphBuilder {
         // Rust impl bridge that uses the `__impl_target__:` sentinel the
         // Rust parser stamped into heritage. Must run BEFORE the CSR
         // construction below so new edges land in `out_offsets` / `in_offsets`.
-        if prof { eprintln!("prof build.pass4_processes: {:.3}s", _t_pass4.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.pass4_processes: {:.3}s",
+                _t_pass4.elapsed().as_secs_f32()
+            );
+        }
         let _t_class_mem = std::time::Instant::now();
         crate::post_process::class_membership::emit_edges(
             &self.local_graphs,
@@ -1108,7 +1150,12 @@ impl GraphBuilder {
         // new edges land in `out_offsets` / `in_offsets`.
         let imports_resolver =
             Resolver::new(&symbol_table).with_path_aliases(self.path_aliases.clone());
-        if prof { eprintln!("prof build.class_membership: {:.3}s", _t_class_mem.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.class_membership: {:.3}s",
+                _t_class_mem.elapsed().as_secs_f32()
+            );
+        }
         let _t_imports_edges = std::time::Instant::now();
         let _track_imports_call = ();
         crate::post_process::imports_edges::emit_edges(
@@ -1119,7 +1166,12 @@ impl GraphBuilder {
             &mut edges,
         );
 
-        if prof { eprintln!("prof build.imports_edges: {:.3}s", _t_imports_edges.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.imports_edges: {:.3}s",
+                _t_imports_edges.elapsed().as_secs_f32()
+            );
+        }
         let _t_csr = std::time::Instant::now();
         // Final pass: Construct CSR (out_offsets and in_offsets)
         // Sort edges by source to build out_offsets easily
@@ -1154,8 +1206,13 @@ impl GraphBuilder {
             in_offsets[i + 1] += in_offsets[i];
         }
 
-        if prof { eprintln!("prof build.csr_assembly: {:.3}s  total_build: {:.3}s",
-            _t_csr.elapsed().as_secs_f32(), t_total.elapsed().as_secs_f32()); }
+        if prof {
+            eprintln!(
+                "prof build.csr_assembly: {:.3}s  total_build: {:.3}s",
+                _t_csr.elapsed().as_secs_f32(),
+                t_total.elapsed().as_secs_f32()
+            );
+        }
         ZeroCopyGraph {
             magic: cgn_core::graph::GRAPH_MAGIC,
             version: cgn_core::graph::GRAPH_FORMAT_VERSION,
@@ -2173,17 +2230,19 @@ mod tests {
         // `RelType` doesn't derive `Ord`, so `format!("{:?}", …)` is used as a
         // stable string key for the BTreeMap — the Debug repr of each variant
         // is its identifier name and is not subject to drift.
-        let bucketize = |g: &cgn_core::graph::ZeroCopyGraph|
-            -> BTreeMap<String, BTreeSet<(u32, u32, String)>>
-        {
-            let mut buckets: BTreeMap<String, BTreeSet<(u32, u32, String)>> = BTreeMap::new();
-            for e in &g.edges {
-                let key = format!("{:?}", e.rel_type);
-                let reason = e.reason.resolve(&g.string_pool).to_string();
-                buckets.entry(key).or_default().insert((e.source, e.target, reason));
-            }
-            buckets
-        };
+        let bucketize =
+            |g: &cgn_core::graph::ZeroCopyGraph| -> BTreeMap<String, BTreeSet<(u32, u32, String)>> {
+                let mut buckets: BTreeMap<String, BTreeSet<(u32, u32, String)>> = BTreeMap::new();
+                for e in &g.edges {
+                    let key = format!("{:?}", e.rel_type);
+                    let reason = e.reason.resolve(&g.string_pool).to_string();
+                    buckets
+                        .entry(key)
+                        .or_default()
+                        .insert((e.source, e.target, reason));
+                }
+                buckets
+            };
 
         let parallel_buckets = bucketize(&parallel_graph);
         let serial_buckets = bucketize(&serial_graph);

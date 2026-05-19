@@ -60,21 +60,21 @@ ANALYZER_SRC = REPO_ROOT / "crates" / "cgn-analyzer" / "src"
 LANG_DIRS: dict[str, tuple[str, list[str]]] = {
     "TypeScript": ("typescript", [".ts", ".tsx"]),
     "JavaScript": ("javascript", [".js", ".mjs", ".cjs", ".jsx"]),
-    "Python":     ("python",     [".py", ".pyi"]),
-    "Java":       ("java",       [".java"]),
-    "Kotlin":     ("kotlin",     [".kt", ".kts"]),
-    "C#":         ("c_sharp",    [".cs"]),
-    "Go":         ("go",         [".go"]),
-    "Rust":       ("rust",       [".rs"]),
-    "PHP":        ("php",        [".php"]),
-    "Ruby":       ("ruby",       [".rb"]),
-    "Swift":      ("swift",      [".swift"]),
+    "Python": ("python", [".py", ".pyi"]),
+    "Java": ("java", [".java"]),
+    "Kotlin": ("kotlin", [".kt", ".kts"]),
+    "C#": ("c_sharp", [".cs"]),
+    "Go": ("go", [".go"]),
+    "Rust": ("rust", [".rs"]),
+    "PHP": ("php", [".php"]),
+    "Ruby": ("ruby", [".rb"]),
+    "Swift": ("swift", [".swift"]),
     # `.h` is ambiguous (C or C++); the C row claims it via tree-sitter-c
     # being the parser dispatch default. C++ takes the cpp-specific
     # variants so the count is mutually exclusive enough.
-    "C":          ("c",          [".c", ".h"]),
-    "C++":        ("cpp",        [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"]),
-    "Dart":       ("dart",       [".dart"]),
+    "C": ("c", [".c", ".h"]),
+    "C++": ("cpp", [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"]),
+    "Dart": ("dart", [".dart"]),
 }
 
 
@@ -117,7 +117,9 @@ class AuditCtx:
         """
         r = subprocess.run(
             [self.cgn_bin, "cypher", "--repo", self.sample_repo, query, "--format=json"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if r.returncode != 0:
             return 0
@@ -149,16 +151,27 @@ def dim_imports(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     but cgn models them as relationships.
     """
     where = _ext_clause(file_exts, "a")
-    n = ctx.cypher_count(
-        f"MATCH (a)-[:Imports]->(b) WHERE {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (a)-[:Imports]->(b) WHERE {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} Imports edges")
 
 
 SYMBOL_KINDS = [
-    "Function", "Class", "Method", "Interface", "Constructor",
-    "Property", "Variable", "Const", "Struct", "Enum", "Typedef",
-    "Macro", "Annotation", "Trait", "Module", "Namespace",
+    "Function",
+    "Class",
+    "Method",
+    "Interface",
+    "Constructor",
+    "Property",
+    "Variable",
+    "Const",
+    "Struct",
+    "Enum",
+    "Typedef",
+    "Macro",
+    "Annotation",
+    "Trait",
+    "Module",
+    "Namespace",
 ]
 
 
@@ -171,45 +184,35 @@ def dim_named(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     """
     kinds_q = ", ".join(f"'{k}'" for k in SYMBOL_KINDS)
     where = _ext_clause(file_exts, "n")
-    n = ctx.cypher_count(
-        f"MATCH (n) WHERE n.kind IN [{kinds_q}] AND {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (n) WHERE n.kind IN [{kinds_q}] AND {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} named-symbol nodes")
 
 
 def dim_heritage(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     """'Heritage' = ≥1 Extends or Implements edge originating in this lang."""
     where = _ext_clause(file_exts, "a")
-    n = ctx.cypher_count(
-        f"MATCH (a)-[:Extends|Implements]->(b) WHERE {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (a)-[:Extends|Implements]->(b) WHERE {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} Extends/Implements edges")
 
 
 def dim_ctor(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     """'Ctor' = ≥1 node with kind=Constructor in a file of this lang."""
     where = _ext_clause(file_exts, "n")
-    n = ctx.cypher_count(
-        f"MATCH (n) WHERE n.kind='Constructor' AND {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (n) WHERE n.kind='Constructor' AND {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} Constructor nodes")
 
 
 def dim_entry(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     """'Entry' = ≥1 node with kind=EntryPoint in a file of this lang."""
     where = _ext_clause(file_exts, "n")
-    n = ctx.cypher_count(
-        f"MATCH (n) WHERE n.kind='EntryPoint' AND {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (n) WHERE n.kind='EntryPoint' AND {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} EntryPoint nodes")
 
 
 def dim_call(file_exts: list[str], _lang_dir: str, ctx: AuditCtx) -> Verdict:
     """'Call' = ≥1 Calls edge originating in this lang."""
     where = _ext_clause(file_exts, "a")
-    n = ctx.cypher_count(
-        f"MATCH (a)-[:Calls]->(b) WHERE {where} RETURN count(*)"
-    )
+    n = ctx.cypher_count(f"MATCH (a)-[:Calls]->(b) WHERE {where} RETURN count(*)")
     return Verdict(Cell.YES if n > 0 else Cell.NO, f"{n} Calls edges")
 
 
@@ -236,21 +239,22 @@ def dim_rename(_file_exts: list[str], lang_dir: str, _ctx: AuditCtx) -> Verdict:
 def dim_manual(reason: str):
     def predicate(_file_exts: list[str], _lang_dir: str, _ctx: AuditCtx) -> Verdict:
         return Verdict(Cell.MANUAL, reason)
+
     return predicate
 
 
 PREDICATES = {
-    "Imports":    dim_imports,
-    "Named":      dim_named,
-    "Exports":    dim_manual("cypher can't read n.is_exported"),
-    "Heritage":   dim_heritage,
-    "Types":      dim_manual("cypher can't read n.type_annotation"),
-    "Ctor":       dim_ctor,
-    "Config":     dim_manual("no canonical Config NodeKind"),
+    "Imports": dim_imports,
+    "Named": dim_named,
+    "Exports": dim_manual("cypher can't read n.is_exported"),
+    "Heritage": dim_heritage,
+    "Types": dim_manual("cypher can't read n.type_annotation"),
+    "Ctor": dim_ctor,
+    "Config": dim_manual("no canonical Config NodeKind"),
     "Frameworks": dim_manual("framework_refs not exposed via cypher"),
-    "Entry":      dim_entry,
-    "Call":       dim_call,
-    "Rename":     dim_rename,
+    "Entry": dim_entry,
+    "Call": dim_call,
+    "Rename": dim_rename,
 }
 
 
@@ -270,8 +274,7 @@ def parse_readme_claims(readme: Path) -> dict[str, dict[str, Cell]]:
         return {}
     lines = readme.read_text().splitlines()
     header_idx = next(
-        (i for i, line in enumerate(lines)
-         if line.startswith("| Language | Imports | Named")),
+        (i for i, line in enumerate(lines) if line.startswith("| Language | Imports | Named")),
         None,
     )
     if header_idx is None:
@@ -279,7 +282,7 @@ def parse_readme_claims(readme: Path) -> dict[str, dict[str, Cell]]:
     cols = [c.strip() for c in lines[header_idx].split("|")[1:-1]]
     dim_cols = cols[1:]  # drop "Language"
     claims: dict[str, dict[str, Cell]] = {}
-    for line in lines[header_idx + 2:]:  # skip separator row
+    for line in lines[header_idx + 2 :]:  # skip separator row
         if not line.startswith("|"):
             break
         cells = [c.strip() for c in line.split("|")[1:-1]]
@@ -292,8 +295,7 @@ def parse_readme_claims(readme: Path) -> dict[str, dict[str, Cell]]:
         # documents that header / row column counts MUST agree — a defence
         # against the length check ever being weakened in a refactor.
         claims[lang] = {
-            dim: _cell_from_str(val)
-            for dim, val in zip(dim_cols, cells[1:], strict=True)
+            dim: _cell_from_str(val) for dim, val in zip(dim_cols, cells[1:], strict=True)
         }
     return claims
 
@@ -315,17 +317,31 @@ def _cell_from_str(val: str) -> Cell:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--only", type=str, default="",
-                    help="Comma-separated README lang names to limit output (e.g. 'Rust,Kotlin')")
-    ap.add_argument("--generate", action="store_true",
-                    help="Emit a fresh markdown table from verified facts")
-    ap.add_argument("--sample-repo", type=Path, default=DEFAULT_SAMPLE_REPO,
-                    help="Path to .sample_repo (default: <repo>/.sample_repo)")
-    ap.add_argument("--cgn-bin", type=str, default="cgn",
-                    help="cgn binary (default: 'cgn' from PATH)")
-    ap.add_argument("--readme", type=Path, default=DEFAULT_README,
-                    help="README to verify (default: <repo>/README.md; "
-                         "use README_zh-TW.md to check the zh-TW variant)")
+    ap.add_argument(
+        "--only",
+        type=str,
+        default="",
+        help="Comma-separated README lang names to limit output (e.g. 'Rust,Kotlin')",
+    )
+    ap.add_argument(
+        "--generate", action="store_true", help="Emit a fresh markdown table from verified facts"
+    )
+    ap.add_argument(
+        "--sample-repo",
+        type=Path,
+        default=DEFAULT_SAMPLE_REPO,
+        help="Path to .sample_repo (default: <repo>/.sample_repo)",
+    )
+    ap.add_argument(
+        "--cgn-bin", type=str, default="cgn", help="cgn binary (default: 'cgn' from PATH)"
+    )
+    ap.add_argument(
+        "--readme",
+        type=Path,
+        default=DEFAULT_README,
+        help="README to verify (default: <repo>/README.md; "
+        "use README_zh-TW.md to check the zh-TW variant)",
+    )
     args = ap.parse_args()
 
     ctx = AuditCtx(sample_repo=str(args.sample_repo), cgn_bin=args.cgn_bin)
@@ -337,15 +353,14 @@ def main() -> int:
     only = {s.strip() for s in args.only.split(",") if s.strip()}
     langs = list(LANG_DIRS.keys())
     if only:
-        langs = [l for l in langs if l in only]
+        langs = [lang for lang in langs if lang in only]
 
     if args.generate:
         print("| Language | " + " | ".join(PREDICATES.keys()) + " |")
         print("| :--- | " + " | ".join([":---:"] * len(PREDICATES)) + " |")
         for lang in langs:
             lang_dir, file_exts = LANG_DIRS[lang]
-            cells = [pred(file_exts, lang_dir, ctx).cell.value
-                     for pred in PREDICATES.values()]
+            cells = [pred(file_exts, lang_dir, ctx).cell.value for pred in PREDICATES.values()]
             print(f"| {lang} | " + " | ".join(cells) + " |")
         return 0
 

@@ -18,11 +18,11 @@
 //! 6. **Pre-flight collision detection**: warn if new name already exists in
 //!    the graph before the rename runs (especially in dry-run).
 
-use clap::Args;
 use cgn_analyzer::identifier_finder::find_identifier_occurrences;
 use cgn_core::analyzer::types::IdentifierRange;
 use cgn_core::registry::atomic_write_bytes;
 use cgn_core::CgnError;
+use clap::Args;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::json;

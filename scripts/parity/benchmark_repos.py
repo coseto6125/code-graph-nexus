@@ -39,14 +39,27 @@ def benchmark_analyze(repo_path: Path):
     # Run ref gitnexus (upstream Python)
     print("  \u251c\u2500 Running ref gitnexus admin index...")
     start_time = time.time()
-    subprocess.run(["gitnexus", "admin", "index", "--repo", str(repo_path)], cwd=workspace, capture_output=True)
+    subprocess.run(
+        ["gitnexus", "admin", "index", "--repo", str(repo_path)], cwd=workspace, capture_output=True
+    )
     ref_time = time.time() - start_time
 
     # Run code-graph-nexus
     print("  \u2514\u2500 Running code-graph-nexus admin index...")
     start_time = time.time()
     subprocess.run(
-        ["cargo", "run", "--release", "--bin", "cgn", "--", "admin", "index", "--repo", str(repo_path)],
+        [
+            "cargo",
+            "run",
+            "--release",
+            "--bin",
+            "cgn",
+            "--",
+            "admin",
+            "index",
+            "--repo",
+            str(repo_path),
+        ],
         cwd=workspace,
         capture_output=True,
     )

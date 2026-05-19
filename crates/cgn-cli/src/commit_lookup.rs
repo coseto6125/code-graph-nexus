@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::SystemTime;
 
+type CommitIndexCache = RwLock<FxHashMap<PathBuf, (SystemTime, Arc<CommitIndex>)>>;
+
 /// In-memory `sha → dirname` map built by scanning a `<repo>/commits/` dir.
 /// Built lazily once per CLI invocation; `find()` is O(1).
 ///
@@ -23,8 +25,7 @@ pub struct CommitIndex {
 /// lock — concurrent queries don't serialize. Arc avoids cloning the inner
 /// HashMap on every hit. Bounded by repo count seen in this process; not
 /// LRU-evicted today because typical MCP / CLI usage tops out at <20 repos.
-static SCAN_CACHE: OnceLock<RwLock<FxHashMap<PathBuf, (SystemTime, Arc<CommitIndex>)>>> =
-    OnceLock::new();
+static SCAN_CACHE: OnceLock<CommitIndexCache> = OnceLock::new();
 
 impl CommitIndex {
     pub fn scan(commits_dir: &Path) -> io::Result<Self> {

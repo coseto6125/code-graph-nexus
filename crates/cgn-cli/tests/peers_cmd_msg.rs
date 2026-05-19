@@ -29,6 +29,7 @@ fn say_to_targeted_peer_writes_to_their_inbox() {
             "--repo",
             dir.path().to_str().unwrap(),
         ])
+        .env("CGN_SESSION_ID", "me")
         .env("CLAUDE_CODE_SESSION_ID", "me")
         .output()
         .expect("spawn");
@@ -76,6 +77,7 @@ fn broadcast_writes_to_all_alive_peer_inboxes() {
             "--repo",
             dir.path().to_str().unwrap(),
         ])
+        .env("CGN_SESSION_ID", "me_bcast")
         .env("CLAUDE_CODE_SESSION_ID", "me_bcast")
         .output()
         .expect("spawn");
@@ -105,6 +107,7 @@ fn inbox_subcommand_reads_without_draining() {
 
     let out = Command::new(bin())
         .args(["peers", "inbox", "--repo", dir.path().to_str().unwrap()])
+        .env("CGN_SESSION_ID", "me_inbox_test")
         .env("CLAUDE_CODE_SESSION_ID", "me_inbox_test")
         .output()
         .expect("spawn");

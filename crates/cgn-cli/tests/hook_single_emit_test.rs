@@ -26,6 +26,7 @@ fn write_meta(session_dir: &std::path::Path, sid: &str) {
 fn fire(event: &str, envelope: &str, sid: &str, repo_root: &std::path::Path) -> Vec<u8> {
     let mut child = Command::new(bin())
         .args(["hook", event, "--claude-code"])
+        .env("CGN_SESSION_ID", sid)
         .env("CLAUDE_CODE_SESSION_ID", sid)
         .env("CGN_REPO_ROOT_OVERRIDE", repo_root)
         .stdin(Stdio::piped())

@@ -8,9 +8,9 @@ use crate::build::orchestrator::{
 use crate::commit_lookup::CommitIndex;
 use crate::repo_identity::repo_dir_name_for_cwd;
 use crate::session::state::classify_with_index;
-use fs2::FileExt;
 use cgn_core::registry::{resolve_home_cgn, SourceType};
 use cgn_core::session::SessionState;
+use fs2::FileExt;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -83,7 +83,10 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
 /// `session_meta.json` to decide whether this stale session is even in scope
 /// for the current `--force`. Read failure ⇒ count as in-scope (conservative).
 fn matches_sha_hint(repo_root: &Path, sid: &str, target_sha: &str) -> bool {
-    let path = repo_root.join("sessions").join(sid).join("session_meta.json");
+    let path = repo_root
+        .join("sessions")
+        .join(sid)
+        .join("session_meta.json");
     match cgn_core::session::SessionMeta::read(&path) {
         Ok(sm) => sm.base_sha == target_sha,
         Err(_) => true,
@@ -102,7 +105,6 @@ fn spawn_delayed_rm_rf(path: PathBuf, delay: Duration) {
         }
     });
 }
-
 
 #[derive(Debug)]
 pub struct ForceRebuildResult {

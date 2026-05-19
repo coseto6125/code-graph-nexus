@@ -1,9 +1,9 @@
 //! `cgn admin sessions list` — inspect L1 sessions under all repos.
 //! reset / sweep variants deferred (parent spec §11.2 follow-up).
 
-use clap::{Args, Subcommand};
 use cgn_core::registry::resolve_home_cgn;
 use cgn_core::session::{SessionMeta, SessionState};
+use clap::{Args, Subcommand};
 use std::fs;
 use std::io;
 
@@ -66,8 +66,8 @@ fn run_list(args: ListArgs) -> io::Result<()> {
         return Ok(());
     }
     println!(
-        "{:<24} {:<24} {:<8} {:<22} {}",
-        "SESSION", "REPO", "BASE_SHA", "STATE", "LAST_TOUCHED"
+        "{:<24} {:<24} {:<8} {:<22} LAST_TOUCHED",
+        "SESSION", "REPO", "BASE_SHA", "STATE"
     );
     for r in &rows {
         let state_text = match &r.state {
@@ -133,15 +133,16 @@ fn collect_rows(home_cgn: &std::path::Path) -> io::Result<Vec<ListRow>> {
             // otherwise do.
             let sm = SessionMeta::read(&s_path.join("session_meta.json")).ok();
             let state = match &sm {
-                Some(sm) => crate::session::state::classify_with_meta(
-                    &repo_dir, sid, sm, idx_ref,
-                ),
+                Some(sm) => crate::session::state::classify_with_meta(&repo_dir, sid, sm, idx_ref),
                 None => SessionState::Stale {
                     reason: cgn_core::session::StaleReason::MetaUnreadable,
                 },
             };
             let (base_sha, state_view) = match &state {
-                SessionState::PureReference { base_sha, l2_dirname } => (
+                SessionState::PureReference {
+                    base_sha,
+                    l2_dirname,
+                } => (
                     base_sha.clone(),
                     StateView::PureReference {
                         l2_dirname: l2_dirname.clone(),

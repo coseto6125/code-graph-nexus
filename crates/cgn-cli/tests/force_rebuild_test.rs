@@ -30,8 +30,7 @@ fn setup_repo_with_l2(tmp: &Path) {
         refs_seen_since: vec![],
         builder_fingerprint: None,
     };
-    cgn_core::registry::CommitBuildMeta::write_atomic(&commits.join("meta.json"), &cm)
-        .unwrap();
+    cgn_core::registry::CommitBuildMeta::write_atomic(&commits.join("meta.json"), &cm).unwrap();
 }
 
 fn add_session(tmp: &Path, sid: &str, base_sha: &str, with_dirty: bool) {
@@ -246,7 +245,13 @@ fn force_rebuild_l2_invalidates_dirty_session_with_same_base_sha() {
     std::env::set_var("HOME", home.path());
 
     let initial = cgn_cli::build::orchestrator::build_l2(wt.path(), None).unwrap();
-    let repo_root = initial.commit_dir.parent().unwrap().parent().unwrap().to_path_buf();
+    let repo_root = initial
+        .commit_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     add_session(&repo_root, "sid_dirty", &sha, true);
     add_session(&repo_root, "sid_clean", &sha, false);
 

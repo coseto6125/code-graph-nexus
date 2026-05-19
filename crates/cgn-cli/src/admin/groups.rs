@@ -2,9 +2,9 @@
 
 use crate::admin::menu::{self, select};
 use crate::commands::admin::group;
-use dialoguer::{theme::ColorfulTheme, Input};
 use cgn_core::registry::{resolve_home_cgn, Registry};
 use cgn_core::CgnError;
+use dialoguer::{theme::ColorfulTheme, Input};
 
 const MENU: &[menu::Item<'_>] = &[
     (

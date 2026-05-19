@@ -18,18 +18,32 @@ Class" rows that pair with "rs-only Annotation" rows for the same
 `*Attribute` symbol — the per-kind aggregator missed those because
 LABEL_PAIRS was one-directional.
 """
+
 from __future__ import annotations
+
 import heapq
 import os
 from collections import defaultdict
 from pathlib import Path
 
-DIFF_DIR = Path(os.environ.get("PARITY_DIFF_DIR",
-    str(Path(__file__).resolve().parent / "symbol_diffs")))
+DIFF_DIR = Path(
+    os.environ.get("PARITY_DIFF_DIR", str(Path(__file__).resolve().parent / "symbol_diffs"))
+)
 LANGS = [
-    "TypeScript", "JavaScript", "Python", "Java", "Kotlin",
-    "CSharp", "Go", "Rust", "PHP", "Ruby",
-    "Swift", "C", "Cpp", "Dart",
+    "TypeScript",
+    "JavaScript",
+    "Python",
+    "Java",
+    "Kotlin",
+    "CSharp",
+    "Go",
+    "Rust",
+    "PHP",
+    "Ruby",
+    "Swift",
+    "C",
+    "Cpp",
+    "Dart",
 ]
 
 MODEL_RS_ONLY = {"EntryPoint", "Process", "Annotation", "Trait", "Impl"}
@@ -158,9 +172,7 @@ def _pair_ref_const_function_double_emit(
 # to bridge `{Method, Function, Template, Constructor}` and `{Class, Struct,
 # Interface, Enum, Trait, Union}` (would create false `Method ↔ Struct` pairs
 # at unrelated source spans).
-_TEMPLATE_TYPE_PAIR_KINDS = frozenset(
-    {"Class", "Struct", "Interface", "Enum", "Trait", "Union"}
-)
+_TEMPLATE_TYPE_PAIR_KINDS = frozenset({"Class", "Struct", "Interface", "Enum", "Trait", "Union"})
 
 
 def _pair_ref_template_class_double_emit(
@@ -210,7 +222,7 @@ _HTTP_METHOD_PREFIXES = (
 def _strip_method_prefix(name: str) -> str:
     for m in _HTTP_METHOD_PREFIXES:
         if name.startswith(m):
-            return name[len(m):]
+            return name[len(m) :]
     return name
 
 
@@ -314,9 +326,7 @@ def lang_summary(lang: str) -> dict:
     rs_only = rs_set - ref_set
     ref_only = ref_set - rs_set
     rs_only, ref_only, route_alias_pairs = _pair_route_aliases(rs_only, ref_only)
-    rs_only, ref_only, route_method_prefix_pairs = _pair_route_method_prefix(
-        rs_only, ref_only
-    )
+    rs_only, ref_only, route_method_prefix_pairs = _pair_route_method_prefix(rs_only, ref_only)
     ref_only, const_fn_double_emit_pairs = _pair_ref_const_function_double_emit(
         ref_only, rs_by_pn, ref_by_pn
     )
@@ -347,10 +357,7 @@ def lang_summary(lang: str) -> dict:
 
     for rk, p, n in rs_only:
         ref_kinds = ref_by_pn.get((p, n), [])
-        paired_label = (
-            rk in EQUIV
-            and any(fk in EQUIV.get(rk, set()) for fk in ref_kinds)
-        )
+        paired_label = rk in EQUIV and any(fk in EQUIV.get(rk, set()) for fk in ref_kinds)
         if paired_label:
             buckets["label"] += 1
             continue
@@ -362,10 +369,7 @@ def lang_summary(lang: str) -> dict:
             real_rs[rk] += 1
     for fk, p, n in ref_only:
         rs_kinds = rs_by_pn.get((p, n), [])
-        paired_label = (
-            fk in EQUIV
-            and any(rk in EQUIV.get(fk, set()) for rk in rs_kinds)
-        )
+        paired_label = fk in EQUIV and any(rk in EQUIV.get(fk, set()) for rk in rs_kinds)
         if paired_label:
             buckets["label"] += 1
             continue
@@ -390,9 +394,11 @@ def lang_summary(lang: str) -> dict:
 
 
 def main() -> None:
-    print(f"{'Lang':<12} {'rs_only':>8} {'ref_only':>9} | "
-          f"{'model':>6} {'label':>6} {'real_rs':>8} {'real_ref':>9} | "
-          f"top_real_gap")
+    print(
+        f"{'Lang':<12} {'rs_only':>8} {'ref_only':>9} | "
+        f"{'model':>6} {'label':>6} {'real_rs':>8} {'real_ref':>9} | "
+        f"top_real_gap"
+    )
     print("-" * 110)
     grand = {"model": 0, "label": 0, "real_rs": 0, "real_ref": 0}
     for lang in LANGS:
@@ -409,12 +415,16 @@ def main() -> None:
         for k, v in s["top_ref"][:1]:
             top_combo.append(f"{k}-{v}")
         top_str = ", ".join(top_combo) if top_combo else "—"
-        print(f"{lang:<12} {s['rs_total']:>8} {s['ref_total']:>9} | "
-              f"{b['model']:>6} {b['label']:>6} {b['real_rs']:>8} {b['real_ref']:>9} | "
-              f"{top_str}")
+        print(
+            f"{lang:<12} {s['rs_total']:>8} {s['ref_total']:>9} | "
+            f"{b['model']:>6} {b['label']:>6} {b['real_rs']:>8} {b['real_ref']:>9} | "
+            f"{top_str}"
+        )
     print("-" * 110)
-    print(f"{'TOTAL':<12} {'':>8} {'':>9} | "
-          f"{grand['model']:>6} {grand['label']:>6} {grand['real_rs']:>8} {grand['real_ref']:>9}")
+    print(
+        f"{'TOTAL':<12} {'':>8} {'':>9} | "
+        f"{grand['model']:>6} {grand['label']:>6} {grand['real_rs']:>8} {grand['real_ref']:>9}"
+    )
     print()
     print("Detail per lang (top-5 real gaps):")
     for lang in LANGS:

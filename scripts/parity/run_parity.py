@@ -174,9 +174,13 @@ def main() -> None:
     errors = is_subset(normalized_ref, normalized_cgn)
 
     if not errors:
-        print("\n✅ SUCCESS: 100% Parity Achieved! (code-graph-nexus is a superset of ref gitnexus)")
+        print(
+            "\n✅ SUCCESS: 100% Parity Achieved! (code-graph-nexus is a superset of ref gitnexus)"
+        )
     else:
-        print("\n❌ FAILURE: Mismatch detected. code-graph-nexus is missing expected fields or values.")
+        print(
+            "\n❌ FAILURE: Mismatch detected. code-graph-nexus is missing expected fields or values."
+        )
         for error in errors:
             print(f"  - {error}")
         print(

@@ -24,8 +24,8 @@ pub mod indexes;
 pub mod menu;
 pub mod status;
 
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct AdminArgs {
