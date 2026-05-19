@@ -91,7 +91,10 @@ fn apply_l1_overlay_updates(graph_path: &Path, worktree_root: &Path) -> io::Resu
         match promotion::promotion_case(&session_meta.base_sha, &current_head, worktree_root) {
             promotion::PromotionCase::A => {
                 let stats = promotion::promote_case_a(&session_dir, worktree_root, &current_head)?;
-                eprintln!("session.promoted case=A dropped={} kept={}", stats.dropped, stats.kept);
+                eprintln!(
+                    "session.promoted case=A dropped={} kept={}",
+                    stats.dropped, stats.kept
+                );
             }
             promotion::PromotionCase::B => {
                 promotion::promote_case_b(&session_dir, &session_meta.base_sha, &current_head)?;
@@ -104,8 +107,11 @@ fn apply_l1_overlay_updates(graph_path: &Path, worktree_root: &Path) -> io::Resu
     let graph_mtime = fs::metadata(graph_path)?.modified()?;
     let dirty_files = collect_dirty_files(graph_path, worktree_root, graph_mtime)?;
 
-    let mut n_written = 0usize;
-    let mut n_failed = 0usize;
+    // Build inputs first so per-file read errors get individually surfaced
+    // (matches the old per-file warning), then commit fragment writes +
+    // manifest + version in one batched call. Coalesces 2N atomic_write_json
+    // calls (dirty_files.json + session_meta.json per file) down to 2.
+    let mut inputs: Vec<overlay_writer::FragmentInput> = Vec::with_capacity(dirty_files.len());
     for dirty_path in &dirty_files {
         let rel = dirty_path
             .strip_prefix(worktree_root)
@@ -122,17 +128,24 @@ fn apply_l1_overlay_updates(graph_path: &Path, worktree_root: &Path) -> io::Resu
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
-        let input = overlay_writer::FragmentInput {
+        inputs.push(overlay_writer::FragmentInput {
             rel_path: rel.to_string_lossy().into(),
             content,
             mtime_ns,
-        };
-        match overlay_writer::write_dirty_fragment(&session_dir, &input) {
-            Ok(o) if o.parse_failed => n_failed += 1,
-            Ok(_) => n_written += 1,
-            Err(e) => eprintln!("warning: overlay write for {}: {e}", rel.display()),
-        }
+        });
     }
+
+    let (n_written, n_failed) =
+        match overlay_writer::write_dirty_fragments_batch(&session_dir, &inputs) {
+            Ok(outs) => {
+                let n_failed = outs.iter().filter(|o| o.parse_failed).count();
+                (outs.len() - n_failed, n_failed)
+            }
+            Err(e) => {
+                eprintln!("warning: overlay batch write: {e}");
+                (0, 0)
+            }
+        };
     if n_written > 0 || n_failed > 0 {
         eprintln!("l1.refreshed written={n_written} failed={n_failed}");
     }
