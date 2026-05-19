@@ -97,7 +97,7 @@ def print_diff(dict1: Any, dict2: Any, name1: str, name2: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run shadow parity validation between cgn and code-graph-nexus"
+        description="Run shadow parity validation between ref gitnexus and code-graph-nexus"
     )
     parser.add_argument(
         "fixture_path", type=Path, help="Path to the TypeScript fixture file or directory"
@@ -117,8 +117,8 @@ def main() -> None:
     print(f"Running parity tests for fixture: {fixture_path} on symbol: {symbol}")
 
     print("\n[Analyze Phase]")
-    cgn_analyze_cmd = ["cgn", "admin", "index", "--repo", str(fixture_path)]
-    cgn_rs_analyze_cmd = [
+    ref_analyze_cmd = ["gitnexus", "admin", "index", "--repo", str(fixture_path)]
+    cgn_analyze_cmd = [
         "cargo",
         "run",
         "--bin",
@@ -130,15 +130,15 @@ def main() -> None:
         str(fixture_path),
     ]
 
-    print("Running original cgn admin index...")
+    print("Running ref gitnexus admin index...")
+    subprocess.run(ref_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
+
+    print("Running code-graph-nexus admin index...")
     subprocess.run(cgn_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
 
-    print("Running new code-graph-nexus admin index...")
-    subprocess.run(cgn_rs_analyze_cmd, cwd=workspace_root, capture_output=True, check=False)
-
     print(f"\n[Inspect Phase: {symbol}]")
-    cgn_context_cmd = [
-        "cgn",
+    ref_context_cmd = [
+        "gitnexus",
         "inspect",
         "--name",
         symbol,
@@ -147,7 +147,7 @@ def main() -> None:
         "--format",
         "json",
     ]
-    cgn_rs_context_cmd = [
+    cgn_context_cmd = [
         "cargo",
         "run",
         "--bin",
@@ -162,19 +162,19 @@ def main() -> None:
         "json",
     ]
 
-    print("Running original cgn inspect...")
+    print("Running ref gitnexus inspect...")
+    ref_output = run_command(ref_context_cmd, cwd=workspace_root)
+
+    print("Running code-graph-nexus inspect...")
     cgn_output = run_command(cgn_context_cmd, cwd=workspace_root)
 
-    print("Running new code-graph-nexus inspect...")
-    cgn_rs_output = run_command(cgn_rs_context_cmd, cwd=workspace_root)
-
+    normalized_ref = normalize_json(ref_output)
     normalized_cgn = normalize_json(cgn_output)
-    normalized_cgn_rs = normalize_json(cgn_rs_output)
 
-    errors = is_subset(normalized_cgn, normalized_cgn_rs)
+    errors = is_subset(normalized_ref, normalized_cgn)
 
     if not errors:
-        print("\n✅ SUCCESS: 100% Parity Achieved! (code-graph-nexus is a superset of cgn)")
+        print("\n✅ SUCCESS: 100% Parity Achieved! (code-graph-nexus is a superset of ref gitnexus)")
     else:
         print("\n❌ FAILURE: Mismatch detected. code-graph-nexus is missing expected fields or values.")
         for error in errors:
@@ -182,7 +182,7 @@ def main() -> None:
         print(
             "\n--- Diff (Note: Extra fields in code-graph-nexus are ACCEPTABLE, look for missing/changed fields) ---"
         )
-        print_diff(normalized_cgn, normalized_cgn_rs, "cgn (original)", "code-graph-nexus (new)")
+        print_diff(normalized_ref, normalized_cgn, "ref gitnexus", "code-graph-nexus")
         sys.exit(1)
 
 
