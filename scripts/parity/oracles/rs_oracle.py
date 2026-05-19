@@ -33,8 +33,9 @@ from __future__ import annotations
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 # --- comment / string stripping --------------------------------------------
 
@@ -69,9 +70,7 @@ def strip_comments_and_strings(src: str) -> str:
 
 # Match top-level `use ...;` and `pub use ...;` and `pub(crate) use ...;`.
 # We rely on `;` terminator and brace balancing for the tree.
-_USE_START = re.compile(
-    r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+", re.MULTILINE
-)
+_USE_START = re.compile(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+", re.MULTILINE)
 
 # Match `extern crate NAME;` (or `extern crate NAME as ALIAS;`).
 _EXTERN_CRATE = re.compile(
@@ -389,9 +388,7 @@ def file_defines_pub(file: Path, name: str) -> bool:
         return True
     # `pub use foo::Bar` exposes Bar from this file too.
     reexport = re.compile(
-        r"^\s*pub(?:\s*\([^)]*\))?\s+use\s+[^;]*\b"
-        + re.escape(name)
-        + r"\b[^;]*;",
+        r"^\s*pub(?:\s*\([^)]*\))?\s+use\s+[^;]*\b" + re.escape(name) + r"\b[^;]*;",
         re.MULTILINE,
     )
     return bool(reexport.search(clean))
@@ -620,9 +617,7 @@ def process_file(
         crate_name = m.group(1)
         alias = m.group(2)
         bound_name = alias if alias is not None else crate_name
-        tier, target, conf = resolve_use(
-            bound_name, "", file, src_crate, src_mod_path, workspace
-        )
+        tier, target, conf = resolve_use(bound_name, "", file, src_crate, src_mod_path, workspace)
         if crate_name in workspace["crates"]:
             entry = workspace["crates"][crate_name]["entry"]
             tier, target, conf = ("ImportScoped", entry, 1.0)
@@ -685,7 +680,7 @@ def main() -> int:
     workspace = load_workspace(repo_root)
     # Build mod trees for each crate.
     files_in_scope: list[Path] = []
-    for crate_name, crate in workspace["crates"].items():
+    for crate in workspace["crates"].values():
         entry = crate.get("entry")
         if entry is None:
             crate["tree"] = {}
@@ -720,8 +715,7 @@ def main() -> int:
         canonical.setdefault(info["root"], cname)
     crates_summary = ", ".join(sorted(canonical.values())) or "(none)"
     print(
-        f"[rs_oracle] workspace crates: {len(canonical)} "
-        f"({crates_summary})",
+        f"[rs_oracle] workspace crates: {len(canonical)} ({crates_summary})",
         file=sys.stderr,
     )
     print(f"[rs_oracle] files scanned:   {len(ordered)}", file=sys.stderr)

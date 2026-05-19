@@ -8,7 +8,10 @@ use std::process::Command;
 
 const MENU: &[menu::Item<'_>] = &[
     ("Doctor", "run env + registry health checks together"),
-    ("MCP tool list", "show the MCP tools `cgn mcp serve` exposes"),
+    (
+        "MCP tool list",
+        "show the MCP tools `cgn mcp serve` exposes",
+    ),
     ("Registry health", "check index dirs, graphs, meta, orphans"),
     (
         "Environment report",
@@ -141,7 +144,7 @@ fn registry_health(home_cgn: &Path) -> Result<RegistryHealth, CgnError> {
         registry.repos.keys().cloned().collect();
 
     // Check each registered repo's commits dir for missing graph.bin / meta.
-    for (dir_name, _alias) in &registry.repos {
+    for dir_name in registry.repos.keys() {
         let commits_dir = home_cgn.join(dir_name).join("commits");
         if let Ok(entries) = std::fs::read_dir(&commits_dir) {
             for entry in entries.flatten().filter(|e| e.path().is_dir()) {

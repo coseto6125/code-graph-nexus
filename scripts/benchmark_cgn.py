@@ -47,7 +47,10 @@ def _ensure_binary_fresh(binary: Path, *, skip: bool) -> None:
         return
     proc = subprocess.run(
         ["cargo", "build", "--release", "-p", "code-graph-nexus", "--bin", "cgn"],
-        cwd=WORKSPACE_ROOT, capture_output=True, text=True, timeout=900,
+        cwd=WORKSPACE_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=900,
     )
     if proc.returncode != 0:
         print(
@@ -71,7 +74,9 @@ def _admin_drop(binary: Path, repo: Path) -> None:
     """
     subprocess.run(
         [str(binary), "admin", "drop", "--repo", str(repo)],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -95,9 +100,7 @@ def _fmt(seconds: float) -> str:
 def _run(cmd: list[str], cwd: Path | None) -> tuple[float, int, str, str]:
     start = time.perf_counter()
     try:
-        proc = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=CMD_TIMEOUT_S
-        )
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=CMD_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return CMD_TIMEOUT_S, 124, "", f"timeout after {CMD_TIMEOUT_S}s"
     return time.perf_counter() - start, proc.returncode, proc.stdout, proc.stderr
@@ -124,10 +127,13 @@ def _probe_symbols(binary: Path, repo: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     elapsed, rc, stdout, stderr = _run(
         [
-            str(binary), "cypher",
+            str(binary),
+            "cypher",
             "MATCH (a:Class)-[:HasMethod]->(b:Method) RETURN a,b",
-            "--format", "json",
-            "--repo", str(repo),
+            "--format",
+            "json",
+            "--repo",
+            str(repo),
         ],
         cwd=repo,
     )
@@ -149,8 +155,7 @@ def _probe_symbols(binary: Path, repo: Path) -> dict[str, str]:
 
     if name := out.get("class_name"):
         _, rc2, stdout2, _ = _run(
-            [str(binary), "context", "--name", name,
-             "--format", "json", "--repo", str(repo)],
+            [str(binary), "context", "--name", name, "--format", "json", "--repo", str(repo)],
             cwd=repo,
         )
         if rc2 == 0:
@@ -191,17 +196,42 @@ def _hardware() -> dict[str, object]:
 def _count_files_by_lang(repo: Path) -> dict[str, int]:
     """Map well-known extensions/basenames to language file counts."""
     ext_lang = {
-        ".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript",
-        ".js": "JavaScript", ".jsx": "JavaScript", ".rs": "Rust",
-        ".go": "Go", ".java": "Java", ".kt": "Kotlin", ".cs": "C#",
-        ".cpp": "C++", ".hpp": "C++", ".c": "C", ".h": "C",
-        ".php": "PHP", ".rb": "Ruby", ".swift": "Swift", ".dart": "Dart",
-        ".sh": "Bash", ".bash": "Bash", ".cr": "Crystal",
-        ".cairo": "Cairo", ".move": "Move", ".nim": "Nim",
-        ".sol": "Solidity", ".sql": "SQL", ".vy": "Vyper",
-        ".zig": "Zig", ".lua": "Lua", ".v": "Verilog", ".sv": "Verilog",
-        ".md": "Markdown", ".yml": "YAML", ".yaml": "YAML",
-        ".tf": "HCL", ".hcl": "HCL",
+        ".py": "Python",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
+        ".js": "JavaScript",
+        ".jsx": "JavaScript",
+        ".rs": "Rust",
+        ".go": "Go",
+        ".java": "Java",
+        ".kt": "Kotlin",
+        ".cs": "C#",
+        ".cpp": "C++",
+        ".hpp": "C++",
+        ".c": "C",
+        ".h": "C",
+        ".php": "PHP",
+        ".rb": "Ruby",
+        ".swift": "Swift",
+        ".dart": "Dart",
+        ".sh": "Bash",
+        ".bash": "Bash",
+        ".cr": "Crystal",
+        ".cairo": "Cairo",
+        ".move": "Move",
+        ".nim": "Nim",
+        ".sol": "Solidity",
+        ".sql": "SQL",
+        ".vy": "Vyper",
+        ".zig": "Zig",
+        ".lua": "Lua",
+        ".v": "Verilog",
+        ".sv": "Verilog",
+        ".md": "Markdown",
+        ".yml": "YAML",
+        ".yaml": "YAML",
+        ".tf": "HCL",
+        ".hcl": "HCL",
     }
     counts: dict[str, int] = {}
     for p in repo.rglob("*"):
@@ -239,19 +269,32 @@ def _print_summary(samples: list[Sample]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--repo", type=Path, default=DEFAULT_REPO,
-                    help="Target repo for analyze + query benchmarks")
-    ap.add_argument("--git-repo", type=Path, default=DEFAULT_GIT_REPO,
-                    help="A real git repo for detect-changes (sample-repo isn't a git checkout)")
-    ap.add_argument("--binary", type=Path, default=DEFAULT_BINARY,
-                    help="Path to the cgn release binary")
-    ap.add_argument("--runs", type=int, default=3,
-                    help="Repeats per query command (analyze runs once)")
+    ap.add_argument(
+        "--repo", type=Path, default=DEFAULT_REPO, help="Target repo for analyze + query benchmarks"
+    )
+    ap.add_argument(
+        "--git-repo",
+        type=Path,
+        default=DEFAULT_GIT_REPO,
+        help="A real git repo for detect-changes (sample-repo isn't a git checkout)",
+    )
+    ap.add_argument(
+        "--binary", type=Path, default=DEFAULT_BINARY, help="Path to the cgn release binary"
+    )
+    ap.add_argument(
+        "--runs", type=int, default=3, help="Repeats per query command (analyze runs once)"
+    )
     ap.add_argument("--json", type=Path, help="Write JSON result to this path")
-    ap.add_argument("--skip-cold", action="store_true",
-                    help="Don't delete the registry index dir before the first analyze")
-    ap.add_argument("--no-build", action="store_true",
-                    help="Skip the auto `cargo build --release` step (use the existing binary as-is)")
+    ap.add_argument(
+        "--skip-cold",
+        action="store_true",
+        help="Don't delete the registry index dir before the first analyze",
+    )
+    ap.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Skip the auto `cargo build --release` step (use the existing binary as-is)",
+    )
     args = ap.parse_args()
 
     _ensure_binary_fresh(args.binary, skip=args.no_build)
@@ -272,7 +315,9 @@ def main() -> int:
 
     print(f"binary  : {args.binary}")
     print(f"repo    : {args.repo}  ({total_files:,} files, {len(lang_counts)} languages)")
-    print(f"langs   : {', '.join(f'{k}={v}' for k, v in sorted(lang_counts.items(), key=lambda kv: -kv[1]))}")
+    print(
+        f"langs   : {', '.join(f'{k}={v}' for k, v in sorted(lang_counts.items(), key=lambda kv: -kv[1]))}"
+    )
     print(f"cpu     : {hw.get('cpu', '?')}  (logical {hw.get('cpu_count_logical')})")
     print(f"mem     : {hw.get('mem_gb', '?')} GiB")
     print(f"os      : {hw.get('platform')}")
@@ -286,8 +331,9 @@ def main() -> int:
         _admin_drop(args.binary, args.repo)
     label = "analyze (cold)" if not args.skip_cold else "analyze (baseline)"
     print(f"→ {label}")
-    s = _bench(label, [str(args.binary), "admin", "index", "--repo", str(args.repo)],
-               cwd=args.repo, runs=1)
+    s = _bench(
+        label, [str(args.binary), "admin", "index", "--repo", str(args.repo)], cwd=args.repo, runs=1
+    )
     samples.append(s)
     if s.err:
         print(f"  FAIL: {s.err}")
@@ -297,9 +343,12 @@ def main() -> int:
 
     # Phase 2: analyze (incremental, hash-cache hot)
     print("→ analyze (incremental)")
-    s = _bench("analyze (incremental)",
-               [str(args.binary), "admin", "index", "--repo", str(args.repo)],
-               cwd=args.repo, runs=1)
+    s = _bench(
+        "analyze (incremental)",
+        [str(args.binary), "admin", "index", "--repo", str(args.repo)],
+        cwd=args.repo,
+        runs=1,
+    )
     samples.append(s)
     print(f"  {s.median_s:.3f}s" if s.runs else f"  FAIL: {s.err}")
 
@@ -325,60 +374,90 @@ def main() -> int:
         f"WHERE a.name='{sym.get('class_name', 'AppController')}' RETURN a,b"
     )
     queries: list[tuple[str, list[str], Path]] = [
-        ("cypher Class->Method (one)",
-         [str(args.binary), "cypher", cypher_class_contains,
-          "--repo", str(args.repo)],
-         args.repo),
-        ("cypher Method-Calls->Method",
-         [str(args.binary), "cypher",
-          "MATCH (a:Method)-[:Calls]->(b:Method) "
-          f"WHERE a.name='{sym.get('method_name', 'main')}' RETURN a,b",
-          "--repo", str(args.repo)],
-         args.repo),
-        ("routes",
-         [str(args.binary), "routes", "--repo", str(args.repo)],
-         args.repo),
-        ("coverage",
-         [str(args.binary), "coverage"],
-         args.repo),
-        ("coverage --detailed",
-         [str(args.binary), "coverage", "--detailed", "--repo", str(args.repo)],
-         args.repo),
+        (
+            "cypher Class->Method (one)",
+            [str(args.binary), "cypher", cypher_class_contains, "--repo", str(args.repo)],
+            args.repo,
+        ),
+        (
+            "cypher Method-Calls->Method",
+            [
+                str(args.binary),
+                "cypher",
+                "MATCH (a:Method)-[:Calls]->(b:Method) "
+                f"WHERE a.name='{sym.get('method_name', 'main')}' RETURN a,b",
+                "--repo",
+                str(args.repo),
+            ],
+            args.repo,
+        ),
+        ("routes", [str(args.binary), "routes", "--repo", str(args.repo)], args.repo),
+        ("coverage", [str(args.binary), "coverage"], args.repo),
+        (
+            "coverage --detailed",
+            [str(args.binary), "coverage", "--detailed", "--repo", str(args.repo)],
+            args.repo,
+        ),
     ]
     if name := sym.get("class_name"):
-        queries.append((
-            "inspect (Class)",
-            [str(args.binary), "inspect", "--name", name, "--repo", str(args.repo)],
-            args.repo,
-        ))
+        queries.append(
+            (
+                "inspect (Class)",
+                [str(args.binary), "inspect", "--name", name, "--repo", str(args.repo)],
+                args.repo,
+            )
+        )
     if name := sym.get("method_name"):
-        queries.append((
-            "find (bm25)",
-            [str(args.binary), "find", name, "--mode", "bm25", "--repo", str(args.repo)],
-            args.repo,
-        ))
+        queries.append(
+            (
+                "find (bm25)",
+                [str(args.binary), "find", name, "--mode", "bm25", "--repo", str(args.repo)],
+                args.repo,
+            )
+        )
     if uid := sym.get("class_uid"):
-        queries.append((
-            "impact upstream",
-            [str(args.binary), "impact", "--target", uid,
-             "--direction", "upstream", "--repo", str(args.repo)],
-            args.repo,
-        ))
+        queries.append(
+            (
+                "impact upstream",
+                [
+                    str(args.binary),
+                    "impact",
+                    "--target",
+                    uid,
+                    "--direction",
+                    "upstream",
+                    "--repo",
+                    str(args.repo),
+                ],
+                args.repo,
+            )
+        )
     if uid := sym.get("method_uid"):
-        queries.append((
-            "impact downstream",
-            [str(args.binary), "impact", "--target", uid,
-             "--direction", "downstream", "--repo", str(args.repo)],
-            args.repo,
-        ))
+        queries.append(
+            (
+                "impact downstream",
+                [
+                    str(args.binary),
+                    "impact",
+                    "--target",
+                    uid,
+                    "--direction",
+                    "downstream",
+                    "--repo",
+                    str(args.repo),
+                ],
+                args.repo,
+            )
+        )
 
     if args.git_repo.is_dir() and (args.git_repo / ".git").exists():
-        queries.append((
-            "impact --baseline HEAD~1",
-            [str(args.binary), "impact", "--baseline", "HEAD~1",
-             "--repo", str(args.git_repo)],
-            args.git_repo,
-        ))
+        queries.append(
+            (
+                "impact --baseline HEAD~1",
+                [str(args.binary), "impact", "--baseline", "HEAD~1", "--repo", str(args.git_repo)],
+                args.git_repo,
+            )
+        )
 
     for name, cmd, cwd in queries:
         print(f"→ {name}")

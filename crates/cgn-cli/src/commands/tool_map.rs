@@ -27,9 +27,9 @@
 
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
-use clap::Args;
 use cgn_core::graph::ArchivedFileCategory;
 use cgn_core::CgnError;
+use clap::Args;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -778,11 +778,11 @@ mod tests {
         // not be tagged HTTP without an explicit reqwest/surf/ureq import.
         let b = bindings("a.rs", "// no imports\n");
         assert!(
-            b.get("fetch").is_none(),
+            !b.contains_key("fetch"),
             "fetch leaked into Rust bindings: {b:?}"
         );
         assert!(
-            b.get("XMLHttpRequest").is_none(),
+            !b.contains_key("XMLHttpRequest"),
             "XMLHttpRequest leaked into Rust bindings: {b:?}",
         );
     }
@@ -791,7 +791,7 @@ mod tests {
     fn fetch_is_not_http_in_python_files() {
         let b = bindings("a.py", "# no imports\n");
         assert!(
-            b.get("fetch").is_none(),
+            !b.contains_key("fetch"),
             "fetch leaked into Python bindings: {b:?}"
         );
     }
@@ -800,7 +800,7 @@ mod tests {
     fn fetch_is_not_http_in_go_files() {
         let b = bindings("a.go", "// no imports\n");
         assert!(
-            b.get("fetch").is_none(),
+            !b.contains_key("fetch"),
             "fetch leaked into Go bindings: {b:?}"
         );
     }

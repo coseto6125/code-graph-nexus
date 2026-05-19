@@ -1,8 +1,8 @@
 //! Ƀ messaging — say / inbox / thread.
 
-use chrono::Utc;
 use cgn_core::peer::inbox::{append_entry, InboxEntry};
 use cgn_core::peer::registry::alive_peers;
+use chrono::Utc;
 use std::io::Write;
 use std::path::Path;
 use uuid::Uuid;

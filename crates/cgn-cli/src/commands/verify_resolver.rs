@@ -95,15 +95,12 @@ pub fn run(args: VerifyResolverArgs) -> Result<(), cgn_core::CgnError> {
             if let Some(parent) = p.parent() {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).map_err(|e| {
-                        cgn_core::CgnError::InvalidArgument(format!(
-                            "mkdir report parent: {e}"
-                        ))
+                        cgn_core::CgnError::InvalidArgument(format!("mkdir report parent: {e}"))
                     })?;
                 }
             }
-            std::fs::write(p, &report).map_err(|e| {
-                cgn_core::CgnError::InvalidArgument(format!("write report: {e}"))
-            })?;
+            std::fs::write(p, &report)
+                .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("write report: {e}")))?;
             eprintln!("verify-resolver: report written to {}", p.display());
         }
         None => print!("{report}"),

@@ -1,9 +1,9 @@
 //! `cgn group contracts <name> [--type T] [--repo R] [--unmatched] [--json]`
 //! Lists contracts with optional filtering by type, repo, and match status.
 
-use clap::Args;
 use cgn_core::registry::resolve_home_cgn;
 use cgn_core::CgnError;
+use clap::Args;
 use std::collections::HashSet;
 
 use crate::commands::group::storage;
@@ -157,5 +157,8 @@ fn emit_json(name: &str, records: &[ContractRecord]) {
         .collect();
 
     let out = json!({ "group": name, "contracts": contracts_arr });
-    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string())
+    );
 }

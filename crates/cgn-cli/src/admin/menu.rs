@@ -1,7 +1,7 @@
 //! Shared menu-navigation helpers wrapping `dialoguer`.
 
-use dialoguer::{theme::ColorfulTheme, Select};
 use cgn_core::CgnError;
+use dialoguer::{theme::ColorfulTheme, Select};
 
 /// One menu entry: a short label and an optional one-line description.
 ///

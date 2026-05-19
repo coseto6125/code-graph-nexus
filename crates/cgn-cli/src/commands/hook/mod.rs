@@ -15,8 +15,8 @@ pub mod pre_tool_use;
 pub mod session_start;
 pub mod user_prompt_submit;
 
-use clap::{Args, ValueEnum};
 use cgn_core::CgnError;
+use clap::{Args, ValueEnum};
 
 #[derive(Args, Debug, Clone)]
 pub struct HookArgs {

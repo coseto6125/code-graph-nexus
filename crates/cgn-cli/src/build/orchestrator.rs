@@ -6,11 +6,11 @@
 use crate::build::dirname_picker::pick_dirname;
 use crate::git::safe_exec;
 use crate::repo_identity::repo_dir_name_for_cwd;
-use fs2::FileExt;
 use cgn_core::registry::{
     resolve_home_cgn, CommitBuildMeta, EmbeddingStatus, RefRecord, RegistryFile, RepoAlias,
     RepoMeta, SourceType, BUILDER_FINGERPRINT,
 };
+use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};

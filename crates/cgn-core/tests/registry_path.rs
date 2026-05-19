@@ -37,7 +37,10 @@ fn rejects_special_chars() {
 
 #[test]
 fn accepts_valid_names() {
-    assert_eq!(sanitize_segment("code-graph-nexus").unwrap(), "code-graph-nexus");
+    assert_eq!(
+        sanitize_segment("code-graph-nexus").unwrap(),
+        "code-graph-nexus"
+    );
     assert_eq!(sanitize_segment("my_repo.2").unwrap(), "my_repo.2");
     assert_eq!(sanitize_segment("ABC-123").unwrap(), "ABC-123");
 }
@@ -108,4 +111,3 @@ fn uid_errors_if_not_under_repo() {
     let repo = Path::new("/repo");
     assert!(uid_path(abs, repo).is_err());
 }
-

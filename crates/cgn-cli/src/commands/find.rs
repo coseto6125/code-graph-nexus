@@ -31,11 +31,11 @@
 use crate::commands::format::kind_to_str;
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
-use clap::{Args, ValueEnum};
 use cgn_analyzer::resolution::index::Language;
 use cgn_core::graph::{ArchivedFileCategory, ArchivedZeroCopyGraph, FileCategory};
 use cgn_core::registry::{resolve_home_cgn, Registry};
 use cgn_core::CgnError;
+use clap::{Args, ValueEnum};
 use rayon::prelude::*;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -940,7 +940,13 @@ pub fn run_for_repo(
     pattern: &str,
     kind: Option<&str>,
 ) -> Result<Vec<Hit>, CgnError> {
-    compute_single(pattern, &FindMode::Bm25, kind, engine, Some(member.to_string()))
+    compute_single(
+        pattern,
+        &FindMode::Bm25,
+        kind,
+        engine,
+        Some(member.to_string()),
+    )
 }
 
 /// In-process BM25 entry point for hooks and other internal consumers.
@@ -1030,12 +1036,16 @@ fn resolve_targets(selector: Option<&str>) -> Result<Vec<(String, String)>, CgnE
         if idx.is_empty() {
             continue; // repo registered but not yet built
         }
-        let Some(graph_path) = crate::commit_lookup::find_latest_by_mtime(&commits_dir)
-            .map(|d| d.join("graph.bin"))
+        let Some(graph_path) =
+            crate::commit_lookup::find_latest_by_mtime(&commits_dir).map(|d| d.join("graph.bin"))
         else {
             continue;
         };
-        let display_name = alias.aliases.first().cloned().unwrap_or_else(|| dir_name.clone());
+        let display_name = alias
+            .aliases
+            .first()
+            .cloned()
+            .unwrap_or_else(|| dir_name.clone());
         targets.push((display_name, graph_path.to_string_lossy().into_owned()));
     }
 
@@ -1092,8 +1102,7 @@ fn emit_bucketed(
         && buckets.config.is_empty();
 
     if all_empty {
-        let hint =
-            "No matches found. Try a shorter pattern or `cgn find --mode fuzzy <fragment>`.";
+        let hint = "No matches found. Try a shorter pattern or `cgn find --mode fuzzy <fragment>`.";
         match format {
             OutputFormat::Text => {
                 return emit(

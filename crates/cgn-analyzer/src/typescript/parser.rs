@@ -6,9 +6,7 @@ use crate::framework_helpers::{
 };
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
-use cgn_core::analyzer::types::{
-    LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute,
-};
+use cgn_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
 use cgn_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;

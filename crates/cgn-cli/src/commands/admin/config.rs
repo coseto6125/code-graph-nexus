@@ -9,14 +9,14 @@
 //! Non-TTY environments (CI, pipes) exit with a helpful message pointing
 //! at the TOML path so users can edit it manually.
 
+use cgn_core::config::{config_path, load, save, Config};
+use cgn_core::CgnError;
 use clap::Args;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use cgn_core::config::{config_path, load, save, Config};
-use cgn_core::CgnError;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};

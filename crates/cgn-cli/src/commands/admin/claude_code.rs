@@ -3,8 +3,8 @@
 //! preserving unrelated entries from other tools (e.g. legacy gitnexus
 //! hook installs).
 
-use clap::Args;
 use cgn_core::CgnError;
+use clap::Args;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};

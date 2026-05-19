@@ -2,9 +2,9 @@
 //! members. Single verb covers both per-repo bucketed concat (`--merge none`,
 //! default) and cross-repo RRF-merged top-K (`--merge rrf`).
 
-use clap::{Args, ValueEnum};
 use cgn_core::registry::{resolve_home_cgn, RegistryFile};
 use cgn_core::CgnError;
+use clap::{Args, ValueEnum};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 
@@ -86,7 +86,10 @@ pub fn run(args: FindArgs) -> Result<(), CgnError> {
     if args.batch {
         run_batch(&engines, args.merge, args.limit, args.json);
     } else {
-        let pattern = args.pattern.as_deref().expect("clap required_unless_present");
+        let pattern = args
+            .pattern
+            .as_deref()
+            .expect("clap required_unless_present");
         run_one(&engines, pattern, args.merge, args.limit, args.json);
     }
     Ok(())
@@ -133,10 +136,7 @@ fn run_batch(engines: &[(String, Engine)], mode: MergeMode, limit: Option<usize>
     }
 }
 
-fn fan_out_per_repo<'a>(
-    engines: &'a [(String, Engine)],
-    pattern: &str,
-) -> Vec<(String, Vec<Hit>)> {
+fn fan_out_per_repo(engines: &[(String, Engine)], pattern: &str) -> Vec<(String, Vec<Hit>)> {
     engines
         .par_iter()
         .map(|(member, engine)| {

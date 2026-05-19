@@ -1,9 +1,9 @@
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
 use crate::repo_selector;
-use clap::Args;
 use cgn_core::cypher;
 use cgn_core::registry::RegistryFile;
+use clap::Args;
 use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
@@ -66,13 +66,10 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), cgn_core::CgnError> 
     // Multi-repo gate: cypher is single-repo only (graph identity is per-repo).
     if let Some(repo_sel) = args.repo.as_deref() {
         let home_cgn = cgn_core::registry::resolve_home_cgn();
-        let registry =
-            RegistryFile::read_or_empty(&home_cgn.join("registry.json")).map_err(|e| {
-                cgn_core::CgnError::InvalidArgument(format!("registry read: {e}"))
-            })?;
-        let selector = repo_selector::parse(repo_sel).map_err(|e| {
-            cgn_core::CgnError::InvalidArgument(format!("--repo selector: {e}"))
-        })?;
+        let registry = RegistryFile::read_or_empty(&home_cgn.join("registry.json"))
+            .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("registry read: {e}")))?;
+        let selector = repo_selector::parse(repo_sel)
+            .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("--repo selector: {e}")))?;
         let cwd = std::env::current_dir().unwrap_or_default();
         let repos = repo_selector::resolve(&selector, &registry, cwd.to_str().unwrap_or("."))
             .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("--repo: {e}")))?;
@@ -89,14 +86,11 @@ pub fn run(args: CypherArgs, engine: &Engine) -> Result<(), cgn_core::CgnError> 
         .map_err(|e| cgn_core::CgnError::Rkyv(e.to_string()))?;
 
     let query_str = args.resolved_query()?;
-    let query = cypher::parse(query_str).map_err(|e| {
-        cgn_core::CgnError::InvalidArgument(format_cypher_error(query_str, &e))
-    })?;
+    let query = cypher::parse(query_str)
+        .map_err(|e| cgn_core::CgnError::InvalidArgument(format_cypher_error(query_str, &e)))?;
 
-    let result =
-        cypher::execute(&query, graph, &resolve_repo_root(args.repo.as_deref())).map_err(|e| {
-            cgn_core::CgnError::InvalidArgument(format_cypher_error(query_str, &e))
-        })?;
+    let result = cypher::execute(&query, graph, &resolve_repo_root(args.repo.as_deref()))
+        .map_err(|e| cgn_core::CgnError::InvalidArgument(format_cypher_error(query_str, &e)))?;
 
     let rows_json: Vec<Vec<serde_json::Value>> = result
         .rows
@@ -180,7 +174,11 @@ mod tests {
     #[test]
     fn build_payload_single_column_flattens_rows_to_scalars() {
         let columns = vec!["n.name".to_string()];
-        let rows = vec![vec![json!("alpha")], vec![json!("beta")], vec![json!("gamma")]];
+        let rows = vec![
+            vec![json!("alpha")],
+            vec![json!("beta")],
+            vec![json!("gamma")],
+        ];
         let payload = build_payload(columns, rows);
         assert_eq!(payload["columns"], json!(["n.name"]));
         // Single-column projection: rows are scalars, not 1-element arrays.

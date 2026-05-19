@@ -47,9 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BASELINE = REPO_ROOT / "scripts" / "parity" / "final_baseline.txt"
 DUMP_SCRIPT = REPO_ROOT / "scripts" / "parity" / "dump_per_lang_kinds.py"
 
-HEADER_RE = re.compile(
-    r"=== (\w+)\s+\(rs total (\d+), ref total (\d+), delta ([+-]\d+)\) ==="
-)
+HEADER_RE = re.compile(r"=== (\w+)\s+\(rs total (\d+), ref total (\d+), delta ([+-]\d+)\) ===")
 
 
 def parse_lang_deltas(text: str) -> dict[str, int]:
@@ -79,12 +77,23 @@ def run_dump() -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--strict", action="store_true",
-                    help="Exit 1 on threshold-exceeding shifts (CI / pre-push gate mode).")
-    ap.add_argument("--threshold-abs", type=int, default=200,
-                    help="Absolute shift threshold; only used with --strict.")
-    ap.add_argument("--threshold-pct", type=float, default=0.10,
-                    help="Relative shift threshold (fraction); only used with --strict.")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 1 on threshold-exceeding shifts (CI / pre-push gate mode).",
+    )
+    ap.add_argument(
+        "--threshold-abs",
+        type=int,
+        default=200,
+        help="Absolute shift threshold; only used with --strict.",
+    )
+    ap.add_argument(
+        "--threshold-pct",
+        type=float,
+        default=0.10,
+        help="Relative shift threshold (fraction); only used with --strict.",
+    )
     ap.add_argument("--baseline", type=Path, default=BASELINE)
     args = ap.parse_args()
 
@@ -117,8 +126,7 @@ def main() -> int:
         elif shift == 0:
             note = "same"
         elif args.strict and (
-            shift > args.threshold_abs
-            or (abs(b) > 0 and shift / abs(b) > args.threshold_pct)
+            shift > args.threshold_abs or (abs(b) > 0 and shift / abs(b) > args.threshold_pct)
         ):
             note = "OVER THRESHOLD"
             regressions.append((lang, b, c, shift))
@@ -136,10 +144,12 @@ def main() -> int:
     if args.strict and regressions:
         print(
             f"\n!! [--strict] {len(regressions)} lang(s) over threshold "
-            f"(abs>{args.threshold_abs} OR pct>{args.threshold_pct*100:.0f}%):"
+            f"(abs>{args.threshold_abs} OR pct>{args.threshold_pct * 100:.0f}%):"
         )
         for lang, b, c, shift in regressions:
-            print(f"  - {lang}: baseline |delta|={abs(b)}, current |delta|={abs(c)}, shift +{shift}")
+            print(
+                f"  - {lang}: baseline |delta|={abs(b)}, current |delta|={abs(c)}, shift +{shift}"
+            )
         return 1
 
     return 0

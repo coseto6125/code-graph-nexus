@@ -1,8 +1,8 @@
 //! Codex CLI MCP integration (no-fork side-car path).
 
 use crate::admin::status::HostStatus;
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 use std::fs;
 use std::path::{Path, PathBuf};
 use toml::Value;

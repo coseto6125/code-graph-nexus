@@ -32,14 +32,14 @@ use std::path::Path;
 /// between grammar versions; node names don't).
 fn assert_has(g: &LocalGraph, expected: &[(NodeKind, &str)], label: &str) {
     for (kind, name) in expected {
-        let found = g
-            .nodes
-            .iter()
-            .any(|n| n.kind == *kind && n.name == *name);
+        let found = g.nodes.iter().any(|n| n.kind == *kind && n.name == *name);
         assert!(
             found,
             "[{label}] grammar drift: missing ({kind:?}, {name:?}) in:\n{:#?}",
-            g.nodes.iter().map(|n| (n.kind, n.name.clone())).collect::<Vec<_>>(),
+            g.nodes
+                .iter()
+                .map(|n| (n.kind, n.name.clone()))
+                .collect::<Vec<_>>(),
         );
     }
 }
@@ -54,7 +54,9 @@ export function add(a: number, b: number): number { return a + b; }\n\
 export class Box<T> { value: T; constructor(v: T) { this.value = v; } }\n\
 export const PI = 3.14;\n";
     let p = TypeScriptProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("t.ts"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("t.ts"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Function, "add"), (NodeKind::Class, "Box")],
@@ -72,7 +74,9 @@ export function add(a, b) { return a + b; }\n\
 export class Box { constructor(v) { this.value = v; } }\n\
 export const PI = 3.14;\n";
     let p = JavaScriptProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("t.js"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("t.js"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Function, "add"), (NodeKind::Class, "Box")],
@@ -90,7 +94,9 @@ def add(a, b):\n    return a + b\n\n\
 class Box:\n    def __init__(self, v):\n        self.value = v\n\n\
 PI = 3.14\n";
     let p = PythonProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("t.py"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("t.py"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Function, "add"), (NodeKind::Class, "Box")],
@@ -107,7 +113,9 @@ fn java_shape_pin() {
 package demo;\n\
 public class Box {\n    public int add(int a, int b) { return a + b; }\n}\n";
     let p = JavaProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("Box.java"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("Box.java"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Method, "add")],
@@ -125,7 +133,9 @@ package demo\n\n\
 class Box(val value: Int) {\n    fun add(a: Int, b: Int): Int = a + b\n}\n\n\
 fun pi(): Double = 3.14\n";
     let p = KotlinProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("t.kt"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("t.kt"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Function, "pi")],
@@ -141,7 +151,9 @@ fn csharp_shape_pin() {
     let src = "\
 namespace Demo {\n  public class Box {\n    public int Add(int a, int b) { return a + b; }\n  }\n}\n";
     let p = CSharpProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("Box.cs"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("Box.cs"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Method, "Add")],
@@ -160,7 +172,9 @@ type Box struct { Value int }\n\n\
 func (b *Box) Add(a, c int) int { return a + c }\n\n\
 const PI = 3.14\n";
     let p = GoProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.go"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.go"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[
@@ -182,7 +196,9 @@ pub struct Box { value: i32 }\n\n\
 impl Box {\n    pub fn add(&self, a: i32, b: i32) -> i32 { a + b }\n}\n\n\
 pub fn pi() -> f64 { 3.14 }\n";
     let p = RustProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.rs"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.rs"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Struct, "Box"), (NodeKind::Function, "pi")],
@@ -197,7 +213,9 @@ fn php_shape_pin() {
     use cgn_analyzer::php::parser::PhpProvider;
     let src = "<?php\nnamespace Demo;\n\nclass Box {\n    public function add(int $a, int $b): int { return $a + $b; }\n}\n";
     let p = PhpProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("Box.php"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("Box.php"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Method, "add")],
@@ -214,7 +232,9 @@ fn ruby_shape_pin() {
 class Box\n  def add(a, b)\n    a + b\n  end\nend\n\n\
 def pi\n  3.14\nend\n";
     let p = RubyProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.rb"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.rb"), src.as_bytes())
+        .expect("parse");
     // Ruby `def` is always a Method in cgn's taxonomy — Ruby has no
     // "free function" concept (top-level `def` binds to Kernel /
     // main:Object), so both inside-class and top-level `def` emit Method.
@@ -242,7 +262,9 @@ import Foundation\n\
 class Box {\n    func add(_ a: Int, _ b: Int) -> Int { return a + b }\n}\n\n\
 func pi() -> Double { return 3.14 }\n";
     let p = SwiftProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("Box.swift"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("Box.swift"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Function, "pi")],
@@ -261,7 +283,9 @@ typedef struct { int value; } Box;\n\n\
 int add(int a, int b) { return a + b; }\n\n\
 #define PI 3.14\n";
     let p = CProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.c"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.c"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[
@@ -286,7 +310,9 @@ union Tag { int i; float f; };\n\n\
 typedef int IntAlias;\n\n\
 }\n";
     let p = CppProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.cpp"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.cpp"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[
@@ -311,7 +337,9 @@ fn dart_shape_pin() {
 class Box {\n  final int value;\n  const Box(this.value);\n  int add(int a, int b) => a + b;\n}\n\n\
 double pi() => 3.14;\n";
     let p = DartProvider::new().expect("provider");
-    let g = p.parse_file(Path::new("box.dart"), src.as_bytes()).expect("parse");
+    let g = p
+        .parse_file(Path::new("box.dart"), src.as_bytes())
+        .expect("parse");
     assert_has(
         &g,
         &[(NodeKind::Class, "Box"), (NodeKind::Function, "pi")],

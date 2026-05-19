@@ -4,9 +4,9 @@
 
 mod common;
 
-use common::write_stub;
 use cgn_mcp::schema::DerivedTool;
 use cgn_mcp::spawn::run_spawn;
+use common::{stub_guard, write_stub};
 use serde_json::json;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -27,6 +27,7 @@ fn dummy_tool(subcommand: &str) -> DerivedTool {
 
 #[test]
 fn spawn_invokes_subcommand_and_captures_stdout() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho \"sub=$1 arg1=$2 arg2=$3\"\n");
     let tool = dummy_tool("inspect");
@@ -38,6 +39,7 @@ fn spawn_invokes_subcommand_and_captures_stdout() {
 
 #[test]
 fn spawn_subprocess_failure_returns_err_with_stderr() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho 'boom' >&2\nexit 1\n");
     let tool = dummy_tool("inspect");
@@ -47,11 +49,9 @@ fn spawn_subprocess_failure_returns_err_with_stderr() {
 
 #[test]
 fn spawn_peels_subcmd_arg_as_first_prefix() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
-    let stub = write_stub(
-        dir.path(),
-        "#!/bin/sh\necho \"sub=$1 a1=$2 a2=$3 a3=$4\"\n",
-    );
+    let stub = write_stub(dir.path(), "#!/bin/sh\necho \"sub=$1 a1=$2 a2=$3 a3=$4\"\n");
     let mut tool = dummy_tool("peers");
     tool.subcmd_arg = Some("subcmd".into());
     tool.schema = Arc::new(json!({
@@ -60,12 +60,7 @@ fn spawn_peels_subcmd_arg_as_first_prefix() {
         }
     }));
     tool.positional_args = vec!["peer".into()];
-    let out = run_spawn(
-        &stub,
-        &tool,
-        &json!({"subcmd": "diff", "peer": "sess-x"}),
-    )
-    .unwrap();
+    let out = run_spawn(&stub, &tool, &json!({"subcmd": "diff", "peer": "sess-x"})).unwrap();
     assert!(out.contains("sub=peers"), "got: {out}");
     assert!(out.contains("a1=diff"), "got: {out}");
     assert!(out.contains("a2=sess-x"), "got: {out}");
@@ -73,6 +68,7 @@ fn spawn_peels_subcmd_arg_as_first_prefix() {
 
 #[test]
 fn spawn_rejects_invalid_subcmd_value() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho ok\n");
     let mut tool = dummy_tool("peers");
@@ -83,14 +79,12 @@ fn spawn_rejects_invalid_subcmd_value() {
         }
     }));
     let err = run_spawn(&stub, &tool, &json!({"subcmd": "evil"})).unwrap_err();
-    assert!(
-        err.to_string().contains("must be one of"),
-        "got: {err}"
-    );
+    assert!(err.to_string().contains("must be one of"), "got: {err}");
 }
 
 #[test]
 fn spawn_errors_when_subcmd_missing() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_stub(dir.path(), "#!/bin/sh\necho ok\n");
     let mut tool = dummy_tool("peers");
@@ -123,6 +117,7 @@ echo ok
 
 #[test]
 fn mcp_find_at_group_rejects_with_hint() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_group_rejecting_stub(dir.path());
     let tool = dummy_tool("find");
@@ -135,6 +130,7 @@ fn mcp_find_at_group_rejects_with_hint() {
 
 #[test]
 fn mcp_find_at_all_still_works() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = write_group_rejecting_stub(dir.path());
     let tool = dummy_tool("find");

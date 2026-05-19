@@ -3,11 +3,11 @@ use crate::engine::Engine;
 use crate::git::{DiffScope, GitDiffProvider, ShellGitProvider};
 use crate::output::{emit, OutputFormat};
 use crate::reanalyze::make_pipeline;
-use clap::{Args, ValueEnum};
 use cgn_core::algorithms::process_trace::is_test_path;
 use cgn_core::config;
 use cgn_core::graph::NodeKind;
 use cgn_core::{CgnError, HIGH_TRUST_CONFIDENCE};
+use clap::{Args, ValueEnum};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -310,7 +310,7 @@ fn impact_by_name(
         ));
     }
 
-    let min_conf = resolve_min_conf(&args);
+    let min_conf = resolve_min_conf(args);
     let rel_filter = parse_csv_lower(args.relation_types.as_deref());
 
     let mut all_results: Vec<Value> = Vec::new();
@@ -550,7 +550,7 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Cgn
         }
     }
 
-    let min_conf = resolve_min_conf(&args);
+    let min_conf = resolve_min_conf(args);
     let rel_filter = parse_csv_lower(args.relation_types.as_deref());
 
     // Run BFS from each changed symbol.

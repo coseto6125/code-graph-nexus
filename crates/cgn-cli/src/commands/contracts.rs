@@ -43,9 +43,9 @@
 
 use crate::output::{emit, OutputFormat};
 use crate::repo_selector;
-use clap::Args;
 use cgn_core::registry::{resolve_home_cgn, Registry};
 use cgn_core::CgnError;
+use clap::Args;
 use serde_json::json;
 
 #[derive(Args, Debug, Clone)]

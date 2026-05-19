@@ -1,6 +1,6 @@
-use clap::Subcommand;
 use cgn_core::registry::{resolve_home_cgn, FileLock, GroupEntry, RegistryFile};
 use cgn_core::CgnError;
+use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
 pub enum GroupCommands {

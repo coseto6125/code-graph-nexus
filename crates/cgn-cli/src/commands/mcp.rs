@@ -4,9 +4,9 @@
 //! `cgn-mcp::schema`). Every visible non-hidden subcommand
 //! becomes one MCP tool. Dispatch is spawn-only.
 
-use clap::{Args, Command, Subcommand};
 use cgn_core::CgnError;
 use cgn_mcp::server::{serve_stdio, CgnMcpServer};
+use clap::{Args, Command, Subcommand};
 use serde::Serialize;
 
 #[derive(Serialize, Debug)]
@@ -45,7 +45,9 @@ pub fn run(args: McpArgs, root_cmd: Command) -> Result<(), CgnError> {
             match format.as_deref() {
                 Some("json") | Some("toon") => {
                     if format.as_deref() == Some("toon") {
-                        eprintln!("warning: toon renderer not yet integrated, falling back to json");
+                        eprintln!(
+                            "warning: toon renderer not yet integrated, falling back to json"
+                        );
                     }
                     let tool_infos: Vec<ToolInfo> = tools
                         .iter()

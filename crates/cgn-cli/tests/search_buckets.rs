@@ -432,10 +432,7 @@ fn each_bucket_independently_capped_at_top_k() {
     let mut pool = StringPool::new();
     let src_path = pool.add("src/big.rs");
     // Pre-allocate all StrRefs before building nodes vec.
-    let node_data: Vec<(
-        cgn_core::pool::StrRef,
-        cgn_core::pool::StrRef,
-    )> = (0..25usize)
+    let node_data: Vec<(cgn_core::pool::StrRef, cgn_core::pool::StrRef)> = (0..25usize)
         .map(|i| {
             let name = format!("overflow_src_{i}");
             let uid = format!("Function:src/big.rs:{name}");

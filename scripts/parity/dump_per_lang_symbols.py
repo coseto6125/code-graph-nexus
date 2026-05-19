@@ -22,6 +22,7 @@ written `<Lang>_ref_all.txt` when present; set PARITY_REFRESH_REF=1 to force a
 re-dump (needed when `.sample_repo` corpus is rebuilt or ref-gitnexus is
 upgraded).
 """
+
 from __future__ import annotations
 
 import json
@@ -35,9 +36,20 @@ REPO = Path("/home/enor/code-graph-nexus/.sample_repo")
 OUT_DIR = Path(__file__).parent / "symbol_diffs"
 REFRESH_REF = os.environ.get("PARITY_REFRESH_REF", "").strip().lower() in {"1", "true", "yes"}
 LANGS = [
-    "TypeScript", "JavaScript", "Python", "Java", "Kotlin",
-    "CSharp", "Go", "Rust", "PHP", "Ruby",
-    "Swift", "C", "Cpp", "Dart",
+    "TypeScript",
+    "JavaScript",
+    "Python",
+    "Java",
+    "Kotlin",
+    "CSharp",
+    "Go",
+    "Rust",
+    "PHP",
+    "Ruby",
+    "Swift",
+    "C",
+    "Cpp",
+    "Dart",
 ]
 
 # Per-lang file extensions for cypher scoping. The previous dir-prefix
@@ -53,23 +65,23 @@ LANGS = [
 LANG_EXTS: dict[str, list[str]] = {
     "TypeScript": [".ts", ".tsx"],
     "JavaScript": [".js", ".mjs", ".cjs", ".jsx"],
-    "Python":     [".py", ".pyi"],
-    "Java":       [".java"],
-    "Kotlin":     [".kt", ".kts"],
-    "CSharp":     [".cs"],
-    "Go":         [".go"],
-    "Rust":       [".rs"],
-    "PHP":        [".php"],
-    "Ruby":       [".rb"],
-    "Swift":      [".swift"],
-    "C":          [".c"],
+    "Python": [".py", ".pyi"],
+    "Java": [".java"],
+    "Kotlin": [".kt", ".kts"],
+    "CSharp": [".cs"],
+    "Go": [".go"],
+    "Rust": [".rs"],
+    "PHP": [".php"],
+    "Ruby": [".rb"],
+    "Swift": [".swift"],
+    "C": [".c"],
     # `.h` belongs to Cpp here — both cgn and ref-gitnexus route `.h` through
     # the C++ parser (cgn `Language::from_normalized_path`, ref-gitnexus
     # `language-detection.ts` EXTENSION_MAP). Routing through C would silently
     # drop every class/template/method declaration in C++ headers that ship
     # with `.h`.
-    "Cpp":        [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".h"],
-    "Dart":       [".dart"],
+    "Cpp": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".h"],
+    "Dart": [".dart"],
 }
 
 
@@ -94,7 +106,10 @@ def is_anon(name: str) -> bool:
     # exclusion Go alone produced 19 ref_over `Variable:_` rows that
     # had no LLM-useful semantics.
     return name.startswith(("__anon_", "anonymous_")) or name in {
-        "<lambda>", "<anon>", "anonymous", "_",
+        "<lambda>",
+        "<anon>",
+        "anonymous",
+        "_",
     }
 
 
@@ -130,7 +145,7 @@ def dump_rs(lang: str) -> set[tuple[str, str, str]]:
         if kind in DROP_KINDS or is_anon(name):
             continue
         if fp.startswith(prefix):
-            fp = fp[len(prefix):]
+            fp = fp[len(prefix) :]
         sink.add((kind, fp, name))
     return sink
 
@@ -157,7 +172,7 @@ def _parse_ref_md(md: str, prefix: str, sink: set[tuple[str, str, str]]) -> int:
         if kind in DROP_KINDS or is_anon(name):
             continue
         if fp.startswith(prefix):
-            fp = fp[len(prefix):]
+            fp = fp[len(prefix) :]
         sink.add((kind, fp, name))
     return data_rows
 

@@ -4,18 +4,86 @@
 //! amortise Engine load + mmap setup + tantivy open across N queries
 //! inside a single process.
 
+use cgn_core::graph::{
+    File, FileCategory, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
+};
+use cgn_core::pool::StringPool;
+use rkyv::rancor::Error;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use tempfile::TempDir;
 
 fn cgn_bin() -> &'static str {
     env!("CARGO_BIN_EXE_cgn")
 }
 
-fn run_batch_with_stdin(stdin_payload: &str, extra_args: &[&str]) -> std::process::Output {
+struct BatchFixture {
+    _home: TempDir,
+    graph: PathBuf,
+}
+
+fn setup_fixture() -> BatchFixture {
+    let home = TempDir::new().unwrap();
+    let mut pool = StringPool::new();
+    let file_path = pool.add("src.rs");
+    let node_names = ["compute_hits", "build_hit"];
+    let nodes: Vec<Node> = node_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| Node {
+            uid: pool.add(&format!("Function:src.rs:{name}")),
+            name: pool.add(name),
+            file_idx: 0,
+            kind: NodeKind::Function,
+            span: (i as u32, 0, i as u32 + 1, 0),
+            community_id: 0,
+        })
+        .collect();
+    let n = nodes.len() as u32;
+    let graph = ZeroCopyGraph {
+        magic: GRAPH_MAGIC,
+        version: GRAPH_FORMAT_VERSION,
+        fingerprint: [0; 32],
+        string_pool: pool.bytes,
+        files: vec![File {
+            path: file_path,
+            mtime: 0,
+            content_hash: [0; 8],
+            category: FileCategory::Source,
+        }],
+        nodes,
+        edges: vec![],
+        out_offsets: vec![0; (n + 1) as usize],
+        in_offsets: vec![0; (n + 1) as usize],
+        in_edge_idx: vec![],
+        name_index: (0..n).collect(),
+        process_start: n,
+        traces_offsets: vec![0],
+        traces_data: vec![],
+        blind_spots: vec![],
+        route_shapes: vec![],
+    };
+    let graph_path = home.path().join("graph.bin");
+    std::fs::write(&graph_path, rkyv::to_bytes::<Error>(&graph).unwrap()).unwrap();
+    BatchFixture {
+        _home: home,
+        graph: graph_path,
+    }
+}
+
+fn run_batch_with_stdin(
+    fixture: &BatchFixture,
+    stdin_payload: &str,
+    extra_args: &[&str],
+) -> std::process::Output {
     let mut args = vec!["find", "--batch", "--mode", "bm25"];
     args.extend_from_slice(extra_args);
     let mut child = Command::new(cgn_bin())
         .args(args)
+        .arg("--graph")
+        .arg(&fixture.graph)
+        .env("HOME", fixture._home.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -32,8 +100,9 @@ fn run_batch_with_stdin(stdin_payload: &str, extra_args: &[&str]) -> std::proces
 
 #[test]
 fn batch_emits_per_query_divider_lines() {
+    let fixture = setup_fixture();
     let payload = "compute_hits\nbuild_hit\n";
-    let out = run_batch_with_stdin(payload, &[]);
+    let out = run_batch_with_stdin(&fixture, payload, &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Each query's block must start with the divider.
     assert!(
@@ -48,9 +117,10 @@ fn batch_emits_per_query_divider_lines() {
 
 #[test]
 fn batch_skips_blank_and_commented_lines() {
+    let fixture = setup_fixture();
     // 5 lines on stdin but only 1 is a real query.
     let payload = "\n# this is a comment\n   \ncompute_hits\n# trailing comment\n";
-    let out = run_batch_with_stdin(payload, &[]);
+    let out = run_batch_with_stdin(&fixture, payload, &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let divider_count = stdout.matches("=== pattern: ").count();
     assert_eq!(
@@ -62,8 +132,9 @@ fn batch_skips_blank_and_commented_lines() {
 
 #[test]
 fn batch_with_empty_stdin_emits_no_query_dividers() {
+    let fixture = setup_fixture();
     let payload = "\n# only comments\n\n";
-    let out = run_batch_with_stdin(payload, &[]);
+    let out = run_batch_with_stdin(&fixture, payload, &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(

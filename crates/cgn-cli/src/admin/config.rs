@@ -2,9 +2,9 @@
 
 use crate::admin::menu::{self, select};
 use crate::commands::admin::config as config_cmd;
-use dialoguer::{theme::ColorfulTheme, Input};
 use cgn_core::config::{config_path, load};
 use cgn_core::CgnError;
+use dialoguer::{theme::ColorfulTheme, Input};
 use std::path::PathBuf;
 
 const MENU: &[menu::Item<'_>] = &[

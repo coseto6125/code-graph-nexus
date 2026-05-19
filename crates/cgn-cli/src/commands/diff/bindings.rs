@@ -2,8 +2,8 @@
 //! commits. Each binding is keyed by `(src_file, symbol_name)`.
 
 use cgn_core::CgnError;
-use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 

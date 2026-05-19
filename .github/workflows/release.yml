@@ -44,13 +44,13 @@ jobs:
             os: ubuntu-24.04-arm
             archive: tar.gz
           - target: x86_64-apple-darwin
-            os: macos-15-intel
+            os: macos-15
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
-            os: windows-2025-vs2026
+            os: windows-2025
             archive: zip
 
     steps:
@@ -68,11 +68,11 @@ jobs:
           tool: cargo-chef
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.8.0
         with:
-          # Use a more granular key that includes the target and a hash of the lockfile
-          # to ensure registry/git caches are reused effectively.
           shared-key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          cache-on-failure: true
+          cache-workspace-crates: true
 
       - name: Cargo chef prepare
         run: cargo chef prepare --recipe-path recipe.json
@@ -296,7 +296,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.9
+        uses: Swatinem/rust-cache@v2.8.0
+        with:
+          shared-key: publish-${{ hashFiles('Cargo.lock') }}
+          cache-on-failure: true
+          cache-workspace-crates: true
 
       - name: Publish cgn-core
         run: cargo publish -p cgn-core --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

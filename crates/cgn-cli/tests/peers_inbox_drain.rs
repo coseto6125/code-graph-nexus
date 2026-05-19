@@ -26,6 +26,7 @@ fn pre_tool_use_emits_peer_section_when_inbox_has_entries() {
 
     let mut child = Command::new(bin())
         .args(["hook", "pre-tool-use", "--claude-code"])
+        .env("CGN_SESSION_ID", me)
         .env("CLAUDE_CODE_SESSION_ID", me)
         .env("CGN_REPO_ROOT_OVERRIDE", dir.path())
         .stdin(Stdio::piped())
@@ -52,6 +53,7 @@ fn pre_tool_use_silent_when_inbox_empty() {
 
     let mut child = Command::new(bin())
         .args(["hook", "pre-tool-use", "--claude-code"])
+        .env("CGN_SESSION_ID", me)
         .env("CLAUDE_CODE_SESSION_ID", me)
         .env("CGN_REPO_ROOT_OVERRIDE", dir.path())
         .stdin(Stdio::piped())
@@ -79,6 +81,7 @@ fn pre_tool_use_truncates_inbox_after_drain() {
 
     let mut child = Command::new(bin())
         .args(["hook", "pre-tool-use", "--claude-code"])
+        .env("CGN_SESSION_ID", me)
         .env("CLAUDE_CODE_SESSION_ID", me)
         .env("CGN_REPO_ROOT_OVERRIDE", dir.path())
         .stdin(Stdio::piped())
@@ -114,6 +117,7 @@ fn user_prompt_submit_also_drains_inbox() {
 
     let mut child = Command::new(bin())
         .args(["hook", "user-prompt-submit", "--claude-code"])
+        .env("CGN_SESSION_ID", me)
         .env("CLAUDE_CODE_SESSION_ID", me)
         .env("CGN_REPO_ROOT_OVERRIDE", dir.path())
         .stdin(Stdio::piped())

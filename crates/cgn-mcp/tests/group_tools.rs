@@ -4,10 +4,10 @@
 
 mod common;
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
-use common::write_stub;
 use cgn_mcp::server::CgnMcpServer;
 use cgn_mcp::spawn::run_spawn;
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use common::{stub_guard, write_stub};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -64,7 +64,10 @@ async fn single_cgn_group_tool_registered() {
     // The `hide = true` group subcommand must not produce its own
     // derived tool (the manual injection is the only entry).
     let group_count = names.iter().filter(|n| n.starts_with("cgn_group")).count();
-    assert_eq!(group_count, 1, "expected exactly one cgn_group* tool; got {names:?}");
+    assert_eq!(
+        group_count, 1,
+        "expected exactly one cgn_group* tool; got {names:?}"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -113,6 +116,7 @@ fn echo_stub(dir: &std::path::Path) -> std::path::PathBuf {
 
 #[test]
 fn sync_emits_group_sync_with_name_positional() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -127,6 +131,7 @@ fn sync_emits_group_sync_with_name_positional() {
 
 #[test]
 fn find_emits_group_find_with_name_then_pattern() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -146,6 +151,7 @@ fn find_emits_group_find_with_name_then_pattern() {
 
 #[test]
 fn find_with_merge_rrf_and_limit_emits_unified_topk_flags() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -174,6 +180,7 @@ fn find_with_merge_rrf_and_limit_emits_unified_topk_flags() {
 
 #[test]
 fn find_with_batch_emits_bare_flag_no_pattern_needed() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -189,6 +196,7 @@ fn find_with_batch_emits_bare_flag_no_pattern_needed() {
 
 #[test]
 fn impact_emits_target_and_repo_flags() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -214,6 +222,7 @@ fn impact_emits_target_and_repo_flags() {
 
 #[test]
 fn contracts_emits_filters_as_kebab_flags() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -237,6 +246,7 @@ fn contracts_emits_filters_as_kebab_flags() {
 
 #[test]
 fn coverage_emits_minimal_argv() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -253,6 +263,7 @@ fn coverage_emits_minimal_argv() {
 
 #[test]
 fn missing_subcmd_returns_err() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
@@ -262,14 +273,10 @@ fn missing_subcmd_returns_err() {
 
 #[test]
 fn invalid_subcmd_returns_err_without_spawning() {
+    let _guard = stub_guard();
     let dir = TempDir::new().unwrap();
     let stub = echo_stub(dir.path());
     let tool = group_tool();
-    let err = run_spawn(
-        &stub,
-        &tool,
-        &json!({"subcmd": "add", "name": "demo"}),
-    )
-    .unwrap_err();
+    let err = run_spawn(&stub, &tool, &json!({"subcmd": "add", "name": "demo"})).unwrap_err();
     assert!(err.to_string().contains("must be one of"), "got: {err:?}");
 }

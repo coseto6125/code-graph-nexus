@@ -28,7 +28,7 @@ pub fn run(args: DropArgs) -> Result<(), cgn_core::CgnError> {
 
     if args.all {
         let snapshot = registry.snapshot().clone();
-        for (dir_name, _alias) in &snapshot.repos {
+        for dir_name in snapshot.repos.keys() {
             let index_dir = home_cgn.join(dir_name);
             if index_dir.exists() {
                 std::fs::remove_dir_all(&index_dir)?;
@@ -77,10 +77,7 @@ pub fn run(args: DropArgs) -> Result<(), cgn_core::CgnError> {
 
 /// Re-read registry.json under exclusive flock, remove the named repo (or all
 /// repos when `repo_name` is None), and atomically write back.
-fn rewrite_without(
-    home_cgn: &Path,
-    repo_name: Option<&str>,
-) -> Result<(), cgn_core::CgnError> {
+fn rewrite_without(home_cgn: &Path, repo_name: Option<&str>) -> Result<(), cgn_core::CgnError> {
     let lock_path = home_cgn.join("registry.json.lock");
     let _lock = cgn_core::registry::FileLock::acquire_exclusive(&lock_path)
         .map_err(|e| cgn_core::CgnError::InvalidArgument(format!("flock: {e}")))?;

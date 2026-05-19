@@ -1,8 +1,8 @@
 //! Codex CLI native integration (Rust workspace dep, zero-IPC path).
 
 use crate::admin::status::HostStatus;
-use dialoguer::theme::ColorfulTheme;
 use cgn_core::CgnError;
+use dialoguer::theme::ColorfulTheme;
 use std::fs;
 use std::path::{Path, PathBuf};
 

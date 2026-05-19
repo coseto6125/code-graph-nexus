@@ -58,14 +58,8 @@ fn distinct_hashes_dont_collide() {
     cache.put(&graph("a.rs", h1)).unwrap();
     cache.put(&graph("b.rs", h2)).unwrap();
 
-    assert_eq!(
-        cache.get(&h1).unwrap().file_path.to_str(),
-        Some("a.rs")
-    );
-    assert_eq!(
-        cache.get(&h2).unwrap().file_path.to_str(),
-        Some("b.rs")
-    );
+    assert_eq!(cache.get(&h1).unwrap().file_path.to_str(), Some("a.rs"));
+    assert_eq!(cache.get(&h2).unwrap().file_path.to_str(), Some("b.rs"));
 }
 
 #[test]

@@ -1,14 +1,14 @@
 //! `cgn group impact <name> --target <sym> --repo <member>` — local impact
 //! for one group member, fanned out to cross-repo links from contracts.rkyv.
 
-use clap::Args;
 use cgn_core::registry::resolve_home_cgn;
 use cgn_core::CgnError;
+use clap::Args;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-use crate::commands::group::{lookup_member, storage};
 use crate::commands::group::types::{ArchivedContractRegistry, ArchivedMatchType, MatchType};
+use crate::commands::group::{lookup_member, storage};
 use crate::commands::impact as local_impact;
 use crate::commit_lookup::find_latest_by_mtime;
 use crate::engine::Engine;

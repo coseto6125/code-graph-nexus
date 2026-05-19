@@ -132,7 +132,7 @@ pub fn caller_fn() -> i32 {
         .filter_map(|e| e["name"].as_str())
         .collect();
     assert!(
-        caller_names.iter().any(|n| *n == "caller_fn"),
+        caller_names.contains(&"caller_fn"),
         "expected `caller_fn` in incoming.calls; got names={caller_names:?}\nfull={result}"
     );
 }
@@ -182,7 +182,7 @@ edition = "2021"
                 .filter_map(|e| e["name"].as_str())
                 .collect();
             assert!(
-                !callers.iter().any(|n| *n == "caller_fn"),
+                !callers.contains(&"caller_fn"),
                 "workspace fs.rs::read must not bind to std::fs::read caller; callers={callers:?}"
             );
         }
@@ -199,7 +199,7 @@ edition = "2021"
         .filter_map(|e| e["name"].as_str())
         .collect();
     assert!(
-        !callers.iter().any(|n| *n == "caller_fn"),
+        !callers.contains(&"caller_fn"),
         "workspace fs.rs::read must not bind to std::fs::read caller; callers={callers:?}"
     );
 }
