@@ -37,7 +37,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           shared-key: linux-build   # 與 test-ubuntu 共用 target/，避免互相覆蓋
 
@@ -75,7 +75,7 @@ jobs:
           tool: cargo-nextest
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.7.5
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           # ubuntu 與 code-quality 共用 cache，macos/windows 獨立
           shared-key: ${{ matrix.os == 'ubuntu-latest' && 'linux-build' || matrix.os }}

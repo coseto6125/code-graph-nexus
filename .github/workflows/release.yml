@@ -68,11 +68,13 @@ jobs:
           tool: cargo-chef
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.7.5
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           # Use a more granular key that includes the target and a hash of the lockfile
           # to ensure registry/git caches are reused effectively.
           shared-key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
 
       - name: Cargo chef prepare
         run: cargo chef prepare --recipe-path recipe.json
