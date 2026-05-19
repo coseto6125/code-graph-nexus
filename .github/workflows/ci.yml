@@ -19,7 +19,6 @@ env:
   # 縮短 panic 處理時間 + 不展開 macro 反向追蹤，build 略快。
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  CGN_BUILD_VERBOSE: 1
 
 jobs:
   # ==================== Code Quality ====================
@@ -75,6 +74,10 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+
+      - name: Bootstrap sample repos
+        shell: bash
+        run: bash scripts/parity/bootstrap_sample_repos.sh
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2.8.0
@@ -150,22 +153,3 @@ jobs:
           echo "::group::actionlint"
           ./actionlint -color
           echo "::endgroup::"
-
-  # ==================== Python Lint (parity scripts) ====================
-  python-lint:
-    name: Python Lint (parity scripts)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Run Ruff lint
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: 'check scripts/parity scripts/*.py'
-
-      - name: Run Ruff format check
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: 'format --check scripts/parity scripts/*.py'

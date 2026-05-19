@@ -29,6 +29,36 @@ clone_if_missing() {
 
 # ── Wave 1 repos ──────────────────────────────────────────────────────────────
 
+mkdir -p "${SAMPLE_DIR}/C/deps" "${SAMPLE_DIR}/Cpp/tests/thirdparty"
+
+JEMALLOC_DEST="${SAMPLE_DIR}/C/deps/jemalloc"
+if [[ -d "${JEMALLOC_DEST}/.git" ]]; then
+    log "C/deps/jemalloc: already cloned — skipping"
+else
+    log "C/deps/jemalloc: cloning jemalloc ..."
+    git clone \
+        --depth 1 \
+        https://github.com/jemalloc/jemalloc.git \
+        "${JEMALLOC_DEST}"
+    log "C/deps/jemalloc: done"
+fi
+
+DOCTEST_DEST="${SAMPLE_DIR}/Cpp/tests/thirdparty/doctest"
+if [[ -d "${DOCTEST_DEST}/.git" ]]; then
+    log "Cpp/tests/thirdparty/doctest: already cloned — skipping"
+else
+    log "Cpp/tests/thirdparty/doctest: cloning doctest ..."
+    git clone \
+        --depth 1 \
+        https://github.com/doctest/doctest.git \
+        "${DOCTEST_DEST}"
+    log "Cpp/tests/thirdparty/doctest: done"
+fi
+
+if [[ -f "${DOCTEST_DEST}/doctest/doctest.h" ]]; then
+    cp "${DOCTEST_DEST}/doctest/doctest.h" "${DOCTEST_DEST}/doctest.h"
+fi
+
 clone_if_missing lua \
     --depth 1 \
     https://github.com/kikito/middleclass.git
