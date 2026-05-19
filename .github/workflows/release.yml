@@ -133,7 +133,7 @@ jobs:
     name: GitHub Release
     needs: [build]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && inputs.dry_run != 'true'
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || inputs.dry_run != 'true')
 
     steps:
       - name: Checkout (for install scripts)
@@ -202,7 +202,7 @@ jobs:
     name: Update Homebrew tap
     needs: [github-release]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') && inputs.dry_run != 'true'
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || inputs.dry_run != 'true')
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
@@ -285,7 +285,7 @@ jobs:
     name: Publish to crates.io
     needs: [build]
     runs-on: ubuntu-latest
-    if: vars.PUBLISH_CRATES == '1' && startsWith(github.ref, 'refs/tags/') && inputs.dry_run != 'true'
+    if: vars.PUBLISH_CRATES == '1' && startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || inputs.dry_run != 'true')
 
     steps:
       - name: Checkout code
