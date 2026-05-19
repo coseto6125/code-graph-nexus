@@ -27,7 +27,6 @@ env:
   RUSTUP_MAX_RETRIES: 10
   BIN_NAME: cgn
   CGN_BUILD_VERBOSE: 1
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   # ==================== Multi-platform binary builds ====================
@@ -51,12 +50,12 @@ jobs:
             os: macos-latest
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
+            os: windows-2025-vs2026
             archive: zip
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -69,7 +68,7 @@ jobs:
           tool: cargo-chef
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9
         with:
           # Use a more granular key that includes the target and a hash of the lockfile
           # to ensure registry/git caches are reused effectively.
@@ -95,7 +94,7 @@ jobs:
           name="${BIN_NAME}-${GITHUB_REF_NAME:-dev}-${{ matrix.target }}"
           mkdir -p "dist/${name}"
           cp "target/${{ matrix.target }}/release-dist/${BIN_NAME}" "dist/${name}/"
-          cp README.md LICENSE NOTICE "dist/${name}/" 2>/dev/null || true
+          cp README.md LICENSE NOTICES.md "dist/${name}/" 2>/dev/null || true
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           ( cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256" )
 
@@ -108,7 +107,7 @@ jobs:
           if (-not $env:GITHUB_REF_NAME) { $name = "${env:BIN_NAME}-dev-${{ matrix.target }}" }
           New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release-dist/${env:BIN_NAME}.exe" "dist/$name/"
-          foreach ($f in @('README.md','LICENSE','NOTICE')) {
+          foreach ($f in @('README.md','LICENSE','NOTICES.md')) {
             if (Test-Path $f) { Copy-Item $f "dist/$name/" }
           }
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
@@ -116,12 +115,12 @@ jobs:
           "$hash  $name.zip" | Out-File -Encoding ASCII "dist/$name.zip.sha256"
 
       - name: Generate SLSA build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-path: 'dist/*.${{ matrix.archive }}'
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.BIN_NAME }}-${{ matrix.target }}
           path: |
@@ -139,10 +138,10 @@ jobs:
 
     steps:
       - name: Checkout (for install scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
@@ -154,7 +153,7 @@ jobs:
           ls -la dist/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.tar.gz
@@ -210,10 +209,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
@@ -291,13 +290,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9
 
       - name: Publish cgn-core
         run: cargo publish -p cgn-core --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

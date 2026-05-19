@@ -13,11 +13,13 @@ on:
       - 'tools/aggregate.sh'
       - 'tools/lint-skill.sh'
 
+env:
+
 jobs:
   lint-and-roundtrip:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: T1 lint
         run: bash tools/lint-skill.sh docs/skills/cgn-onboard
       - name: T2 aggregator round-trip
