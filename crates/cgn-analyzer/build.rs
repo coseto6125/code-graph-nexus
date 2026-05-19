@@ -31,7 +31,9 @@ const TOP_LEVEL_FILES: &[&str] = &[
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     if std::env::var_os("CGN_BUILD_VERBOSE").is_some() {
-        println!("cargo:warning=Current dir: {:?}", std::env::current_dir().unwrap());
+        let cwd = std::env::current_dir()
+            .unwrap_or_else(|e| panic!("failed to get current directory: {e}"));
+        println!("cargo:warning=Current dir: {:?}", cwd);
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
