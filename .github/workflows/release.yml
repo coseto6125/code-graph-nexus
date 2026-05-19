@@ -62,28 +62,19 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cargo-chef
-        uses: taiki-e/install-action@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          tool: cargo-chef@0.1.77
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ matrix.target }}-
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.9.1
-        with:
-          shared-key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
-          cache-on-failure: true
-
-      - name: Cargo chef prepare
-        run: cargo chef prepare --recipe-path recipe.json
-
-      - name: Cargo chef cook (dependencies only)
-        # Pre-build dependencies. This step is cached by rust-cache.
-        # It handles the "Updating git repository" and slow dependency compiles.
-        run: cargo chef cook --profile release-dist --recipe-path recipe.json --target ${{ matrix.target }}
-
-      - name: Build release binary (app only)
-        # Since dependencies are already "cooked", this only compiles the workspace
-        # crates and performs the LTO link.
+      - name: Build release binary
+        # target/ is intentionally NOT cached so LTO fat link always runs on
+        # workspace crates. Only ~/.cargo/registry is cached (deps download).
         run: cargo build --profile release-dist --bin ${{ env.BIN_NAME }} --target ${{ matrix.target }}
 
       - name: Package (tar.gz)
