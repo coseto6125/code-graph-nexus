@@ -11,7 +11,7 @@ A code intelligence graph for **LLMs and AI code agents** — one-shot CLI, zero
 `cgn` exists to be the structural-knowledge layer that an autonomous AI coding agent calls 20–50 times per task. Every design decision falls out of that one premise:
 
 - **Built for agents, not IDEs.** Output is token-cheap (TOON / compact JSON), every flag surfaces via `--help`, every command is non-interactive and stdout-parseable. No UI, no human-skim layout cruft eating the agent's context window.
-- **No warm-up, no daemon.** Each invocation `mmap`s a zero-copy `rkyv` graph file and exits. A `cypher` query takes 9 ms *including process startup*. An agent can fire dozens of queries per task without amortising a server boot, and there is no "daemon died, please restart" failure mode.
+- **No warm-up, no daemon.** Each invocation `mmap`s a zero-copy `rkyv` graph file and exits. Read queries return in ~150–250 ms *including process startup*; a 22k-file repo cold-indexes in under 3 s. An agent can fire dozens of queries per task without amortising a server boot, and there is no "daemon died, please restart" failure mode.
 - **Honest answers over readable graphs.** When a call site can't be statically resolved (dynamic dispatch, unresolved import, reflection), `cgn` emits a `BlindSpot` record — not a guessed edge. An agent that acts on a hallucinated dependency is much more expensive than one that gets an "I don't know" it can route around.
 - **Polyglot reach.** 31 languages parsed at the structural level so modern multi-stack repos (service code + Dockerfiles + GitHub Actions + Terraform + SQL + smart contracts) stop being black holes the moment you leave the main language.
 
@@ -27,30 +27,35 @@ The Mission section above is *why* `cgn` is built the way it is. This section is
 
 | Phase | Value |
 |---|---|
-| Files indexed | **22,772** across 25 detected languages |
-| Wall-clock | **4.9 s** (parse + resolve + serialize) |
-| Top langs by file count | Java 3535 · PHP 2907 · TypeScript 1704 · C# 945 · Rust 870 · C 801 · Markdown 783 · Dart 616 · Bash 487 · C++ 476 · JavaScript 466 · Solidity 403 |
+| Files indexed | **22,645** across 25 detected languages |
+| Wall-clock | **2.96 s** (parse + resolve + serialize) |
+| Top langs by file count | Java 3535 · PHP 2907 · TypeScript 1704 · C# 945 · Rust 870 · Markdown 817 · C 801 · Dart 616 · Bash 493 · C++ 476 · JavaScript 466 · Solidity 403 |
 
-**Per-query latency — same graph, mmap'd, no warm-up cost:**
+**Per-query latency — fresh subprocess each call, no daemon, no warm-up:**
 
-| Query | Latency |
-|---|---|
-| `cypher` (arbitrary MATCH) | **9 ms** |
-| `inspect` (one symbol → callers/callees/signature) | **9 ms** |
-| `impact --direction upstream` | **5–6 ms** |
-| `routes` (HTTP route map) | **13 ms** |
-| `find --mode bm25` (lexical search) | **24 ms** |
-| `coverage --detailed` (registry + blind-spots) | **38 ms** |
-| `impact --since HEAD~1` (change-set) | **230 ms** |
+| Query | Median | Notes |
+|---|---|---|
+| `coverage` (registry overview) | **1.3 ms** | smallest read — just registry mmap |
+| `routes` (HTTP route map across repo) | **162 ms** | enumerates declarative + imperative |
+| `coverage --detailed` (frameworks + blind-spots) | **165 ms** | full registry + per-framework scoring |
+| `impact <symbol> --direction down` | **169 ms** | BFS over Calls / Extends edges |
+| `inspect <symbol>` (signature + callers + callees) | **174 ms** | symbol resolution + 1-hop traversal |
+| `find <pattern> --mode bm25` (lexical search) | **184 ms** | Tantivy query + 5-bucket partition |
+| `cypher 'MATCH (a:Class)-[:HasMethod]->(b:Method) ...'` | **205 ms** | one pattern, one row returned |
+| `cypher 'MATCH (a:Method)-[:Calls]->(b:Method) ...'` | **250 ms** | broader pattern, more matches |
+| `impact --baseline HEAD~1` (change-set blast radius) | **366 ms** | git diff + parallel per-file parse + BFS |
 
-**Incremental rebuild:**
+Numbers are wall-clock medians of 3 runs each, **including process startup** (no warm daemon — each call spawns a fresh `cgn` subprocess that `mmap`s the graph file and exits). For an LLM agent firing 30+ queries per task, the multiplier matters: 30 × ~170 ms = ~5 s of structural-query budget per task with a fully cold tool.
 
-- Cold start: ~50 s on a 22k-file repo
-- After one file edit: **< 0.25 s** — only modified files re-parsed (xxh3_64 content hash per file).
+**Incremental indexing:**
 
-**Hardware:** AMD Ryzen 9 9950X (8 vCPU under WSL2, 11.7 GiB RAM), Linux 6.6.87. Tree-sitter + Rayon for parse, `rkyv` mmap for the graph file, Tantivy BM25 for lexical search.
+- Cold index of 22k-file repo: **2.96 s**
+- Re-run `cgn admin index` with no file changes (hash cache hot): **4.9 ms** — walks the xxh3_64 content cache, finds zero dirty files, exits.
+- Realistic single-file edit: re-parses only the modified file and re-resolves affected edges — not directly measured by this bench but bounded above by cold ÷ file-count.
 
-**Reproduce:** `python scripts/benchmark_cgn.py` (auto-rebuilds the binary, runs every public subcommand, reports median wall-clock).
+**Hardware:** AMD Ryzen 9 9950X 16-core (16 logical), 39.2 GiB RAM, Linux 6.6.87 under WSL2. Tree-sitter + Rayon for parse, `rkyv` mmap for the graph file, Tantivy BM25 for lexical search.
+
+**Reproduce:** `python scripts/benchmark_cgn.py` — auto-rebuilds the binary, drops the index, then sweeps every public subcommand. Reports cold/incremental/per-query medians.
 
 ---
 
