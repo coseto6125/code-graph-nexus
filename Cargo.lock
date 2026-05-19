@@ -351,7 +351,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "cgn-analyzer"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "cgn-core"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "cc",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "cgn-mcp"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -526,7 +526,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "code-graph-nexus"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "cgn-analyzer",
  "cgn-core",
@@ -952,7 +952,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "046da7b291854aa560f3b888e8de425d07a406248b4f92ce7f3b8060db6fc92e"
 dependencies = [
  "itoa",
- "pyo3",
  "sonic-rs",
 ]
 
@@ -2185,64 +2184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pyo3"
-version = "0.28.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91fd8e38a3b50ed1167fb981cd6fd60147e091784c427b8f7183a7ee32c31c12"
-dependencies = [
- "libc",
- "once_cell",
- "portable-atomic",
- "pyo3-build-config",
- "pyo3-ffi",
- "pyo3-macros",
-]
-
-[[package]]
-name = "pyo3-build-config"
-version = "0.28.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e368e7ddfdeb98c9bca7f8383be1648fd84ab466bf2bc015e94008db6d35611e"
-dependencies = [
- "target-lexicon",
-]
-
-[[package]]
-name = "pyo3-ffi"
-version = "0.28.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f29e10af80b1f7ccaf7f69eace800a03ecd13e883acfacc1e5d0988605f651e"
-dependencies = [
- "libc",
- "pyo3-build-config",
-]
-
-[[package]]
-name = "pyo3-macros"
-version = "0.28.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df6e520eff47c45997d2fc7dd8214b25dd1310918bbb2642156ef66a67f29813"
-dependencies = [
- "proc-macro2",
- "pyo3-macros-backend",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "pyo3-macros-backend"
-version = "0.28.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4cdc218d835738f81c2338f822078af45b4afdf8b2e33cbb5916f108b813acb"
-dependencies = [
- "heck",
- "proc-macro2",
- "pyo3-build-config",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3045,12 +2986,6 @@ checksum = "eac258c2c6390673f2685813afeeafcb8c4e0ee7de8dd3fc46838dcc37263f98"
 dependencies = [
  "serde",
 ]
-
-[[package]]
-name = "target-lexicon"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tempfile"
