@@ -72,7 +72,6 @@ jobs:
         with:
           shared-key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
           cache-on-failure: true
-          cache-workspace-crates: true
 
       - name: Cargo chef prepare
         run: cargo chef prepare --recipe-path recipe.json
