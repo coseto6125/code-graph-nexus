@@ -18,7 +18,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["E-NoR"]
 license = "MIT OR Apache-2.0"
@@ -50,6 +50,8 @@ categories = ["development-tools"]
 # machine.
 [profile.release-dist]
 inherits = "release"
+opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "abort"
+strip = true

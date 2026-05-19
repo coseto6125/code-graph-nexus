@@ -1,7 +1,7 @@
 [package]
 name = "code-graph-nexus"
 description = "code-graph-nexus — code intelligence graph for AI agents and LLMs (multi-language AST analysis)"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 default-run = "cgn"
 license.workspace = true
@@ -25,9 +25,9 @@ name = "cgn_cli"
 path = "src/lib.rs"
 
 [dependencies]
-cgn-core = { path = "../cgn-core", version = "0.2.1" }
-cgn-analyzer = { path = "../cgn-analyzer", version = "0.2.1" }
-cgn-mcp = { path = "../cgn-mcp", version = "0.2.1" }
+cgn-core = { path = "../cgn-core", version = "0.2.2" }
+cgn-analyzer = { path = "../cgn-analyzer", version = "0.2.2" }
+cgn-mcp = { path = "../cgn-mcp", version = "0.2.2" }
 tokio = { version = "1", features = ["rt"] }
 clap = { version = "4.5.4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -36,7 +36,7 @@ memmap2 = "0.9.10"
 rkyv = "0.8.16"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-etoon = "0.4"
+etoon = { version = "0.4", default-features = false }
 ignore = "0.4.25"
 libc = "0.2"
 mimalloc = { version = "0.1", default-features = false }
