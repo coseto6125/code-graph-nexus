@@ -35,7 +35,7 @@ use engine::Engine;
 
 #[derive(Parser)]
 #[command(
-    name = "code-graph-nexus",
+    name = "cgn",
     version = env!("CARGO_PKG_VERSION"),
     about = "code-graph-nexus stateless query engine (mmap)"
 )]
