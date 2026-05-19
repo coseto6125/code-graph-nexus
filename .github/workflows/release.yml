@@ -68,7 +68,7 @@ jobs:
           tool: cargo-chef
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2.9
+        uses: Swatinem/rust-cache@v2.7.5
         with:
           # Use a more granular key that includes the target and a hash of the lockfile
           # to ensure registry/git caches are reused effectively.
