@@ -3,12 +3,12 @@
 //! Code and Gemini CLI are fully covered by host-first scriptable commands
 //! and no longer appear here.
 
-pub mod claude_code;
+pub(crate) mod claude_code;
 pub mod cline_roo;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
-pub mod gemini;
+pub(crate) mod gemini;
 pub mod generic;
 pub mod windsurf;
 

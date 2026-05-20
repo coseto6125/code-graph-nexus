@@ -1,15 +1,12 @@
 //! Scriptable Claude Code host integration commands for AI agents.
-//!
-//! Mirrors the Codex / Gemini host-first pattern (PRs #224, #225):
-//! one subcommand per agent, with `install / uninstall / status`
-//! actions and a `<component>` leaf for hooks / mcp-server / skills.
 
 use crate::admin::host_integration::mcp::claude_code as mcp_claude;
 use crate::commands::admin::claude_code as hooks;
+use crate::commands::admin::skill_fs::copy_dir_replace;
 use cgn_core::CgnError;
 use clap::Subcommand;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Subcommand, Debug)]
 pub enum ClaudeCommands {
@@ -156,29 +153,6 @@ fn claude_home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     home.join(".claude")
-}
-
-fn copy_dir_replace(src: &Path, dst: &Path) -> Result<(), CgnError> {
-    if dst.exists() {
-        fs::remove_dir_all(dst)?;
-    }
-    fs::create_dir_all(dst)?;
-    copy_dir_contents(src, dst)
-}
-
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), CgnError> {
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            fs::create_dir_all(&dst_path)?;
-            copy_dir_contents(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
 }
 
 impl ClaudeSkillTarget {
