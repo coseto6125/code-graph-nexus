@@ -23,7 +23,7 @@ hex = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 fixedbitset = "0.5.7"
 rustc-hash = "2"
-toml = "0.9"
+toml = "1.1"
 regex = "1"
 tracing = "0.1"
 phf = { version = "0.11", features = ["macros"] }
