@@ -28,7 +28,7 @@ if (-not $env:CGN_INSTALL_DIR) {
 function Invoke-CargoFallback([string]$reason) {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         Write-Host "error: $reason" -ForegroundColor Red
-        Write-Host "       and ``cargo`` not found in PATH — install Rust from https://rustup.rs," -ForegroundColor Red
+        Write-Host "       and ``cargo`` not found in PATH - install Rust from https://rustup.rs," -ForegroundColor Red
         Write-Host "       then re-run this script (or wait for a prebuilt release)." -ForegroundColor Red
         exit 1
     }
@@ -52,7 +52,7 @@ function Invoke-CargoFallback([string]$reason) {
         if (Test-Path $buildRoot) { Remove-Item -Recurse -Force $buildRoot }
     }
     Write-Host ""
-    Write-Host "✓ Installed $bin via cargo → $script:installDir\$bin.exe"
+    Write-Host "Installed $bin via cargo -> $script:installDir\$bin.exe"
     exit 0
 }
 
@@ -73,17 +73,33 @@ switch ($arch) {
 if ($version -eq 'latest') {
     $tag = $null
     try {
-        $resp = Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -ErrorAction SilentlyContinue `
-            -Uri "https://github.com/$repo/releases/latest"
-        $loc = $resp.Headers.Location
-        if (-not $loc) {
-            $loc = (Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$repo/releases/latest").BaseResponse.RequestMessage.RequestUri.AbsoluteUri
-        }
-        if ($loc -match '/tag/') {
-            $tag = ($loc -split '/tag/')[-1]
-        }
+        $latest = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$repo/releases/latest"
+        $tag = $latest.tag_name
     } catch {
-        # 落到下方 fallback
+        try {
+            $resp = Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -Uri "https://github.com/$repo/releases/latest"
+            $loc = $resp.Headers.Location
+        } catch {
+            $response = $_.Exception.Response
+            if ($response) {
+                $loc = $response.Headers.Location
+            }
+        }
+        if (-not $loc) {
+            try {
+                $latestPage = Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$repo/releases/latest"
+                if ($latestPage.BaseResponse.ResponseUri) {
+                    $loc = $latestPage.BaseResponse.ResponseUri.AbsoluteUri
+                } elseif ($latestPage.BaseResponse.RequestMessage) {
+                    $loc = $latestPage.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
+                }
+            } catch {
+                # 落到下方 fallback
+            }
+        }
+        if ($loc -match '/tag/([^/?#]+)') {
+            $tag = $Matches[1]
+        }
     }
     if (-not $tag) {
         Invoke-CargoFallback "no published GitHub Release yet for $repo"
@@ -144,7 +160,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "✓ Installed $bin $ver → $installDir\$bin.exe"
+Write-Host "Installed $bin $ver -> $installDir\$bin.exe"
 Write-Host ""
 
 # ---- PATH 提示 ----

@@ -9,7 +9,7 @@ fn bin() -> std::path::PathBuf {
 }
 
 fn run_session_start(cwd: &std::path::Path) -> std::process::Output {
-    let envelope = format!(r#"{{"cwd":"{}"}}"#, cwd.display());
+    let envelope = serde_json::json!({ "cwd": cwd }).to_string();
     let mut child = Command::new(bin())
         .args(["hook", "session-start", "--claude-code"])
         .stdin(Stdio::piped())

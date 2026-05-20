@@ -1,5 +1,6 @@
 use cgn_core::analyzer::types::RawImport;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -9,6 +10,18 @@ use crate::resolution::path_aliases::PathAliases;
 use crate::rust::module_tree::RustWorkspaceModTree;
 
 pub type NodeId = u32;
+
+#[cfg(not(windows))]
+#[inline]
+fn normalize_source_path(path: &Path) -> Cow<'_, str> {
+    path.to_string_lossy()
+}
+
+#[cfg(windows)]
+#[inline]
+fn normalize_source_path(path: &Path) -> Cow<'_, str> {
+    Cow::Owned(path.to_string_lossy().replace('\\', "/"))
+}
 
 /// Resolver outcome tier captured per `resolve_symbol` call when the dump
 /// is enabled. Distinct from [`ResolutionTier`] because that enum models
@@ -173,7 +186,8 @@ impl<'a> Resolver<'a> {
         caller_heritage: &[String],
     ) -> Vec<(NodeId, f32)> {
         let mut results = Vec::new();
-        let source_file_str = source_file.to_string_lossy();
+        // Normalize path to use forward slashes to match indexed paths.
+        let source_file_str = normalize_source_path(source_file);
 
         // Tier 1: Try SameFile (kind-aware so a property named `Foo` doesn't
         // win the lookup for a constructor call `Foo()` in the same file —
@@ -467,8 +481,20 @@ fn qualifier_prefix_is_internal(full_callee: &str, qualifier: &str) -> bool {
 /// Paths with no `/src/` or `/tests/` segment return `""` — single-crate
 /// repos at the repo root all share the empty prefix, so the Tier-4
 /// module-file fallback still fires for them.
+#[cfg(not(windows))]
 fn crate_root_prefix(path: &str) -> &str {
     path.rsplit_once("/src/")
+        .or_else(|| path.rsplit_once("/tests/"))
+        .map(|(root, _)| root)
+        .unwrap_or("")
+}
+
+#[cfg(windows)]
+fn crate_root_prefix(path: &str) -> &str {
+    // Windows paths use backslashes natively.
+    path.rsplit_once("\\src\\")
+        .or_else(|| path.rsplit_once("\\tests\\"))
+        .or_else(|| path.rsplit_once("/src/")) // Fallback for mixed/normalized paths
         .or_else(|| path.rsplit_once("/tests/"))
         .map(|(root, _)| root)
         .unwrap_or("")
@@ -665,7 +691,11 @@ impl<'a> Resolver<'a> {
         raw_imports: &[RawImport],
         full_callee: Option<&str>,
     ) -> Option<String> {
+        #[cfg(not(windows))]
         let source_file_str = source_file.to_string_lossy();
+        #[cfg(windows)]
+        let source_file_str =
+            std::borrow::Cow::Owned(source_file.to_string_lossy().replace('\\', "/"));
 
         // Tier 1: same-file qualifier definition. Qualifiers are class /
         // interface names, so filter to Type here — avoids a property
