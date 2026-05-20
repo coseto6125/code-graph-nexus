@@ -91,7 +91,7 @@ jobs:
           name="${BIN_NAME}-${GITHUB_REF_NAME:-dev}-${{ matrix.target }}"
           mkdir -p "dist/${name}"
           cp "target/${{ matrix.target }}/release-dist/${BIN_NAME}" "dist/${name}/"
-          cp README.md LICENSE LICENSES/NOTICES.md "dist/${name}/" 2>/dev/null || true
+          cp README.md LICENSE.md LICENSES/NOTICES.md "dist/${name}/" 2>/dev/null || true
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           ( cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256" )
 
