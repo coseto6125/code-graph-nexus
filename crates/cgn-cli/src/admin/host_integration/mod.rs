@@ -93,7 +93,15 @@ fn claude_uninstall_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
     loop {
         let choice = select(theme, "Claude Code — uninstall", CLAUDE_COMPONENTS)?;
         match choice {
-            Some(0) => claude::uninstall(ClaudeComponent::Hooks { events: None })?,
+            Some(0) => {
+                let chosen = crate::commands::admin::claude_code::prompt_events_tui("uninstall")?;
+                if chosen.is_empty() {
+                    println!("No events selected — nothing to uninstall.");
+                } else {
+                    let events = Some(chosen.join(","));
+                    claude::uninstall(ClaudeComponent::Hooks { events })?
+                }
+            }
             Some(1) => claude::uninstall(ClaudeComponent::McpServer)?,
             Some(2) => claude_uninstall_skills_menu(theme)?,
             Some(3) | None => return Ok(()),
@@ -141,11 +149,11 @@ const CODEX_ACTIONS: &[menu::Item<'_>] = &[
     ("← Back", ""),
 ];
 
-const CODEX_INSTALL_COMPONENTS: &[menu::Item<'_>] = &[
-    ("native-tools", "write the Codex native tool patch scaffold"),
+const CODEX_COMPONENTS: &[menu::Item<'_>] = &[
+    ("native-tools", "Codex native tool patch scaffold"),
     (
         "skills",
-        "install LLM workflow skills for when help output is not enough",
+        "LLM workflow skills for when help output is not enough",
     ),
     ("← Back", ""),
 ];
@@ -178,7 +186,7 @@ fn codex_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
 
 fn codex_install_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
     loop {
-        let choice = select(theme, "Codex CLI — install", CODEX_INSTALL_COMPONENTS)?;
+        let choice = select(theme, "Codex CLI — install", CODEX_COMPONENTS)?;
         match choice {
             Some(0) => native::codex::install(theme),
             Some(1) => codex_install_skills_menu(theme)?,
@@ -190,7 +198,7 @@ fn codex_install_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
 
 fn codex_uninstall_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
     loop {
-        let choice = select(theme, "Codex CLI — uninstall", CODEX_INSTALL_COMPONENTS)?;
+        let choice = select(theme, "Codex CLI — uninstall", CODEX_COMPONENTS)?;
         match choice {
             Some(0) => native::codex::uninstall(theme),
             Some(1) => codex_uninstall_skills_menu(theme)?,
