@@ -190,7 +190,9 @@ fn ts_decorator_captured() {
     let pool = g.string_pool.as_slice();
     // The decorator text may include the path argument. Capture is best-effort; just
     // verify no panic and that the pool lookup doesn't error.
-    let _ = m.decorators.iter().map(|d| d.resolve(pool)).count();
+    for d in &m.decorators {
+        let _ = d.resolve(pool);
+    }
 }
 
 // ── sorted by node_idx invariant ─────────────────────────────────────────────
