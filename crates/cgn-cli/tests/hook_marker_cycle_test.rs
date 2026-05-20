@@ -17,7 +17,7 @@ fn run_with_envelope(cwd: &std::path::Path) -> std::process::Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let envelope = format!(r#"{{"cwd": "{}"}}"#, cwd.display());
+    let envelope = serde_json::json!({ "cwd": cwd }).to_string();
     child
         .stdin
         .as_mut()

@@ -37,7 +37,7 @@ fn no_index_present_yields_empty_output() {
     // Empty HOME → no registry → cwd has no entry → no-op.
     let fake_home = tmp.path().join("home");
     std::fs::create_dir_all(&fake_home).unwrap();
-    let envelope = format!(r#"{{"cwd": "{}"}}"#, tmp.path().display());
+    let envelope = serde_json::json!({ "cwd": tmp.path() }).to_string();
     let out = run_session_start(&envelope, Some(&fake_home));
     assert!(out.status.success());
     assert!(

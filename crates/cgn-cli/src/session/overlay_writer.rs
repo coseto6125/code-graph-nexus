@@ -18,7 +18,7 @@
 
 use cgn_core::analyzer::pipeline::AnalyzerPipeline;
 use cgn_core::graph::NodeKind;
-use cgn_core::registry::atomic_write_json;
+use cgn_core::registry::{atomic_write_json, replace_file};
 use cgn_core::session::overlay::{SymbolKind, SymbolRef};
 use cgn_core::session::{DirtyEntry, DirtyFiles, SessionMeta};
 use rayon::prelude::*;
@@ -137,7 +137,7 @@ fn write_fragment_file(
             let f = fs::File::open(&tmp)?;
             f.sync_all()?;
             drop(f);
-            fs::rename(&tmp, &fragment_path)?;
+            replace_file(&tmp, &fragment_path)?;
             false
         }
         Err(_) => true,
