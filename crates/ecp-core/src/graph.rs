@@ -264,7 +264,11 @@ pub enum RelType {
     /// count as `fetch-url-match[|keys:a,b][|fetches:N]`, parsed by
     /// `ecp_analyzer::fetch_shape`.
     Fetches,
+<<<<<<< HEAD
     // ── Schema / event / transaction expansion ─────────────────────────
+=======
+    // ── Schema / event / transaction expansion (T0-1) ───────────────────
+>>>>>>> 01a98c84 (feat(graph): append SchemaField/EventTopic/TransactionScope nodes + heuristic edge types)
     // Appended at the END to keep rkyv discriminants stable.
     /// Heuristic: in-memory struct field → `SchemaField` when the struct
     /// derives an ORM trait. Low-confidence — verified by `is_heuristic()`.
@@ -312,7 +316,6 @@ impl ArchivedRelType {
     pub const fn is_heuristic(&self) -> bool {
         matches!(self, Self::MirrorsField | Self::EventTopicMirror)
     }
-}
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[rkyv(derive(Debug))]
