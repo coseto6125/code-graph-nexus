@@ -56,3 +56,6 @@ crates/vendor/**/package-lock.json
 /refactor_*.py
 /optimize_*.py
 /update_*.py
+
+# Cache and node artifacts
+.codegraph
