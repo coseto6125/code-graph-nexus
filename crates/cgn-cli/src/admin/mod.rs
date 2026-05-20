@@ -10,6 +10,7 @@
 //! cgn admin
 //! ├── Indexes
 //! ├── Agent Integrations
+//! ├── Gemini
 //! ├── Config
 //! ├── Groups
 //! └── Diagnostics
@@ -18,6 +19,7 @@
 pub mod config;
 pub mod diagnostics;
 pub mod gc;
+pub mod gemini;
 pub mod groups;
 pub mod host_integration;
 pub mod indexes;
@@ -44,10 +46,11 @@ fn main_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
         match choice {
             Some(0) => indexes::run(theme)?,
             Some(1) => host_integration::run(theme)?,
-            Some(2) => config::run(theme)?,
-            Some(3) => groups::run(theme)?,
-            Some(4) => diagnostics::run(theme)?,
-            Some(5) | None => return Ok(()),
+            Some(2) => gemini::run(theme)?,
+            Some(3) => config::run(theme)?,
+            Some(4) => groups::run(theme)?,
+            Some(5) => diagnostics::run(theme)?,
+            Some(6) | None => return Ok(()),
             _ => unreachable!(),
         }
     }
@@ -56,6 +59,7 @@ fn main_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
 pub const MAIN_MENU: &[menu::Item<'_>] = &[
     ("Indexes", "build, inspect, prune, drop indexes"),
     ("Agent Integrations", "MCP / native / hooks for LLM hosts"),
+    ("Gemini", "native installation and settings"),
     ("Config", "view, edit, validate cgn.toml"),
     ("Groups", "multi-repo grouping for cross-repo contracts"),
     ("Diagnostics", "doctor, registry health, env report"),
@@ -74,6 +78,7 @@ mod tests {
             vec![
                 "Indexes",
                 "Agent Integrations",
+                "Gemini",
                 "Config",
                 "Groups",
                 "Diagnostics",
