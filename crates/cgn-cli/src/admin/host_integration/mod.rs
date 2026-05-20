@@ -5,12 +5,14 @@ pub mod native;
 
 use crate::admin::menu::{self, select};
 use crate::commands::admin::codex::{install_skills, print_status, uninstall_skills, SkillTarget};
+use crate::commands::admin::gemini::{self, GeminiComponent};
 use crate::commands::admin::{claude_code, install_hook};
 use cgn_core::CgnError;
 use dialoguer::theme::ColorfulTheme;
 
 const MECHANISMS: &[menu::Item<'_>] = &[
     ("Codex CLI", "install native tools, hooks, and skills"),
+    ("Gemini CLI", "install native skill and MCP server"),
     ("MCP", "shared side-car for any MCP-capable host"),
     (
         "Native",
@@ -29,10 +31,11 @@ pub fn run(theme: &ColorfulTheme) -> Result<(), CgnError> {
         let choice = select(theme, "Agent Integrations", MECHANISMS)?;
         match choice {
             Some(0) => codex_menu(theme)?,
-            Some(1) => mcp::run(theme)?,
-            Some(2) => native::run(theme)?,
-            Some(3) => hooks_menu(theme)?,
-            Some(4) | None => return Ok(()),
+            Some(1) => gemini_menu(theme)?,
+            Some(2) => mcp::run(theme)?,
+            Some(3) => native::run(theme)?,
+            Some(4) => hooks_menu(theme)?,
+            Some(5) | None => return Ok(()),
             _ => unreachable!(),
         }
     }
@@ -130,6 +133,56 @@ fn codex_uninstall_skills_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
     }
 }
 
+const GEMINI_ACTIONS: &[menu::Item<'_>] = &[
+    ("install", "install a Gemini integration component"),
+    ("uninstall", "remove a Gemini integration component"),
+    ("status", "show all Gemini integration statuses"),
+    ("← Back", ""),
+];
+
+const GEMINI_COMPONENTS: &[menu::Item<'_>] = &[
+    ("native-skill", "link the cgn skill into Gemini CLI"),
+    ("mcp-server", "register cgn as an MCP server in Gemini CLI"),
+    ("← Back", ""),
+];
+
+fn gemini_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
+    loop {
+        let choice = select(theme, "Gemini CLI — action", GEMINI_ACTIONS)?;
+        match choice {
+            Some(0) => gemini_install_menu(theme)?,
+            Some(1) => gemini_uninstall_menu(theme)?,
+            Some(2) => gemini::print_status()?,
+            Some(3) | None => return Ok(()),
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn gemini_install_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
+    loop {
+        let choice = select(theme, "Gemini CLI — install", GEMINI_COMPONENTS)?;
+        match choice {
+            Some(0) => gemini::install(GeminiComponent::NativeSkill)?,
+            Some(1) => gemini::install(GeminiComponent::McpServer)?,
+            Some(2) | None => return Ok(()),
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn gemini_uninstall_menu(theme: &ColorfulTheme) -> Result<(), CgnError> {
+    loop {
+        let choice = select(theme, "Gemini CLI — uninstall", GEMINI_COMPONENTS)?;
+        match choice {
+            Some(0) => gemini::uninstall(GeminiComponent::NativeSkill)?,
+            Some(1) => gemini::uninstall(GeminiComponent::McpServer)?,
+            Some(2) | None => return Ok(()),
+            _ => unreachable!(),
+        }
+    }
+}
+
 const HOOK_HOSTS: &[menu::Item<'_>] = &[
     (
         "Claude Code hooks",
@@ -193,7 +246,7 @@ mod tests {
         let labels: Vec<&str> = MECHANISMS.iter().map(|(label, _)| *label).collect();
         assert_eq!(
             labels,
-            vec!["Codex CLI", "MCP", "Native", "Hooks", "← Back"]
+            vec!["Codex CLI", "Gemini CLI", "MCP", "Native", "Hooks", "← Back"]
         );
     }
 }

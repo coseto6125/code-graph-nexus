@@ -7,6 +7,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod config;
 pub mod drop;
+pub mod gemini;
 pub mod group;
 pub mod index;
 pub mod install_hook;
@@ -43,6 +44,11 @@ pub enum AdminCommands {
         #[command(subcommand)]
         command: codex::CodexCommands,
     },
+    /// Scriptable Gemini host integration commands
+    Gemini {
+        #[command(subcommand)]
+        command: gemini::GeminiCommands,
+    },
     /// Run MCP server (serve) or list exposed tools (tools).
     Mcp(crate::commands::mcp::McpArgs),
     /// Diff resolver dump against language oracle (cgn-dev QA)
@@ -63,6 +69,7 @@ pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), cgn_core::
             sessions::run(command).map_err(cgn_core::CgnError::Output)
         }
         AdminCommands::Codex { command } => codex::run(command),
+        AdminCommands::Gemini { command } => gemini::run(command),
         AdminCommands::Mcp(args) => crate::commands::mcp::run(args, root_cmd),
         AdminCommands::VerifyResolver(args) => crate::commands::verify_resolver::run(args),
     }

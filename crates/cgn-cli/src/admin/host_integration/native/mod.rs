@@ -1,4 +1,4 @@
-//! Native sub-menu — pick non-Codex hosts for zero-IPC / fork integration.
+//! Native sub-menu — pick non-host-first hosts for zero-IPC / fork integration.
 
 pub mod codex;
 pub mod gemini;
@@ -8,10 +8,7 @@ use crate::admin::status::HostStatus;
 use cgn_core::CgnError;
 use dialoguer::theme::ColorfulTheme;
 
-const HOSTS: &[menu::Item<'_>] = &[
-    ("Gemini CLI", "register cgn as a native tool in Gemini CLI"),
-    ("← Back", ""),
-];
+const HOSTS: &[menu::Item<'_>] = &[("← Back", "")];
 
 const ACTIONS: &[menu::Item<'_>] = &[
     ("install", "write the native tool registration"),
@@ -25,19 +22,13 @@ pub fn run(theme: &ColorfulTheme) -> Result<(), CgnError> {
     loop {
         let choice = select(theme, "Native — pick a host", HOSTS)?;
         match choice {
-            Some(0) => host_menu(
-                theme,
-                "Gemini CLI",
-                gemini::install,
-                gemini::uninstall,
-                gemini::status,
-            )?,
-            Some(1) | None => return Ok(()),
+            Some(0) | None => return Ok(()),
             _ => unreachable!(),
         }
     }
 }
 
+#[allow(dead_code)]
 fn host_menu(
     theme: &ColorfulTheme,
     host_name: &str,

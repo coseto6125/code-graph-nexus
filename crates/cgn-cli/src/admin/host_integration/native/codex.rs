@@ -1,5 +1,7 @@
 //! Codex CLI native integration (Rust workspace dep, zero-IPC path).
 
+#![allow(dead_code)]
+
 use crate::admin::status::HostStatus;
 use cgn_core::CgnError;
 use dialoguer::theme::ColorfulTheme;

@@ -97,6 +97,7 @@ const ADMIN_SUBCMDS: &[&str] = &[
     "index",
     "sessions",
     "codex",
+    "gemini",
     "mcp",
     "verify-resolver",
 ];
@@ -118,6 +119,15 @@ const ADMIN_CODEX_UNINSTALL_SUBCMDS: &[&str] = &["native-tools", "skills"];
 
 /// `cgn admin codex install skills <target>` — installable Codex skill targets.
 const ADMIN_CODEX_SKILL_TARGETS: &[&str] = &["all", "cgn", "simplify"];
+
+/// `cgn admin gemini <action>` — Gemini host integration actions.
+const ADMIN_GEMINI_SUBCMDS: &[&str] = &["install", "uninstall", "status"];
+
+/// `cgn admin gemini install <component>` — installable Gemini components.
+const ADMIN_GEMINI_INSTALL_SUBCMDS: &[&str] = &["native-skill", "mcp-server"];
+
+/// `cgn admin gemini uninstall <component>` — removable Gemini components.
+const ADMIN_GEMINI_UNINSTALL_SUBCMDS: &[&str] = &["native-skill", "mcp-server"];
 
 /// `cgn admin sessions <subcmd>` — L1 session inspection.
 const ADMIN_SESSIONS_SUBCMDS: &[&str] = &["list"];
@@ -196,6 +206,27 @@ fn every_admin_codex_install_skills_target_has_help() {
 fn every_admin_codex_uninstall_skills_target_has_help() {
     for sub in ADMIN_CODEX_SKILL_TARGETS {
         assert_help_ok(&["admin", "codex", "uninstall", "skills", sub]);
+    }
+}
+
+#[test]
+fn every_admin_gemini_subcommand_has_help() {
+    for sub in ADMIN_GEMINI_SUBCMDS {
+        assert_help_ok(&["admin", "gemini", sub]);
+    }
+}
+
+#[test]
+fn every_admin_gemini_install_subcommand_has_help() {
+    for sub in ADMIN_GEMINI_INSTALL_SUBCMDS {
+        assert_help_ok(&["admin", "gemini", "install", sub]);
+    }
+}
+
+#[test]
+fn every_admin_gemini_uninstall_subcommand_has_help() {
+    for sub in ADMIN_GEMINI_UNINSTALL_SUBCMDS {
+        assert_help_ok(&["admin", "gemini", "uninstall", sub]);
     }
 }
 
