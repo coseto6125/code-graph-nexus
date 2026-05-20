@@ -87,14 +87,14 @@ Same conceptual model, different audience. `cgn` is **not** a drop-in replacemen
 
 ## 📦 Install
 
-Until the first tagged Release is published, the installer scripts fall back to a cargo source build. Prebuilt binaries will become the fastest path after release assets exist.
+Prebuilt binaries are published with each GitHub Release. The installer scripts fall back to a cargo source build only when a matching release asset is unavailable.
 
 ```bash
-# Linux / macOS (shortest path; needs cargo/rustup until Release assets exist)
-curl -sSfL https://raw.githubusercontent.com/coseto6125/code-graph-nexus/main/install.sh | sh
+# Linux / macOS
+curl -sSfL https://github.com/coseto6125/code-graph-nexus/releases/latest/download/install.sh | sh
 
 # Windows PowerShell
-iwr https://raw.githubusercontent.com/coseto6125/code-graph-nexus/main/install.ps1 -UseBasicParsing | iex
+iwr https://github.com/coseto6125/code-graph-nexus/releases/latest/download/install.ps1 -UseBasicParsing | iex
 
 # Explicit cargo path (same source build, no installer wrapper)
 cargo install --git https://github.com/coseto6125/code-graph-nexus code-graph-nexus --bin cgn --locked
