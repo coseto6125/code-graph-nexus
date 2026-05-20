@@ -6,6 +6,7 @@
 //! Each per-language file is a thin wrapper that calls this helper — the
 //! walk logic itself is identical across grammars.
 
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::types::IdentifierRange;
 use tree_sitter::{Node, Parser};
 
@@ -37,7 +38,7 @@ pub fn find_in_tree(
     if parser.set_language(language).is_err() {
         return Vec::new();
     }
-    let Some(tree) = parser.parse(source, None) else {
+    let Some(tree) = parse_with_budget(&mut parser, source, ParseBudget::DEFAULT) else {
         return Vec::new();
     };
     let mut out = Vec::new();

@@ -1,3 +1,4 @@
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use anyhow::Result;
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawDocumentBlock};
@@ -31,8 +32,7 @@ impl LanguageProvider for MarkdownProvider {
             .set_language(&tree_sitter_md::LANGUAGE.into())
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-        let tree = parser
-            .parse(source, None)
+        let tree = parse_with_budget(&mut parser, source, ParseBudget::DEFAULT)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse Markdown file"))?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);

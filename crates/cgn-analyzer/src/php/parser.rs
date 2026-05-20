@@ -4,6 +4,7 @@ use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
 };
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
@@ -172,8 +173,7 @@ impl LanguageProvider for PhpProvider {
         let mut parser = Parser::new();
         parser.set_language(&language)?;
 
-        let tree = parser
-            .parse(source, None)
+        let tree = parse_with_budget(&mut parser, source, ParseBudget::DEFAULT)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse php file"))?;
 
         let mut cursor = QueryCursor::new();

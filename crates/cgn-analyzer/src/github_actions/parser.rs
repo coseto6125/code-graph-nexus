@@ -1,3 +1,4 @@
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use cgn_core::graph::NodeKind;
@@ -174,8 +175,7 @@ impl LanguageProvider for GitHubActionsProvider {
             .set_language(&language)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let tree = parser
-            .parse(source, None)
+        let tree = parse_with_budget(&mut parser, source, ParseBudget::DEFAULT)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse GitHub Actions YAML"))?;
 
         let root = tree.root_node();

@@ -5,6 +5,7 @@ use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
     Span, MODULE_LEVEL_SOURCE,
 };
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::algorithms::process_trace::is_test_path;
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
@@ -444,7 +445,7 @@ impl LanguageProvider for PythonProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         let tree = PARSER
-            .with(|p| p.borrow_mut().parse(source, None))
+            .with(|p| parse_with_budget(&mut p.borrow_mut(), source, ParseBudget::DEFAULT))
             .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
 
         let idx = &self.indices;
