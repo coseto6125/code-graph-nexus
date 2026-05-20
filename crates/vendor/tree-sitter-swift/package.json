@@ -50,7 +50,7 @@
     "node-addon-api": "^8.0.0",
     "node-gyp-build": "^4.8.0",
     "tree-sitter-cli": "^0.23",
-    "which": "2.0.2"
+    "which": "7.0.0"
   },
   "peerDependencies": {
     "tree-sitter": "^0.22.1"
@@ -63,6 +63,6 @@
   "devDependencies": {
     "node-gyp": "^10.0.1",
     "prebuildify": "^6.0.0",
-    "prettier": "2.3.2"
+    "prettier": "3.8.3"
   }
 }
