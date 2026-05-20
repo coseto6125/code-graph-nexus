@@ -149,6 +149,16 @@ impl NodeKind {
         )
     }
 
+    /// True when the node can appear as the leading segment of a qualified
+    /// callee (`outer::member()` / `outer.member()`). Superset of `is_type`
+    /// plus `Namespace`, so C++ `namespace outer { fn x() }` calls bind
+    /// through Tier 2.5 instead of falling to the bare-name global tier.
+    /// Same path serves C# / Kotlin / Move where namespaces / packages /
+    /// modules are first-class qualifier sources.
+    pub const fn is_qualifier(self) -> bool {
+        self.is_type() || matches!(self, Self::Namespace)
+    }
+
     /// Static variant name. Used by Pass 1 UID construction (`"<Kind>:<path>:<name>"`)
     /// where `write!(.., "{:?}", kind)` would otherwise go through `fmt`
     /// dispatch per node (~300k on `.sample_repo`). Matches the variant

@@ -6,10 +6,18 @@ pub type NodeId = u32;
 /// Edge kinds the resolver resolves towards. Constrains Tier-3 fallback so a
 /// bare callee like `format` never resolves to a Variable/Const that happens
 /// to share the name.
+///
+/// `Qualifier` is the leading-segment lookup used by `resolve_qualifier_file`
+/// — it accepts both Type (Class/Struct/Enum/Typedef/Trait/Interface) AND
+/// Namespace, because C++ / C# / Kotlin let a namespace name appear as the
+/// qualifier in `outer::member` / `outer.member` calls. Without it, every
+/// `namespace_name::func()` call drops at Tier 2.5 since `outer` is a
+/// Namespace node, not a Type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolveTarget {
     Callable,
     Type,
+    Qualifier,
 }
 
 /// Per-parser-provider language tag. One variant per registered analyzer
@@ -432,6 +440,7 @@ impl SymbolTable {
         let predicate: fn(NodeKind) -> bool = match target {
             ResolveTarget::Callable => NodeKind::is_callable,
             ResolveTarget::Type => NodeKind::is_type,
+            ResolveTarget::Qualifier => NodeKind::is_qualifier,
         };
         ids.iter()
             .copied()
@@ -461,6 +470,7 @@ impl SymbolTable {
         let predicate: fn(NodeKind) -> bool = match target {
             ResolveTarget::Callable => NodeKind::is_callable,
             ResolveTarget::Type => NodeKind::is_type,
+            ResolveTarget::Qualifier => NodeKind::is_qualifier,
         };
         let mut found = None;
         for &id in raw {
@@ -508,6 +518,7 @@ impl SymbolTable {
         let predicate: fn(NodeKind) -> bool = match target {
             ResolveTarget::Callable => NodeKind::is_callable,
             ResolveTarget::Type => NodeKind::is_type,
+            ResolveTarget::Qualifier => NodeKind::is_qualifier,
         };
         let mut count = 0u32;
         for &id in raw {

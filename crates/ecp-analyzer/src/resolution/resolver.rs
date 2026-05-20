@@ -698,12 +698,14 @@ impl<'a> Resolver<'a> {
             std::borrow::Cow::Owned(source_file.to_string_lossy().replace('\\', "/"));
 
         // Tier 1: same-file qualifier definition. Qualifiers are class /
-        // interface names, so filter to Type here — avoids a property
-        // named `Logger` winning over `class Logger` in the same file.
+        // interface / namespace names, so filter to Qualifier here —
+        // avoids a property named `Logger` winning over `class Logger`
+        // in the same file, while still letting `namespace outer { ... }`
+        // serve as the leading segment of `outer::member()` calls.
         if let Some(id) = self.symbol_table.lookup_in_file_with_kind(
             &source_file_str,
             qualifier,
-            ResolveTarget::Type,
+            ResolveTarget::Qualifier,
         ) {
             return self.symbol_table.file_of(id).map(str::to_string);
         }
@@ -728,7 +730,7 @@ impl<'a> Resolver<'a> {
                 |candidate| {
                     if self
                         .symbol_table
-                        .lookup_in_file_with_kind(candidate, exported, ResolveTarget::Type)
+                        .lookup_in_file_with_kind(candidate, exported, ResolveTarget::Qualifier)
                         .is_some()
                     {
                         hit = Some(candidate.to_string());
@@ -748,7 +750,7 @@ impl<'a> Resolver<'a> {
         let caller_meta = FileMeta::from_path(&source_file_str);
         if let Some(id) =
             self.symbol_table
-                .lookup_unique_global(qualifier, ResolveTarget::Type, caller_meta)
+                .lookup_unique_global(qualifier, ResolveTarget::Qualifier, caller_meta)
         {
             return self.symbol_table.file_of(id).map(str::to_string);
         }
