@@ -4,7 +4,7 @@
     (constant)
     (scope_resolution)
   ] @name
-  superclass: (superclass (expression) @heritage)?
+  superclass: (superclass [(constant) (scope_resolution) (identifier) (call)] @heritage)?
 ) @class
 
 ;; Modules
@@ -64,7 +64,7 @@
   method: (identifier) @include_kind
   (#match? @include_kind "^(include|extend)$")
   arguments: (argument_list
-    (expression) @mixin_module))
+    [(constant) (scope_resolution) (call)] @mixin_module))
 
 ;; `alias new_name old_name` keyword — emits a named binding.
 ;; tree-sitter-ruby labels the NEW name as field `name` and the original as `alias`.
@@ -85,7 +85,7 @@
 ;; lowercase identifiers parse as `identifier`, not `constant`.
 (assignment
   left: (constant) @const_alias.new
-  right: (expression) @const_alias.source)
+  right: [(constant) (scope_resolution) (call)] @const_alias.source)
 
 ;; Constant declarations — any `UPPERCASE_NAME = <value>` assignment. lhs
 ;; must be `(constant)` (uppercase Ruby identifier); rhs is unconstrained,

@@ -1,5 +1,6 @@
 use super::spec::SoliditySpec;
 use crate::calls::extract_calls;
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawImport, RawNode};
@@ -47,7 +48,7 @@ impl LanguageProvider for SolidityProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         let tree = PARSER
-            .with(|p| p.borrow_mut().parse(source, None))
+            .with(|p| parse_with_budget(&mut p.borrow_mut(), source, ParseBudget::DEFAULT))
             .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
 
         let mut cursor = QueryCursor::new();

@@ -2,6 +2,7 @@ use super::receiver_types::extract_ruby_calls;
 use super::spec::RubySpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawImport, RawNode, RawRoute};
@@ -154,7 +155,7 @@ impl LanguageProvider for RubyProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         let tree = PARSER
-            .with(|p| p.borrow_mut().parse(source, None))
+            .with(|p| parse_with_budget(&mut p.borrow_mut(), source, ParseBudget::DEFAULT))
             .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
 
         // Build method-row → is_exported map from visibility markers in class bodies.

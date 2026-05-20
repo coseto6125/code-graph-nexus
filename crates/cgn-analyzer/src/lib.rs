@@ -33,6 +33,7 @@ pub mod lua;
 pub mod markdown;
 pub mod move_lang;
 pub mod nim;
+pub mod parse_budget;
 pub mod php;
 pub mod post_process;
 pub mod preproc_fallback;

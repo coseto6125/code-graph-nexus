@@ -2,6 +2,7 @@ use super::receiver_types::extract_kotlin_calls;
 use super::spec::KotlinSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{has_import_from, node_span, MODULE_LEVEL_SOURCE};
+use crate::parse_budget::{parse_with_budget, ParseBudget};
 use cgn_core::analyzer::lang_spec::LangSpec;
 use cgn_core::analyzer::provider::LanguageProvider;
 use cgn_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
@@ -148,7 +149,7 @@ impl LanguageProvider for KotlinProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         let tree = PARSER
-            .with(|p| p.borrow_mut().parse(source, None))
+            .with(|p| parse_with_budget(&mut p.borrow_mut(), source, ParseBudget::DEFAULT))
             .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
 
         let mut cursor = QueryCursor::new();

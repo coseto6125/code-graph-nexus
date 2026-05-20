@@ -68,3 +68,28 @@ fn test_regular_method_stays_method() {
         g.nodes
     );
 }
+
+// ── Out-of-class `= default;` / `= delete;` (ABI 15 grammar quirk) ───────────
+
+// Out-of-class definitions surface as Method (not Constructor) — same
+// convention the cpp/queries.scm workaround for tree-sitter-cpp#357
+// preserves for the regressed `= default;` AST shape.
+#[test]
+fn out_of_class_constructor_eq_default_emits_method() {
+    let g = parse("Foo::Foo() = default;\n");
+    assert!(
+        has(&g, "Foo", NodeKind::Method),
+        "out-of-class `Foo::Foo() = default;` must emit Method; nodes: {:#?}",
+        g.nodes
+    );
+}
+
+#[test]
+fn out_of_class_constructor_eq_delete_emits_method() {
+    let g = parse("Foo::Foo() = delete;\n");
+    assert!(
+        has(&g, "Foo", NodeKind::Method),
+        "out-of-class `Foo::Foo() = delete;` must emit Method; nodes: {:#?}",
+        g.nodes
+    );
+}

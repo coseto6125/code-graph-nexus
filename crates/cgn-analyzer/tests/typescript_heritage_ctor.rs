@@ -27,6 +27,22 @@ fn exported_class_extends_populates_heritage() {
     assert!(cat.is_exported);
 }
 
+/// `(expression)` widening: `extends a.b` (member_expression) is now captured.
+#[test]
+fn class_extends_member_expression_populates_heritage() {
+    let g = parse("class Cat extends animals.Animal {}");
+    let cat = g.nodes.iter().find(|n| n.name == "Cat").expect("Cat node");
+    assert_eq!(cat.heritage, vec!["animals.Animal"], "nodes: {:?}", g.nodes);
+}
+
+/// `(expression)` widening: `extends mixin(Base)` (call_expression) is now captured.
+#[test]
+fn class_extends_call_expression_populates_heritage() {
+    let g = parse("class Cat extends mixin(Base) {}");
+    let cat = g.nodes.iter().find(|n| n.name == "Cat").expect("Cat node");
+    assert_eq!(cat.heritage, vec!["mixin(Base)"], "nodes: {:?}", g.nodes);
+}
+
 // ── Heritage: implements ──────────────────────────────────────────────────────
 
 #[test]
