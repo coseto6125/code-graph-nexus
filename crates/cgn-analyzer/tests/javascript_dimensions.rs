@@ -137,6 +137,40 @@ fn heritage_extends_populates() {
     );
 }
 
+/// `(expression)` widening: `extends a.b` (member_expression) is now captured.
+#[test]
+fn heritage_extends_member_expression_populates() {
+    let src = "class Cat extends animals.Animal { meow() {} }";
+    let g = parse(src);
+    let cat = g
+        .nodes
+        .iter()
+        .find(|n| n.name == "Cat" && n.kind == NodeKind::Class)
+        .expect("Cat class node must exist");
+    assert!(
+        cat.heritage.contains(&"animals.Animal".to_string()),
+        "Cat.heritage must contain \"animals.Animal\"; got: {:?}",
+        cat.heritage
+    );
+}
+
+/// `(expression)` widening: `extends mixin(Base)` (call_expression) is now captured.
+#[test]
+fn heritage_extends_call_expression_populates() {
+    let src = "class Cat extends mixin(Base) { meow() {} }";
+    let g = parse(src);
+    let cat = g
+        .nodes
+        .iter()
+        .find(|n| n.name == "Cat" && n.kind == NodeKind::Class)
+        .expect("Cat class node must exist");
+    assert!(
+        cat.heritage.contains(&"mixin(Base)".to_string()),
+        "Cat.heritage must contain \"mixin(Base)\"; got: {:?}",
+        cat.heritage
+    );
+}
+
 // ── Imports (corpus-gap verification) ────────────────────────────────────────
 
 /// Verify the parser emits RawImports for ES `import` statements.
