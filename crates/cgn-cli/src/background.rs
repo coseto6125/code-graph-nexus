@@ -35,9 +35,16 @@ pub struct BgJob<'a> {
 /// quoting + redirect behaviour as production (otherwise tests would
 /// re-implement the template and silently drift).
 pub fn flock_preamble(lock: &Path) -> String {
+    let lock_dir = lock.with_file_name(format!(
+        "{}.d",
+        lock.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("cgn.lock")
+    ));
     format!(
-        "exec 9>{lock} || exit 0\nflock -n 9 || exit 0\n",
+        "if command -v flock >/dev/null 2>&1; then\n  exec 9>{lock} || exit 0\n  flock -n 9 || exit 0\nelse\n  mkdir {lock_dir} 2>/dev/null || exit 0\n  trap \"rmdir {lock_dir}\" EXIT INT TERM\n  : > {lock}\nfi\n",
         lock = shell_quote(lock),
+        lock_dir = shell_quote(lock_dir),
     )
 }
 
