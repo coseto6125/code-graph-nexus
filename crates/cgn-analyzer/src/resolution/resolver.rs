@@ -173,7 +173,12 @@ impl<'a> Resolver<'a> {
         caller_heritage: &[String],
     ) -> Vec<(NodeId, f32)> {
         let mut results = Vec::new();
+        // Normalize path to use forward slashes to match indexed paths.
+        #[cfg(not(windows))]
         let source_file_str = source_file.to_string_lossy();
+        #[cfg(windows)]
+        let source_file_str =
+            std::borrow::Cow::Owned(source_file.to_string_lossy().replace('\\', "/"));
 
         // Tier 1: Try SameFile (kind-aware so a property named `Foo` doesn't
         // win the lookup for a constructor call `Foo()` in the same file —
