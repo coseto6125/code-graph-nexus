@@ -342,17 +342,26 @@ pub(crate) fn parent_sha(worktree: &Path, sha: &str) -> io::Result<String> {
 pub(crate) fn sync_all_files(dir: &Path) -> io::Result<()> {
     for entry in walkdir::WalkDir::new(dir)
         .into_iter()
+        .filter_entry(|entry| entry.file_name() != "_src")
         .filter_map(Result::ok)
     {
         if entry.file_type().is_file() {
             if entry.file_name() == ".build.lock" {
                 continue;
             }
-            let f = File::open(entry.path())?;
-            f.sync_all()?;
+            sync_file(entry.path())?;
         }
     }
     Ok(())
+}
+
+fn sync_file(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        OpenOptions::new().write(true).open(path)?.sync_all()
+    }
+    #[cfg(not(windows))]
+    File::open(path)?.sync_all()
 }
 
 fn rename_dir_with_retry(from: &Path, to: &Path) -> io::Result<()> {

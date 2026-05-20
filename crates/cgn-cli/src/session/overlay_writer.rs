@@ -134,7 +134,7 @@ fn write_fragment_file(
         Ok(archive_bytes) => {
             let tmp = overlay_dir.join(format!("{fragment_id}.{batch_seq}.{input_idx}.tmp"));
             fs::write(&tmp, &archive_bytes)?;
-            let f = fs::File::open(&tmp)?;
+            let f = fs::OpenOptions::new().write(true).open(&tmp)?;
             f.sync_all()?;
             drop(f);
             replace_file(&tmp, &fragment_path)?;
