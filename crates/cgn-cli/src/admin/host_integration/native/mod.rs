@@ -19,13 +19,8 @@ const ACTIONS: &[menu::Item<'_>] = &[
 
 /// Entry point called from `host_integration::run`.
 pub fn run(theme: &ColorfulTheme) -> Result<(), CgnError> {
-    loop {
-        let choice = select(theme, "Native — pick a host", HOSTS)?;
-        match choice {
-            Some(0) | None => return Ok(()),
-            _ => unreachable!(),
-        }
-    }
+    let _ = select(theme, "Native — pick a host", HOSTS)?;
+    Ok(())
 }
 
 #[allow(dead_code)]

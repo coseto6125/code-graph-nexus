@@ -246,7 +246,14 @@ mod tests {
         let labels: Vec<&str> = MECHANISMS.iter().map(|(label, _)| *label).collect();
         assert_eq!(
             labels,
-            vec!["Codex CLI", "Gemini CLI", "MCP", "Native", "Hooks", "← Back"]
+            vec![
+                "Codex CLI",
+                "Gemini CLI",
+                "MCP",
+                "Native",
+                "Hooks",
+                "← Back"
+            ]
         );
     }
 }
