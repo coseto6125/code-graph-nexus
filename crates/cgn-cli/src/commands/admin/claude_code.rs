@@ -47,7 +47,7 @@ pub fn run_install_claude_code(
 ) -> Result<(), CgnError> {
     let events = match events_csv {
         Some(s) => parse_events(s)?,
-        None => prompt_events_tui()?,
+        None => prompt_events_tui("install")?,
     };
     let settings_path = resolve_settings_path(settings_path);
     let mut settings = read_or_init(&settings_path)?;
@@ -127,10 +127,10 @@ fn parse_events(csv: &str) -> Result<Vec<String>, CgnError> {
     Ok(out)
 }
 
-fn prompt_events_tui() -> Result<Vec<String>, CgnError> {
+pub(crate) fn prompt_events_tui(action: &str) -> Result<Vec<String>, CgnError> {
     use dialoguer::{theme::ColorfulTheme, MultiSelect};
     let chosen = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select Claude Code hook events to install")
+        .with_prompt(format!("Select Claude Code hook events to {action}"))
         .items(ALL_EVENTS)
         .interact()
         .map_err(|e| CgnError::Output(format!("TUI: {e}")))?;
