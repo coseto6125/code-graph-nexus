@@ -1,7 +1,6 @@
 # EgentCodePlexus
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/coseto6125/egent-code-plexus/badge)](https://scorecard.dev/viewer/?uri=github.com/coseto6125/egent-code-plexus)
-[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/egent-code-plexus&type=Date)](https://star-history.com/#coseto6125/egent-code-plexus&Date)
 
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/coseto6125/egent-code-plexus/releases)
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/coseto6125/egent-code-plexus/releases)
@@ -306,3 +305,7 @@ crates/
 ## 發佈狀態
 
 目前已驗證的安裝路徑是 `cargo install --git ...`，也就是從原始碼建置 `ecp`。release installer 已包含 checksum 與 provenance verification 流程，但必須等 tag 與 release assets 發佈後，binary 下載路徑才能做端到端驗證。Agent 安裝引導文件位於 [docs/skills/ecp-onboard/ONBOARDING.md](../skills/ecp-onboard/ONBOARDING.md)；它用來引導使用者完成安裝、首次索引、可選群組、MCP wiring 與後續建議。輔助式配置與設定流程仍在完善中。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/egent-code-plexus&type=Date)](https://star-history.com/#coseto6125/egent-code-plexus&Date)

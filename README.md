@@ -1,7 +1,6 @@
 # EgentCodePlexus
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/coseto6125/egent-code-plexus/badge)](https://scorecard.dev/viewer/?uri=github.com/coseto6125/egent-code-plexus)
-[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/egent-code-plexus&type=Date)](https://star-history.com/#coseto6125/egent-code-plexus&Date)
 
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/coseto6125/egent-code-plexus/releases)
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/coseto6125/egent-code-plexus/releases)
@@ -396,3 +395,7 @@ Onboarding for AI agents (URL bootstrap, Claude Code skill, plugin install) live
 ## Release status
 
 The current verified install path is `cargo install --git ...`, which builds `ecp` from source. Release installers already contain the checksum and provenance-verification flow, but they require a published tag and release assets before the binary download path can be end-to-end verified. The agent-facing onboarding skill is documented in [docs/skills/ecp-onboard/ONBOARDING.md](./docs/skills/ecp-onboard/ONBOARDING.md); it is intended to guide users through install, first index, optional groups, MCP wiring, and next steps. The assisted configuration/setup flow is still being refined.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/egent-code-plexus&type=Date)](https://star-history.com/#coseto6125/egent-code-plexus&Date)
