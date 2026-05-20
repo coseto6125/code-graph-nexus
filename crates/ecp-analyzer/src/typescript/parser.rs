@@ -510,8 +510,18 @@ impl LanguageProvider for TypeScriptProvider {
             }
         }
 
+<<<<<<< HEAD
         let param_names = collect_js_param_names(tree.root_node(), source);
         let call_metas = detect_js_ts_indirect(tree.root_node(), source, &nodes, &param_names);
+=======
+        let file_category = crate::resolution::builder::determine_category(&path.to_string_lossy());
+        let raw_function_metas = crate::function_meta::typescript::extract(
+            tree.root_node(),
+            source,
+            &nodes,
+            file_category,
+        );
+>>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
 
         Ok(LocalGraph {
             content_hash: [0; 8],
@@ -526,7 +536,11 @@ impl LanguageProvider for TypeScriptProvider {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+<<<<<<< HEAD
             call_metas,
+=======
+            raw_function_metas,
+>>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         })
     }
 }

@@ -164,7 +164,11 @@ impl LanguageProvider for VerilogProvider {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+<<<<<<< HEAD
             call_metas: vec![],
+=======
+            raw_function_metas: vec![],
+>>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         })
     }
 }
