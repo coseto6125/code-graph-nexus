@@ -1,30 +1,61 @@
 //! Tests for cross-platform spawn_detached (spec §4.5).
 
 use cgn_core::daemon::spawn_detached;
+use std::path::PathBuf;
+use std::process::Command;
+
+fn example_path() -> PathBuf {
+    let target_dir = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("target")
+        });
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let mut path = target_dir
+        .join(profile)
+        .join("examples")
+        .join("detached_marker_child");
+    if cfg!(windows) {
+        path.set_extension("exe");
+    }
+    if !path.exists() {
+        let status = Command::new(env!("CARGO"))
+            .args([
+                "build",
+                "-p",
+                "cgn-core",
+                "--example",
+                "detached_marker_child",
+            ])
+            .status()
+            .expect("spawn cargo build --example detached_marker_child");
+        assert!(
+            status.success(),
+            "cargo build --example detached_marker_child failed"
+        );
+    }
+    path
+}
 
 #[test]
 fn detached_child_outlives_parent_call() {
     let tmp = tempfile::tempdir().unwrap();
     let marker = tmp.path().join("child-ran");
     let marker_path = marker.to_string_lossy().into_owned();
+    let child = example_path();
+    let child_path = child.to_string_lossy().into_owned();
+    let cmd = [child_path.as_str(), marker_path.as_str()];
 
-    let cmd = if cfg!(windows) {
-        let cmd_path = marker_path.replace('"', r#"\""#);
-        vec![
-            "cmd".to_string(),
-            "/C".to_string(),
-            format!(r#"ping -n 2 127.0.0.1 >NUL & type NUL > "{cmd_path}""#),
-        ]
-    } else {
-        vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            format!("sleep 0.2; touch \"{marker_path}\""),
-        ]
-    };
-
-    let args: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
-    spawn_detached(&args).unwrap();
+    spawn_detached(&cmd).unwrap();
 
     // Wait for the marker (poll with timeout)
     let mut found = false;
