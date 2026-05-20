@@ -200,11 +200,14 @@
 ) @method
 
 ;; Out-of-class `Foo::~Foo() = default;` / `Foo::Foo() = default;` —
-;; tree-sitter-cpp ABI 15 (post-2025-09 regen) reparses these as
-;; `expression_statement > assignment_expression > call_expression` instead
-;; of `function_definition + default_method_clause`. The `= delete;` variants
-;; are unaffected. `default` is a reserved word so the RHS identifier can
-;; only carry that literal text — `#eq?` keeps the match scoped.
+;; tree-sitter-cpp ABI 15 (post-2025-09 regen with tree-sitter-cli >= 0.25.7)
+;; reparses these as `expression_statement > assignment_expression >
+;; call_expression` instead of `function_definition + default_method_clause`.
+;; The `= delete;` variants are unaffected. `#eq?` keeps the match scoped to
+;; the literal RHS `default` so false positives are essentially impossible.
+;; Tracking upstream: https://github.com/tree-sitter/tree-sitter-cpp/issues/357
+;; Remove this pattern once the grammar lands a fix (likely prec.dynamic on
+;; default_method_clause).
 (expression_statement
   (assignment_expression
     left: (call_expression
