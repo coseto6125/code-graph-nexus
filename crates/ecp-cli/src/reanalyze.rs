@@ -12,8 +12,9 @@ use ecp_analyzer::{
     dart::parser::DartProvider, go::parser::GoProvider, java::parser::JavaProvider,
     javascript::parser::JavaScriptProvider, kotlin::parser::KotlinProvider,
     markdown::parser::MarkdownProvider, php::parser::PhpProvider, python::parser::PythonProvider,
-    ruby::parser::RubyProvider, rust::parser::RustProvider, swift::parser::SwiftProvider,
-    typescript::parser::TypeScriptProvider, vue::parser::VueProvider, yaml::parser::YamlProvider,
+    ruby::parser::RubyProvider, rust::parser::RustProvider, svelte::parser::SvelteProvider,
+    swift::parser::SwiftProvider, typescript::parser::TypeScriptProvider, vue::parser::VueProvider,
+    yaml::parser::YamlProvider,
 };
 use ecp_core::analyzer::pipeline::AnalyzerPipeline;
 use ecp_core::analyzer::types::LocalGraph;
@@ -41,6 +42,7 @@ pub fn make_pipeline() -> AnalyzerPipeline {
     pipeline.register_provider(Box::new(MarkdownProvider::new().unwrap()));
     pipeline.register_provider(Box::new(YamlProvider::new().unwrap()));
     pipeline.register_provider(Box::new(VueProvider::new().unwrap()));
+    pipeline.register_provider(Box::new(SvelteProvider::new().unwrap()));
     pipeline
 }
 

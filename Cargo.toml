@@ -15,6 +15,7 @@ exclude = [
     "crates/vendor/tree-sitter-swift",
     "crates/vendor/tree-sitter-vue",
     "crates/vendor/tree-sitter-vyper",
+    "crates/vendor/tree-sitter-svelte",
 ]
 resolver = "2"
 

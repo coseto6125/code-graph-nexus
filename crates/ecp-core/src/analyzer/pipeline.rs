@@ -237,6 +237,11 @@ impl AnalyzerPipeline {
                 .iter()
                 .find(|p| p.name() == "vue")
                 .map(|p| p.as_ref()),
+            "svelte" => self
+                .providers
+                .iter()
+                .find(|p| p.name() == "svelte")
+                .map(|p| p.as_ref()),
             _ => None,
         }
     }
