@@ -25,6 +25,7 @@ CLAUDE.md
 # --- Project Specific (CGN) ---
 /.cgn/
 /.codegraph/
+/.gnx/
 /.sample_repo/
 
 # --- Parity Test Artifacts ---

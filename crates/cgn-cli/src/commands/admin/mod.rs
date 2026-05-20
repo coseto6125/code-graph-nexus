@@ -3,15 +3,18 @@
 
 use clap::Subcommand;
 
+pub mod claude;
 pub mod claude_code;
 pub mod codex;
 pub mod config;
 pub mod drop;
+pub mod gemini;
 pub mod group;
 pub mod index;
 pub mod install_hook;
 pub mod prune;
 pub mod sessions;
+pub(crate) mod skill_fs;
 #[derive(Subcommand, Debug)]
 pub enum AdminCommands {
     /// Install git ref-transaction hook for branch tracking (or Claude Code hooks with --claude-code)
@@ -38,10 +41,20 @@ pub enum AdminCommands {
         #[command(subcommand)]
         command: sessions::SessionsCommand,
     },
+    /// Scriptable Claude Code host integration commands
+    Claude {
+        #[command(subcommand)]
+        command: claude::ClaudeCommands,
+    },
     /// Scriptable Codex host integration commands
     Codex {
         #[command(subcommand)]
         command: codex::CodexCommands,
+    },
+    /// Scriptable Gemini host integration commands
+    Gemini {
+        #[command(subcommand)]
+        command: gemini::GeminiCommands,
     },
     /// Run MCP server (serve) or list exposed tools (tools).
     Mcp(crate::commands::mcp::McpArgs),
@@ -62,7 +75,9 @@ pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), cgn_core::
         AdminCommands::Sessions { command } => {
             sessions::run(command).map_err(cgn_core::CgnError::Output)
         }
+        AdminCommands::Claude { command } => claude::run(command),
         AdminCommands::Codex { command } => codex::run(command),
+        AdminCommands::Gemini { command } => gemini::run(command),
         AdminCommands::Mcp(args) => crate::commands::mcp::run(args, root_cmd),
         AdminCommands::VerifyResolver(args) => crate::commands::verify_resolver::run(args),
     }

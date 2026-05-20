@@ -1,9 +1,10 @@
 //! Scriptable Codex host integration commands for AI agents.
 
 use crate::admin::host_integration::native::codex;
+use crate::commands::admin::skill_fs::copy_dir_replace;
 use clap::Subcommand;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Subcommand, Debug)]
 pub enum CodexCommands {
@@ -147,29 +148,6 @@ fn codex_home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     home.join(".codex")
-}
-
-fn copy_dir_replace(src: &Path, dst: &Path) -> Result<(), cgn_core::CgnError> {
-    if dst.exists() {
-        fs::remove_dir_all(dst)?;
-    }
-    fs::create_dir_all(dst)?;
-    copy_dir_contents(src, dst)
-}
-
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), cgn_core::CgnError> {
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            fs::create_dir_all(&dst_path)?;
-            copy_dir_contents(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
 }
 
 impl SkillTarget {

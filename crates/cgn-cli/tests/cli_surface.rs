@@ -67,7 +67,9 @@ fn admin_help_lists_expected_entries() {
         "config",
         "group",
         "index",
+        "claude",
         "codex",
+        "gemini",
     ] {
         assert!(help.contains(cmd), "missing {cmd} in admin --help:\n{help}");
     }
