@@ -1,5 +1,8 @@
 # Code Graph Nexus
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/coseto6125/code-graph-nexus/badge)](https://scorecard.dev/viewer/?uri=github.com/coseto6125/code-graph-nexus)
+[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/code-graph-nexus&type=Date)](https://star-history.com/#coseto6125/code-graph-nexus&Date)
+
 A code intelligence graph for **LLMs and AI code agents** — one-shot CLI, zero-copy mmap, sub-second per query.
 
 [繁體中文 (Traditional Chinese)](./README_zh-TW.md)

@@ -1,5 +1,8 @@
 # Code Graph Nexus
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/coseto6125/code-graph-nexus/badge)](https://scorecard.dev/viewer/?uri=github.com/coseto6125/code-graph-nexus)
+[![Star History Chart](https://api.star-history.com/svg?repos=coseto6125/code-graph-nexus&type=Date)](https://star-history.com/#coseto6125/code-graph-nexus&Date)
+
 給 **LLM 與 AI 程式碼代理（AI code agents）** 用的代碼智能圖譜 — 單次 CLI 調用、mmap 零拷貝、每次查詢亞秒級。
 
 [English README](./README.md)
