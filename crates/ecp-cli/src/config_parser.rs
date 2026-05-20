@@ -104,7 +104,61 @@ pub fn parse_configs(repo_path: &Path) -> PathAliases {
         }
     }
 
-    // 6. C# toolchain: *.csproj files
+    // 6. jsconfig.json — identical schema to tsconfig.json `compilerOptions.paths`,
+    //    used by JS-only projects that skip TypeScript compilation. Confidence 0.95.
+    if let Ok(content) = std::fs::read_to_string(repo_path.join("jsconfig.json")) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(paths) = json
+                .pointer("/compilerOptions/paths")
+                .and_then(|v| v.as_object())
+            {
+                for (pattern, targets) in paths {
+                    if let Some(target_arr) = targets.as_array() {
+                        let mut replacements = Vec::new();
+                        for t in target_arr {
+                            if let Some(t_str) = t.as_str() {
+                                replacements.push(t_str.to_string());
+                            }
+                        }
+                        if !replacements.is_empty() {
+                            aliases.add(pattern, replacements);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 7. jest.config.json — static JSON variant. Confidence 0.75.
+    if let Ok(content) = std::fs::read_to_string(repo_path.join("jest.config.json")) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            parse_jest_module_name_mapper(&json, &mut aliases);
+        }
+    }
+
+    // 8. jest.config.js / jest.config.ts — JS/TS source, cannot eval.
+    //    Regex-extract `moduleNameMapper` object literals; dynamic configs
+    //    (variables, spreads, computed keys) are skipped with a BlindSpot note.
+    //    Confidence 0.75.
+    for jest_js in &["jest.config.js", "jest.config.ts"] {
+        if let Ok(content) = std::fs::read_to_string(repo_path.join(jest_js)) {
+            parse_jest_module_name_mapper_js(&content, &mut aliases);
+            break; // prefer .js over .ts if both somehow exist
+        }
+    }
+
+    // 9. webpack.config.js / webpack.config.ts — JS/TS source, cannot eval.
+    //    Regex-extract `resolve.alias` object literals; `path.resolve(__dirname, ...)`
+    //    captures the literal string argument (the `__dirname` substitution is
+    //    documented as a limitation). Confidence 0.85.
+    for webpack_js in &["webpack.config.js", "webpack.config.ts"] {
+        if let Ok(content) = std::fs::read_to_string(repo_path.join(webpack_js)) {
+            parse_webpack_resolve_alias(&content, &mut aliases);
+            break;
+        }
+    }
+
+    // 11. C# toolchain: *.csproj files
     for meta in parse_csproj_files(repo_path) {
         // Register each ProjectReference as a path alias so the resolver can
         // follow cross-project symbol references within the same solution.
@@ -136,6 +190,165 @@ pub fn parse_configs(repo_path: &Path) -> PathAliases {
 
     aliases
 }
+
+// ─── Jest / Webpack helpers ──────────────────────────────────────────────────
+
+/// Parse `moduleNameMapper` from a `jest.config.json` value already
+/// deserialised into [`serde_json::Value`].  Called for both the JSON variant
+/// and the JS/TS regex-extracted fragment.
+///
+/// Jest keys are regex patterns.  We only promote patterns following the
+/// `^prefix/(.*)$` shape to ecp aliases; anything else is too dynamic to
+/// represent and is silently skipped (the skipped entry still maps in Jest —
+/// we just can't pre-compute a path for the resolver).
+///
+/// Values are `string | [string, ...]`; we collect the first string per
+/// entry (the primary replacement).
+fn parse_jest_module_name_mapper(json: &serde_json::Value, aliases: &mut PathAliases) {
+    let Some(mapper) = json
+        .pointer("/moduleNameMapper")
+        .and_then(|v| v.as_object())
+    else {
+        return;
+    };
+    for (regex_key, target_val) in mapper {
+        let Some(alias_pattern) = jest_regex_to_alias(regex_key) else {
+            continue;
+        };
+        let replacement = match target_val {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(arr) => {
+                let Some(first) = arr.first().and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                first.to_string()
+            }
+            _ => continue,
+        };
+        let replacement = jest_replacement_to_glob(&replacement);
+        aliases.add(alias_pattern, vec![replacement]);
+    }
+}
+
+/// Extract `moduleNameMapper` entries from a JS/TS jest config file via regex.
+///
+/// Handles static object-literal keys of the form `"^prefix/(.*)$": "path/$1"`.
+/// Dynamic JS constructs (variables, template literals, spreads, `require(…)`)
+/// are not supported; those entries are silently skipped.
+///
+/// **BlindSpot note**: configs that export a function (`module.exports = () => …`)
+/// or use `jest.config()` builders will yield zero entries — the caller should
+/// surface a `BlindSpot` record if zero aliases were added from an otherwise
+/// non-empty JS file.  That integration is left to the pipeline wiring layer;
+/// this function focuses purely on extraction.
+fn parse_jest_module_name_mapper_js(content: &str, aliases: &mut PathAliases) {
+    // Match key-value pairs like:
+    //   "^@app/(.*)$": "<rootDir>/src/app/$1"
+    //   "^@app/(.*)$": ["<rootDir>/src/app/$1"]
+    // Keys and values must be string literals (double-quoted).
+    // We deliberately do not support single-quoted or backtick strings.
+    let re = &JEST_MAPPER_PAIR_RE;
+    for cap in re.captures_iter(content) {
+        let key = cap.get(1).map_or("", |m| m.as_str());
+        // Group 2 = plain string value, group 3 = first element of array value.
+        let val = cap.get(2).or_else(|| cap.get(3)).map_or("", |m| m.as_str());
+        if val.is_empty() {
+            continue;
+        }
+        let Some(alias_pattern) = jest_regex_to_alias(key) else {
+            continue;
+        };
+        let replacement = jest_replacement_to_glob(val);
+        aliases.add(alias_pattern, vec![replacement]);
+    }
+}
+
+/// Extract `resolve.alias` entries from a JS/TS webpack config file via regex.
+///
+/// Handles static object-literal values:
+/// - Plain string:  `'@app': path.resolve(__dirname, 'src/app')` → `src/app/*`
+/// - Plain string:  `'@app': './src/app'` → `./src/app/*`
+///
+/// The `__dirname` variable is treated as the repo root (empty prefix);
+/// the literal path argument of `path.resolve(…)` is used directly.
+///
+/// **BlindSpot note**: keys that are not string literals (computed properties,
+/// variables) are silently skipped.
+fn parse_webpack_resolve_alias(content: &str, aliases: &mut PathAliases) {
+    let re = &WEBPACK_ALIAS_PAIR_RE;
+    for cap in re.captures_iter(content) {
+        let key = cap.get(1).map_or("", |m| m.as_str());
+        // Two capture groups: plain string (group 2) or path.resolve arg (group 3).
+        let raw_val = cap.get(2).or_else(|| cap.get(3)).map_or("", |m| m.as_str());
+        if key.is_empty() || raw_val.is_empty() {
+            continue;
+        }
+        // Trim leading "./" or "/" to produce a relative path; keep it if not present.
+        let val = raw_val.trim_start_matches("./");
+        let pattern = format!("{}/*", key);
+        let replacement = format!("{}/*", val);
+        aliases.add(&pattern, vec![replacement]);
+    }
+}
+
+/// Convert a Jest regex pattern to an ecp alias pattern, or return `None` if
+/// the pattern is too dynamic to represent as a simple prefix wildcard.
+///
+/// Accepted shape: `^<literal_prefix>/(.*)$`  →  `<literal_prefix>/*`
+/// Everything else (no `^`, no capturing group, infix patterns) is rejected.
+fn jest_regex_to_alias(regex_key: &str) -> Option<String> {
+    // Must start with `^` and end with `(.*)$` or `(.*)`
+    let key = regex_key.trim_matches('"');
+    if !key.starts_with('^') {
+        return None;
+    }
+    let body = &key[1..]; // strip leading `^`
+                          // Strip trailing `$` if present, then check for `(.*)`
+    let body = body.strip_suffix('$').unwrap_or(body);
+    let prefix = body.strip_suffix("(.*)")?;
+    // Reject empty prefix — `^(.*)$` is a catch-all, not an alias.
+    if prefix.is_empty() {
+        return None;
+    }
+    // The ecp pattern is `prefix/*` where `*` captures the wildcard part.
+    Some(format!("{}*", prefix))
+}
+
+/// Convert a Jest `$1` replacement to an ecp glob replacement (`*`).
+///
+/// `<rootDir>/src/app/$1` → `src/app/*`  (strips `<rootDir>/` prefix)
+/// `./src/app/$1`         → `src/app/*`  (strips leading `./`)
+/// `src/app/$1`           → `src/app/*`
+fn jest_replacement_to_glob(val: &str) -> String {
+    let v = val.trim_matches('"');
+    // Strip `<rootDir>/` — jest's reference to the project root maps to the
+    // repo root in ecp's path model.
+    let v = v
+        .strip_prefix("<rootDir>/")
+        .or_else(|| v.strip_prefix("<rootDir>"))
+        .unwrap_or(v);
+    let v = v.trim_start_matches("./");
+    // Replace Jest's `$1` with ecp's `*`.
+    v.replace("$1", "*")
+}
+
+// Compile-once regexes for JS config extraction.
+static JEST_MAPPER_PAIR_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    // Matches: "^key$": "value"  or  "^key$": ["value", ...]
+    // Group 1 = key (regex pattern), Group 2 = first string value.
+    // Handles the array case by capturing only the first quoted element.
+    regex::Regex::new(r#""(\^[^"]+)"\s*:\s*(?:"([^"]+)"|(?:\[\s*"([^"]+)"[^\]]*\]))"#).unwrap()
+});
+
+static WEBPACK_ALIAS_PAIR_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    // Matches: '@key': 'value'  or  '@key': path.resolve(__dirname, 'value')
+    // Also handles double-quoted keys/values.
+    // Group 1 = alias key, Group 2 = plain string value, Group 3 = path.resolve arg.
+    regex::Regex::new(
+            r#"['"]([^'"]+)['"]\s*:\s*(?:path\.resolve\s*\(\s*(?:__dirname\s*,\s*)?['"]([^'"]+)['"]\s*\)|['"]([^'"]+)['"])"#,
+        )
+        .unwrap()
+});
 
 // ─── C# Config ──────────────────────────────────────────────────────────────
 
@@ -720,6 +933,206 @@ mod tests {
         assert!(
             !traversal_found,
             "..-traversal ProjectReference must not be registered as an alias"
+        );
+    }
+
+    // ── jsconfig.json ─────────────────────────────────────────────────────
+
+    #[test]
+    fn jsconfig_json_compiler_options_paths_loaded() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("jsconfig.json"),
+            r#"{ "compilerOptions": { "baseUrl": ".", "paths": { "@ui/*": ["src/ui/*"] } } }"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("@ui/Button", |c| {
+            found.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            found,
+            vec!["src/ui/Button"],
+            "jsconfig.json paths must resolve"
+        );
+    }
+
+    // ── jest.config.json ──────────────────────────────────────────────────
+
+    #[test]
+    fn jest_config_json_module_name_mapper_string_value() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("jest.config.json"),
+            r#"{ "moduleNameMapper": { "^@app/(.*)$": "<rootDir>/src/app/$1" } }"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("@app/services/Auth", |c| {
+            found.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            found,
+            vec!["src/app/services/Auth"],
+            "jest.config.json moduleNameMapper string value must resolve"
+        );
+    }
+
+    #[test]
+    fn jest_config_json_module_name_mapper_array_value() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("jest.config.json"),
+            r#"{ "moduleNameMapper": { "^@lib/(.*)$": ["<rootDir>/src/lib/$1", "<rootDir>/lib/$1"] } }"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("@lib/utils", |c| {
+            found.push(c.to_string());
+            true
+        });
+        // Only the first array entry is registered as a replacement.
+        assert!(
+            found.contains(&"src/lib/utils".to_string()),
+            "jest.config.json array value first entry must resolve; got {:?}",
+            found
+        );
+    }
+
+    #[test]
+    fn jest_config_json_non_prefix_regex_is_skipped() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("jest.config.json"),
+            // This pattern has no `^` anchor — too dynamic to represent.
+            r#"{ "moduleNameMapper": { "dynamic(.*)": "src/$1" } }"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("dynamic/foo", |c| {
+            found.push(c.to_string());
+            true
+        });
+        assert!(
+            found.is_empty(),
+            "non-prefix regex patterns must be skipped; got {:?}",
+            found
+        );
+    }
+
+    // ── jest.config.js (JS text extraction) ──────────────────────────────
+
+    #[test]
+    fn jest_config_js_module_name_mapper_extracted() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("jest.config.js"),
+            r#"
+module.exports = {
+  moduleNameMapper: {
+    "^@shared/(.*)$": "<rootDir>/packages/shared/$1",
+  },
+};
+"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("@shared/hooks/useAuth", |c| {
+            found.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            found,
+            vec!["packages/shared/hooks/useAuth"],
+            "jest.config.js moduleNameMapper must be extracted via regex"
+        );
+    }
+
+    // ── webpack.config.js ─────────────────────────────────────────────────
+
+    #[test]
+    fn webpack_config_js_resolve_alias_plain_string() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("webpack.config.js"),
+            r#"
+const path = require('path');
+module.exports = {
+  resolve: {
+    alias: {
+      '@components': './src/components',
+      '@utils': './src/utils',
+    },
+  },
+};
+"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut components = Vec::new();
+        aliases.expand("@components/Button", |c| {
+            components.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            components,
+            vec!["src/components/Button"],
+            "webpack.config.js plain string alias must resolve"
+        );
+
+        let mut utils = Vec::new();
+        aliases.expand("@utils/format", |c| {
+            utils.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            utils,
+            vec!["src/utils/format"],
+            "webpack.config.js second alias must resolve"
+        );
+    }
+
+    #[test]
+    fn webpack_config_js_resolve_alias_path_resolve() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("webpack.config.js"),
+            r#"
+const path = require('path');
+module.exports = {
+  resolve: {
+    alias: {
+      '@api': path.resolve(__dirname, 'src/api'),
+    },
+  },
+};
+"#,
+        )
+        .unwrap();
+
+        let aliases = parse_configs(dir.path());
+        let mut found = Vec::new();
+        aliases.expand("@api/client", |c| {
+            found.push(c.to_string());
+            true
+        });
+        assert_eq!(
+            found,
+            vec!["src/api/client"],
+            "webpack.config.js path.resolve alias must resolve (capturing literal arg, __dirname substituted)"
         );
     }
 }
