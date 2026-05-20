@@ -1,6 +1,10 @@
 .gitnexus/
 .sample_repo/
-.codegraph
+.codegraph/
+.gitnexus/
+.ruff_cache
+.worktrees/
+.sample_repo/
 
 # Parity test fixtures (dev-local, generated per language)
 tests/parity/fixtures/*/sample_project/
@@ -46,3 +50,4 @@ crates/vendor/*/build/
 /refactor_*.py
 /optimize_*.py
 /update_*.py
+tests/parity/fixtures/basic/.gitnexus-rs/graph.bin
