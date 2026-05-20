@@ -69,6 +69,43 @@
     (assignment
       left: (identifier) @variable.name) @variable))
 
+;; Decorators — attach raw decorator text to the parent function or class so
+;; downstream consumers (Task #10/11 flag wiring, Tier 3 route detectors) can
+;; read them.  Two sub-patterns per definition type:
+;;   • non-call: `@property`, `@staticmethod`, `@functools.cached_property`
+;;     → capture the identifier or dotted-attribute as-is.
+;;   • call:     `@app.get("/users")`, `@click.command()`
+;;     → capture only the call *target* (`function:` field), dropping arguments.
+;;     Requirement: `@app.get("/users")` → "app.get", not "app.get(\"/users\")".
+;;
+;; Each pattern also re-captures `@function` / `@class` (the inner definition
+;; node) so the parser's span-dedup loop merges decorators onto the same
+;; RawNode that the plain function/class patterns create.
+
+;; function — non-call decorator (@property, @staticmethod, @functools.lru_cache …)
+(decorated_definition
+  (decorator [(identifier) (attribute)] @decorator)
+  definition: (function_definition
+    name: (identifier) @function.name) @function)
+
+;; function — call decorator (@app.get("/path"), @click.command() …)
+(decorated_definition
+  (decorator (call function: (_) @decorator))
+  definition: (function_definition
+    name: (identifier) @function.name) @function)
+
+;; class — non-call decorator
+(decorated_definition
+  (decorator [(identifier) (attribute)] @decorator)
+  definition: (class_definition
+    name: (identifier) @class.name) @class)
+
+;; class — call decorator
+(decorated_definition
+  (decorator (call function: (_) @decorator))
+  definition: (class_definition
+    name: (identifier) @class.name) @class)
+
 ;; Routes
 (call
   function: (attribute attribute: (identifier) @route.method (#match? @route.method "^(get|post|put|delete|patch|all|options|head|route|add_route|add_url_rule|add_api_route|GET|POST|PUT|DELETE|PATCH|ROUTE)$"))
