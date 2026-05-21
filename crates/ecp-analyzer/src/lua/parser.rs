@@ -223,6 +223,7 @@ impl LanguageProvider for LuaProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

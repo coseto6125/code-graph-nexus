@@ -430,6 +430,7 @@ impl GraphBuilder {
                     span: raw_node.span,
                     community_id: 0,
                     owner_class: owner_class_ref,
+                    content_hash: raw_node.content_hash,
                 });
 
                 current_node_idx += 1;
@@ -505,6 +506,7 @@ impl GraphBuilder {
                             span: raw_node.span,
                             community_id: 0,
                             owner_class: StrRef::default(),
+                            content_hash: 0,
                         });
 
                         route_edges.push(Edge {
@@ -534,6 +536,7 @@ impl GraphBuilder {
                         span: raw_route.span,
                         community_id: 0,
                         owner_class: StrRef::default(),
+                        content_hash: 0,
                     });
 
                     // Resolve the imperative-route handler, if the parser captured
@@ -794,6 +797,7 @@ impl GraphBuilder {
                     span: (0, 0, 0, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 });
 
                 // Encode score in the edge reason: "{tag}:{score}:{reason}".
@@ -1272,6 +1276,7 @@ impl GraphBuilder {
                     .unwrap_or((0, 0, 0, 0)),
                 community_id: process_node_community,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             });
 
             for (step_idx, &member_idx) in tr.trace.iter().enumerate() {
@@ -1373,6 +1378,7 @@ impl GraphBuilder {
                 span: (0, 0, 0, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             });
             file_node_idx.insert(path_str, file_node_id);
         }
@@ -1894,6 +1900,7 @@ mod tests {
                 decorators: vec![],
                 calls: vec!["thing".into()],
                 owner_class: None,
+                content_hash: 0,
             }],
             documents: vec![],
             imports: vec![RawImport {
@@ -1925,6 +1932,7 @@ mod tests {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             }],
             documents: vec![],
             imports: vec![],
@@ -2043,6 +2051,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
                 RawNode {
                     name: "handle_a".into(),
@@ -2054,6 +2063,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
                 RawNode {
                     name: "handle_b".into(),
@@ -2065,6 +2075,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
                 RawNode {
                     name: "handle_c".into(),
@@ -2076,6 +2087,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
             ],
             documents: vec![],
@@ -2146,6 +2158,7 @@ mod tests {
             decorators: vec![],
             calls: vec![],
             owner_class: None,
+            content_hash: 0,
         }];
         let mut candidates = vec![];
         for i in 0..60u32 {
@@ -2161,6 +2174,7 @@ mod tests {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             });
         }
         let g = LocalGraph {
@@ -2221,6 +2235,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
                 RawNode {
                     name: "get_db".into(),
@@ -2232,6 +2247,7 @@ mod tests {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 },
             ],
             documents: vec![],
@@ -2286,6 +2302,7 @@ mod tests {
                 decorators: vec![],
                 calls,
                 owner_class: None,
+                content_hash: 0,
             }],
             documents: vec![],
             imports: vec![],
@@ -2474,6 +2491,7 @@ mod tests {
                         decorators: vec![],
                         calls: vec!["other_fn".into()],
                         owner_class: None,
+                        content_hash: 0,
                     }],
                     documents: vec![],
                     imports: vec![],
@@ -2513,6 +2531,7 @@ mod tests {
                             decorators: vec![],
                             calls: vec![],
                             owner_class: None,
+                            content_hash: 0,
                         },
                         RawNode {
                             name: "Other".into(),
@@ -2524,6 +2543,7 @@ mod tests {
                             decorators: vec![],
                             calls: vec![],
                             owner_class: None,
+                            content_hash: 0,
                         },
                         RawNode {
                             name: "other_fn".into(),
@@ -2535,6 +2555,7 @@ mod tests {
                             decorators: vec![],
                             calls: vec![],
                             owner_class: None,
+                            content_hash: 0,
                         },
                     ],
                     documents: vec![],
@@ -2663,6 +2684,7 @@ mod tests {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             }],
             documents: vec![],
             imports: vec![],
@@ -2697,6 +2719,7 @@ mod tests {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             }],
             documents: vec![],
             imports: vec![],

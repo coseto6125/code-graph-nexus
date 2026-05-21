@@ -577,6 +577,7 @@ mod tests {
                 span: (0, 0, 1, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: uid_b,
@@ -586,6 +587,7 @@ mod tests {
                 span: (1, 0, 2, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
         ];
         g.edges = vec![
@@ -676,6 +678,7 @@ mod tests {
                 span: (0, 0, 1, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: uid_c,
@@ -685,6 +688,7 @@ mod tests {
                 span: (2, 0, 3, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: uid_v,
@@ -694,6 +698,7 @@ mod tests {
                 span: (4, 0, 5, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
         ];
         g.edges = vec![Edge {

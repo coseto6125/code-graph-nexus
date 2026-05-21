@@ -73,6 +73,7 @@ fn build_graph(nodes_spec: &[NodeSpec<'_>], extra_edges: &[(usize, usize)]) -> (
                 span: (ns.line, 0, ns.line + 10, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             }
         })
         .collect();

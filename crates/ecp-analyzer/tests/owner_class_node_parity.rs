@@ -29,6 +29,7 @@ fn raw_node(name: &str, kind: NodeKind, owner_class: Option<&str>) -> RawNode {
         decorators: vec![],
         calls: vec![],
         owner_class: owner_class.map(str::to_string),
+        content_hash: 0,
     }
 }
 

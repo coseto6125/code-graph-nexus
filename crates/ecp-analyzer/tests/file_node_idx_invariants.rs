@@ -28,6 +28,7 @@ fn raw_fn(name: &str) -> RawNode {
         decorators: vec![],
         calls: vec![],
         owner_class: None,
+        content_hash: 0,
     }
 }
 

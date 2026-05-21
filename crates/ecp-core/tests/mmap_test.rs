@@ -32,6 +32,7 @@ fn test_mmap_graph_access() {
             span: (1, 0, 10, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         }],
         edges: vec![],
         out_offsets: vec![0, 0],

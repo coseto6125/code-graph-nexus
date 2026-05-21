@@ -38,6 +38,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: ecp_core::uid::compute(
@@ -52,6 +53,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: ecp_core::uid::compute(
@@ -66,6 +68,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: ecp_core::uid::compute(NodeKind::Document, "docs/widget.md", None, "widget_doc"),
@@ -75,6 +78,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: ecp_core::uid::compute(
@@ -89,6 +93,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
     ];
 
@@ -329,6 +334,7 @@ fn empty_buckets_emit_empty_array_in_json() {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         }],
         edges: vec![],
         out_offsets: vec![0; 2],
@@ -429,6 +435,7 @@ fn text_format_empty_bucket_shows_none() {
             span: (1, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         }],
         edges: vec![],
         out_offsets: vec![0; 2],
@@ -488,6 +495,7 @@ fn each_bucket_independently_capped_at_top_k() {
             span: (i as u32, 0, i as u32 + 1, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         })
         .collect();
     let n = nodes.len() as u32;

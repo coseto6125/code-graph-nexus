@@ -144,6 +144,7 @@ impl LanguageProvider for VueProvider {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
 
@@ -158,6 +159,7 @@ impl LanguageProvider for VueProvider {
                     decorators: vec![],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
         }
@@ -186,6 +188,7 @@ impl LanguageProvider for VueProvider {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             });
 
             let body_node = match raw_text_node {

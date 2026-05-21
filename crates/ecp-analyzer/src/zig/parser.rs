@@ -255,6 +255,7 @@ impl LanguageProvider for ZigProvider {
                     span: n.span,
                     calls: Vec::new(),
                     owner_class: None,
+                    content_hash: 0,
                 }
             })
             .collect();

@@ -1313,6 +1313,7 @@ mod tests {
                     span: (0, 0, 5, 1),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Function, "src/x.ts", None, "callee"),
@@ -1322,6 +1323,7 @@ mod tests {
                     span: (6, 0, 8, 1),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
             ],
             edges: vec![Edge {
@@ -1384,6 +1386,7 @@ mod tests {
                     span: (0, 0, 1, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Function, "src/x.ts", None, "b"),
@@ -1393,6 +1396,7 @@ mod tests {
                     span: (2, 0, 3, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Function, "src/x.ts", None, "c"),
@@ -1402,6 +1406,7 @@ mod tests {
                     span: (4, 0, 5, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
             ],
             edges: vec![
@@ -1474,6 +1479,7 @@ mod tests {
                     span: (i as u32 * 2, 0, i as u32 * 2 + 1, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 })
                 .collect(),
             edges: vec![
@@ -1761,6 +1767,7 @@ mod tests {
                 span: (0, 0, 1, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             }],
             edges: vec![],
             out_offsets: vec![0, 0],
@@ -1838,6 +1845,7 @@ mod tests {
                     span: (0, 0, 1, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Function, "src/x.ts", None, "leaf_a"),
@@ -1847,6 +1855,7 @@ mod tests {
                     span: (2, 0, 3, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Function, "src/x.ts", None, "leaf_b"),
@@ -1856,6 +1865,7 @@ mod tests {
                     span: (4, 0, 5, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
             ],
             edges: vec![
@@ -2218,6 +2228,7 @@ mod tests {
                     span: (0, 0, 1, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
                 Node {
                     uid: crate::uid::compute(NodeKind::Method, "src/x.ts", None, "my_method"),
@@ -2227,6 +2238,7 @@ mod tests {
                     span: (2, 0, 3, 0),
                     community_id: 0,
                     owner_class: StrRef::default(),
+                    content_hash: 0,
                 },
             ],
             edges: vec![],
@@ -2351,6 +2363,7 @@ mod tests {
                 span: (0, 0, 2, 1),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             }],
             edges: vec![],
             out_offsets: vec![0, 0],

@@ -137,6 +137,7 @@ fn build_graph(
                 span: (1, 0, 5, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: route_uid,
@@ -146,6 +147,7 @@ fn build_graph(
                 span: (1, 0, 5, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
         ],
         edges,

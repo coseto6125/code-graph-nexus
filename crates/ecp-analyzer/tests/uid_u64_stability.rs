@@ -22,6 +22,7 @@ fn make_local_graph() -> LocalGraph {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             },
             RawNode {
                 name: "ConfigLoader".to_string(),
@@ -33,6 +34,7 @@ fn make_local_graph() -> LocalGraph {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             },
             RawNode {
                 name: "load".to_string(),
@@ -44,6 +46,7 @@ fn make_local_graph() -> LocalGraph {
                 decorators: vec![],
                 calls: vec!["parseConfig".to_string()],
                 owner_class: Some("ConfigLoader".to_string()),
+                content_hash: 0,
             },
         ],
         documents: vec![],

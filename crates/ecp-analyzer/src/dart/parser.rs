@@ -238,6 +238,9 @@ impl LanguageProvider for DartProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[v_root.start_byte()..v_root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -285,6 +288,9 @@ impl LanguageProvider for DartProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[root.start_byte()..root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -384,5 +390,6 @@ fn synth_typedef_from_misparse(
         ),
         calls: Vec::new(),
         owner_class: None,
+        content_hash: ecp_core::uid::xxh3_64_bytes(&source[v_root.start_byte()..v_root.end_byte()]),
     })
 }

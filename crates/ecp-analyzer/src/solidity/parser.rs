@@ -171,6 +171,7 @@ impl LanguageProvider for SolidityProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

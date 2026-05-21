@@ -133,6 +133,7 @@ fn two_class_validate_graph(foo_file: &str, bar_file: &str) -> Vec<u8> {
             span: (2, 4, 3, 0),
             community_id: 0,
             owner_class: owner_foo_ref,
+            content_hash: 0,
         },
         Node {
             uid: uid_bar,
@@ -142,6 +143,7 @@ fn two_class_validate_graph(foo_file: &str, bar_file: &str) -> Vec<u8> {
             span: (2, 4, 3, 0),
             community_id: 0,
             owner_class: owner_bar_ref,
+            content_hash: 0,
         },
     ];
 
@@ -344,6 +346,7 @@ fn test_rename_bare_name_hits_top_level_function() {
                 span: (1, 0, 2, 0),
                 community_id: 0,
                 owner_class: ecp_core::pool::StrRef::default(),
+                content_hash: 0,
             }],
             edges: vec![],
             out_offsets: vec![0u32, 0],
