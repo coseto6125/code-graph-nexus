@@ -1092,6 +1092,10 @@ impl LanguageProvider for PythonProvider {
             (!fields.is_empty()).then(|| fields.into_boxed_slice())
         };
 
+        // Same pool-isolation contract as `schema_fields` above:
+        // `RawEventTopic.topic_literal` is a `StrRef` whose byte offset is
+        // relative to this local pool. The pool drops at end of scope; the
+        // builder must re-intern the literal before resolution.
         let event_topics = {
             let mut pool = StringPool::new();
             let topics = crate::event_topic::extract_event_topics(
