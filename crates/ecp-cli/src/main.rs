@@ -117,6 +117,9 @@ enum Commands {
     /// blind-spot candidates (cross-owner-class fields that share the name
     /// but have no mirror edge). Accepts `Class.field` or bare `field`.
     FindSchemaBindings(commands::find_schema_bindings::FindSchemaBindingsArgs),
+    /// List `EventTopicMirror` heuristic edges: (publisher_fn, subscriber_fn, topic, confidence).
+    /// Edges are emitted by T5-33 at confidence=0.85; filter with --min-confidence, --topic, --lib.
+    FindEventMirrors(commands::find_event_mirrors::FindEventMirrorsArgs),
 }
 
 fn main() {
@@ -192,6 +195,7 @@ fn main() {
         Commands::Review(args) => args.repo.as_deref(),
         Commands::FindTransactionPatterns(args) => args.repo.as_deref(),
         Commands::FindSchemaBindings(_) => None,
+        Commands::FindEventMirrors(_) => None,
         Commands::Coverage(_)
         | Commands::Contracts(_)
         | Commands::Diff(_)
@@ -235,6 +239,7 @@ fn main() {
         Commands::Review(args) => commands::review::run(args, &engine),
         Commands::FindTransactionPatterns(args) => commands::find_tx_patterns::run(args, &engine),
         Commands::FindSchemaBindings(args) => commands::find_schema_bindings::run(args, &engine),
+        Commands::FindEventMirrors(args) => commands::find_event_mirrors::run(args, &engine),
         Commands::Coverage(_)
         | Commands::Contracts(_)
         | Commands::Diff(_)
@@ -279,6 +284,7 @@ fn check_group_atom(cli: &Cli) {
         Commands::Diff(a) => (a.repo.as_deref(), None),
         Commands::FindTransactionPatterns(a) => (a.repo.as_deref(), None),
         Commands::FindSchemaBindings(_) => return,
+        Commands::FindEventMirrors(_) => return,
         _ => return,
     };
     // The vast majority of invocations don't pass `--repo` at all, so the
