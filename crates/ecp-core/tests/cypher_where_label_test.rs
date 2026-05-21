@@ -40,6 +40,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 span: (1, 0, 2, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: c_uid,
@@ -49,6 +50,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 span: (3, 0, 4, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: m_uid,
@@ -58,6 +60,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 span: (5, 0, 6, 0),
                 community_id: 0,
                 owner_class: c_name,
+                content_hash: 0,
             },
         ],
         edges: vec![],
