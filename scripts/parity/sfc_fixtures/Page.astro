@@ -1,0 +1,17 @@
+---
+import Layout from '../layouts/Base.astro';
+import { fetchUsers } from '../api/users';
+
+interface User {
+  id: number;
+  name: string;
+}
+
+const users: User[] = await fetchUsers();
+---
+
+<Layout title="Users">
+  <ul>
+    {users.map(u => <li>{u.name}</li>)}
+  </ul>
+</Layout>

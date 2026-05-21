@@ -1,0 +1,110 @@
+# SFC Snapshot Baseline — captured 2026-05-21
+# ecp binary: dev profile (ecp-analyzer unit parsers)
+#
+# Oracle note: ref-gitnexus supports Vue but NOT Svelte or Astro.
+# Vue fixture is also validated against ref-gitnexus (see parity notes below).
+# Svelte and Astro are snapshot-only — no A/B oracle exists.
+#
+# Corpus: scripts/parity/sfc_fixtures/
+#   Component.vue  — <template> + <script setup lang="ts"> + <style>
+#   Counter.svelte — <script lang="ts"> + template + <style>
+#   Page.astro     — frontmatter (---) + HTML template
+#
+# Format: fixture | nodes | imports | node breakdown (kind: count)
+# ───────────────────────────────────────────────────────────────────────────
+
+=== Vue Component.vue (ref-gitnexus comparison available) ===
+  total_nodes  : 6
+  imports      : 2
+  Section      : 3  (template, script setup, style)
+  Const        : 1  (count)
+  Function     : 2  (increment, decrement)
+
+=== Svelte Counter.svelte (snapshot-only — no oracle) ===
+  total_nodes  : 4
+  imports      : 1
+  Section      : 2  (script, style)
+  Const        : 1  (count)
+  Function     : 1  (increment)
+
+=== Astro Page.astro (snapshot-only — no oracle) ===
+  total_nodes  : 4
+  imports      : 2
+  Section      : 2  (frontmatter, template)
+  Interface    : 1  (User)
+  Const        : 1  (users)
+
+=== Vue OptionsApi.vue (snapshot-only — Options API pattern) ===
+  total_nodes  : 8
+  imports      : 2
+  Section      : 3  (template, script, style)
+  Method       : 5  (data, doubled, increment, reset, mounted)
+
+=== Vue PropsAndEmits.vue (snapshot-only — Vue 3 macros) ===
+  total_nodes  : 8
+  imports      : 1
+  Section      : 2  (template, script setup)
+  Interface    : 1  (ButtonProps)
+  Const        : 3  (props, emit, isDisabled)
+  Function     : 2  (onClick, reset)
+
+=== Vue MultiBlock.vue (snapshot-only — dual script blocks) ===
+  total_nodes  : 6
+  imports      : 2
+  Section      : 3  (template, script, script setup)
+  Const        : 1  (message)
+  Function     : 2  (sharedHelper, greet)
+
+=== Svelte ContextModule.svelte (snapshot-only — module + instance blocks) ===
+  total_nodes  : 7
+  imports      : 2
+  Section      : 3  (style, script module, script)
+  Const        : 2  (globalCount, name)
+  Function     : 2  (formatCount, greet)
+
+=== Svelte Runes.svelte (snapshot-only — Svelte 5 rune syntax) ===
+  total_nodes  : 4
+  imports      : 0
+  Section      : 1  (script)
+  Const        : 2  (count, doubled)
+  Function     : 1  (increment)
+
+=== Svelte TemplateDirectives.svelte (snapshot-only — template directives do not leak) ===
+  total_nodes  : 5
+  imports      : 0
+  Section      : 1  (script)
+  Const        : 3  (items, show, promise)
+  Function     : 1  (loadData)
+
+=== Astro MultipleImports.astro (snapshot-only — many imports captured) ===
+  total_nodes  : 4
+  imports      : 5
+  Section      : 2  (frontmatter, template)
+  Const        : 2  (title, posts)
+
+=== Astro ConditionalRender.astro (snapshot-only — template JSX does not leak) ===
+  total_nodes  : 4
+  imports      : 1
+  Section      : 2  (frontmatter, template)
+  Const        : 2  (isLoggedIn, users)
+
+=== Astro TypedProps.astro (snapshot-only — TS interface + const captured) ===
+  total_nodes  : 4
+  imports      : 1
+  Section      : 2  (frontmatter, template)
+  Interface    : 1  (Props)
+  Const        : 1  (slug)
+
+# Parity notes (Vue vs ref-gitnexus):
+#   ref-gitnexus does not parse .vue files out of the box in its default
+#   configuration. Vue parity against the oracle requires a corpus of real
+#   Vue projects in .sample_repo/Vue/. The node counts above reflect ecp's
+#   inclusive-emission philosophy: Section nodes (template/script/style) are
+#   emitted by ecp but are excluded from ref-gitnexus output (Section/Folder
+#   discounted per memory note). After discounting Section nodes, the effective
+#   comparable node count for Component.vue is: 3 nodes (Const: 1, Function: 2).
+#
+# Acceptable delta budget (per existing parity philosophy):
+#   Section, Folder, File, Document — ref-gitnexus does not emit these;
+#   these are ecp-only additions. Exclude from A/B delta calculation.
+#   Real-gap threshold: ≤15% over/under on Function/Const/Interface.
