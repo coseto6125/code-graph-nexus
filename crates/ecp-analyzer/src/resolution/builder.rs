@@ -375,8 +375,13 @@ impl GraphBuilder {
                 uid_buf.push_str(&raw_node.name);
                 let uid_ref = string_pool.add(&uid_buf);
                 let name_ref = string_pool.add(&raw_node.name);
-                let owner_class_ref =
-                    string_pool.add(raw_node.owner_class.as_deref().unwrap_or(""));
+                // Skip hash-lookup when there is no owner: `StrRef::default()`
+                // (offset=0, len=0) resolves to "" against any pool. Avoids
+                // ~N hash-table lookups for top-level symbols at build time.
+                let owner_class_ref = match raw_node.owner_class.as_deref() {
+                    Some(s) => string_pool.add(s),
+                    None => StrRef::default(),
+                };
 
                 nodes.push(Node {
                     uid: uid_ref,

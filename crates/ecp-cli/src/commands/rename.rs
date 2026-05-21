@@ -292,12 +292,16 @@ pub fn run(args: RenameArgs, engine: &crate::engine::Engine) -> Result<(), EcpEr
     let target_indices: Vec<usize> = if let Some(dot) = target_symbol.find('.') {
         let owner = &target_symbol[..dot];
         let name = &target_symbol[dot + 1..];
+        let owner_len = owner.len() as u32;
         graph
             .nodes
             .iter()
             .enumerate()
             .filter(|(_, n)| {
-                n.name.resolve(&graph.string_pool) == name
+                // Fast-reject by u32 len before string resolve: cheaper than
+                // a pool dereference + strcmp when owner_class lengths differ.
+                n.owner_class.len.to_native() == owner_len
+                    && n.name.resolve(&graph.string_pool) == name
                     && n.owner_class.resolve(&graph.string_pool) == owner
             })
             .map(|(i, _)| i)
