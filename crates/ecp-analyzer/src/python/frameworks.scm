@@ -321,6 +321,97 @@
             name: (identifier) @_rk3 (#eq? @_rk3 "routing_key")
             value: (string) @amqp.topic))))))
 
+;; ---- Redis Python pub/sub (T5-26) ----
+;; Covers redis (sync) and aioredis (async).
+;; Import gate (`redis`, `aioredis`) is enforced by REDIS_PYTHON.import_gate —
+;; these queries fire on syntax alone; the extractor filters by import at runtime.
+;;
+;; `redis.direction` binds the method name (`publish`, `subscribe`, `psubscribe`)
+;; so `classify_redis_direction` can resolve Publish vs Subscribe direction.
+;;
+;; Topic literal semantics (documented in redis_python.rs):
+;;   Publish  → `channel` positional string (first arg to `publish`).
+;;   Subscribe → `channel` positional string (first arg to `subscribe`).
+;;   Psubscribe → `pattern` positional string (first arg to `psubscribe`).
+;; Non-literal first arg produces no capture → no RawEventTopic (no fabrication).
+;;
+;; Multi-arg `subscribe("ch1", "ch2")` — only the first positional literal is
+;; captured. See redis_python.rs doc comment for the deferred T5-26-followup.
+;;
+;; Anchored to `function_definition` to co-capture enclosing function name.
+;; Module-level calls are omitted — same rationale as Kafka (T5-2).
+
+;; redis (sync): r.publish("channel", msg) inside a function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "publish"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; redis (sync): pubsub.subscribe("channel") inside a function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "subscribe"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; redis (sync): pubsub.psubscribe("pattern.*") inside a function.
+;; Pattern strings are glob expressions; stored as-is in topic_literal.
+;; See redis_python.rs schema gap note for T5-33 canonicalization implications.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "psubscribe"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; aioredis (async): await r.publish("channel", msg) inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "publish"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
+;; aioredis (async): await pubsub.subscribe("channel") inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "subscribe"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
+;; aioredis (async): await pubsub.psubscribe("pattern.*") inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "psubscribe"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
 ;; ---- SQLAlchemy declarative ORM (T4-3) ----
 ;; Idiom A — classic Column() declarative (1.x and 2.x compatible).
 ;; Captures: owner class name, field identifier, first positional arg of Column()
