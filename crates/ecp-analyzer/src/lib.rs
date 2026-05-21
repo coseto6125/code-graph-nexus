@@ -47,6 +47,7 @@ pub mod resolution;
 pub mod route_detector;
 pub mod ruby;
 pub mod rust;
+pub mod schema_field;
 pub mod sfc_common;
 pub mod solidity;
 pub mod sql;
