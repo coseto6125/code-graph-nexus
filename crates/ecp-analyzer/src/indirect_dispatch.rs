@@ -11,26 +11,15 @@
 
 use ecp_core::analyzer::types::{RawCallMeta, RawNode};
 use ecp_core::graph::{CallMeta, NodeKind};
-use std::collections::HashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tree_sitter::Node;
 
 // ── shared helpers ────────────────────────────────────────────────────────────
 
-/// Emit a `RawCallMeta` for a non-direct call site: locate the enclosing
-/// function/method/constructor node (same logic as `attach_to_enclosing`),
-/// compute the `call_index` from the current-call-counter for that node, then
-/// push the entry into `out`.
-///
-/// Returns whether a caller was found (to allow the counter to advance).
-fn record_indirect(
-    line: u32,
-    _callee: &str,
-    flags: u8,
-    dispatch_type: &str,
-    nodes: &[RawNode],
-    call_counts: &mut HashMap<usize, u32>,
-    out: &mut Vec<RawCallMeta>,
-) -> bool {
+/// Return the index of the innermost Function/Method/Constructor whose span
+/// contains `line`. Innermost = smallest row span. Used by both `record_indirect`
+/// (for emit + counter advance) and `advance_direct` (counter advance only).
+fn find_enclosing_caller(line: u32, nodes: &[RawNode]) -> Option<usize> {
     let mut best: Option<usize> = None;
     let mut best_span: u32 = u32::MAX;
     for (i, n) in nodes.iter().enumerate() {
@@ -48,7 +37,23 @@ fn record_indirect(
             }
         }
     }
-    let Some(caller_idx) = best else {
+    best
+}
+
+/// Emit a `RawCallMeta` for a non-direct call site: locate the enclosing
+/// function/method/constructor node, compute the `call_index` from the
+/// current-call-counter for that node, then push the entry into `out`.
+///
+/// Returns whether a caller was found (to allow the counter to advance).
+fn record_indirect(
+    line: u32,
+    flags: u8,
+    dispatch_type: &str,
+    nodes: &[RawNode],
+    call_counts: &mut FxHashMap<usize, u32>,
+    out: &mut Vec<RawCallMeta>,
+) -> bool {
+    let Some(caller_idx) = find_enclosing_caller(line, nodes) else {
         return false;
     };
     let count = call_counts.entry(caller_idx).or_insert(0);
@@ -65,25 +70,8 @@ fn record_indirect(
 }
 
 /// Advance the call counter for a direct call (does not emit a `RawCallMeta`).
-fn advance_direct(line: u32, nodes: &[RawNode], call_counts: &mut HashMap<usize, u32>) {
-    let mut best: Option<usize> = None;
-    let mut best_span: u32 = u32::MAX;
-    for (i, n) in nodes.iter().enumerate() {
-        if !matches!(
-            n.kind,
-            NodeKind::Function | NodeKind::Method | NodeKind::Constructor
-        ) {
-            continue;
-        }
-        if n.span.0 <= line && n.span.2 >= line {
-            let width = n.span.2 - n.span.0;
-            if width < best_span {
-                best_span = width;
-                best = Some(i);
-            }
-        }
-    }
-    if let Some(idx) = best {
+fn advance_direct(line: u32, nodes: &[RawNode], call_counts: &mut FxHashMap<usize, u32>) {
+    if let Some(idx) = find_enclosing_caller(line, nodes) {
         *call_counts.entry(idx).or_insert(0) += 1;
     }
 }
@@ -100,8 +88,11 @@ fn node_text<'a>(node: Node<'_>, source: &'a [u8]) -> Option<&'a str> {
 /// `dyn Trait`, `Box<dyn Trait>`, `Arc<dyn T>`, etc.
 ///
 /// Returns a map of `var_name → type_text_as_source`.
-pub fn collect_rust_indirect_param_types(root: Node<'_>, source: &[u8]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+pub fn collect_rust_indirect_param_types(
+    root: Node<'_>,
+    source: &[u8],
+) -> FxHashMap<String, String> {
+    let mut map = FxHashMap::default();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         // Collect from function_item parameters only.
@@ -175,10 +166,10 @@ pub fn detect_rust_indirect(
     source: &[u8],
     nodes: &[RawNode],
     // Maps var_name → resolved type string (from LocalTypes)
-    param_types: &HashMap<String, String>,
+    param_types: &FxHashMap<String, String>,
 ) -> Vec<RawCallMeta> {
     let mut out = Vec::new();
-    let mut call_counts: HashMap<usize, u32> = HashMap::new();
+    let mut call_counts: FxHashMap<usize, u32> = FxHashMap::default();
     detect_rust_node(root, source, nodes, param_types, &mut call_counts, &mut out);
     out
 }
@@ -187,8 +178,8 @@ fn detect_rust_node(
     node: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    param_types: &HashMap<String, String>,
-    call_counts: &mut HashMap<usize, u32>,
+    param_types: &FxHashMap<String, String>,
+    call_counts: &mut FxHashMap<usize, u32>,
     out: &mut Vec<RawCallMeta>,
 ) {
     if node.kind() == "call_expression" {
@@ -198,7 +189,7 @@ fn detect_rust_node(
             if flags & CallMeta::FLAG_DIRECT == 0 || flags & CallMeta::FLAG_CONSTRUCTOR_CALL != 0 {
                 // Non-direct or constructor call — emit meta only for non-direct
                 if flags & CallMeta::FLAG_DIRECT == 0 {
-                    record_indirect(line, "", flags, &dispatch_type, nodes, call_counts, out);
+                    record_indirect(line, flags, &dispatch_type, nodes, call_counts, out);
                 } else {
                     advance_direct(line, nodes, call_counts);
                 }
@@ -218,7 +209,7 @@ fn detect_rust_node(
 fn classify_rust_call(
     call: Node<'_>,
     source: &[u8],
-    param_types: &HashMap<String, String>,
+    param_types: &FxHashMap<String, String>,
 ) -> (u8, String, bool) {
     let Some(function) = call.child_by_field_name("function") else {
         return (CallMeta::FLAG_DIRECT, String::new(), false);
@@ -322,11 +313,11 @@ pub fn detect_c_cpp_indirect(
     root: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    fn_ptr_vars: &HashMap<String, String>,
+    fn_ptr_vars: &FxHashMap<String, String>,
     is_cpp: bool,
 ) -> Vec<RawCallMeta> {
     let mut out = Vec::new();
-    let mut call_counts: HashMap<usize, u32> = HashMap::new();
+    let mut call_counts: FxHashMap<usize, u32> = FxHashMap::default();
     detect_c_cpp_node(
         root,
         source,
@@ -343,16 +334,16 @@ fn detect_c_cpp_node(
     node: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    fn_ptr_vars: &HashMap<String, String>,
+    fn_ptr_vars: &FxHashMap<String, String>,
     is_cpp: bool,
-    call_counts: &mut HashMap<usize, u32>,
+    call_counts: &mut FxHashMap<usize, u32>,
     out: &mut Vec<RawCallMeta>,
 ) {
     if node.kind() == "call_expression" {
         let line = node.start_position().row as u32;
         let (flags, dispatch_type) = classify_c_cpp_call(node, source, fn_ptr_vars, is_cpp);
         if flags & CallMeta::FLAG_DIRECT == 0 {
-            record_indirect(line, "", flags, &dispatch_type, nodes, call_counts, out);
+            record_indirect(line, flags, &dispatch_type, nodes, call_counts, out);
         } else {
             advance_direct(line, nodes, call_counts);
         }
@@ -366,7 +357,7 @@ fn detect_c_cpp_node(
 fn classify_c_cpp_call(
     call: Node<'_>,
     source: &[u8],
-    fn_ptr_vars: &HashMap<String, String>,
+    fn_ptr_vars: &FxHashMap<String, String>,
     is_cpp: bool,
 ) -> (u8, String) {
     let Some(function) = call.child_by_field_name("function") else {
@@ -430,8 +421,8 @@ fn classify_c_cpp_call(
 /// This is a lightweight heuristic scan of `let_declaration`-equivalent C nodes
 /// (`declaration`, `parameter_declaration`) to populate the type map for indirect
 /// call detection.
-pub fn collect_c_cpp_fn_ptr_vars(root: Node<'_>, source: &[u8]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+pub fn collect_c_cpp_fn_ptr_vars(root: Node<'_>, source: &[u8]) -> FxHashMap<String, String> {
+    let mut map = FxHashMap::default();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -502,10 +493,10 @@ pub fn detect_js_ts_indirect(
     root: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    param_names: &HashMap<String, bool>, // name → true if it's a param (not a declared fn)
+    param_names: &FxHashSet<String>, // name → true if it's a param (not a declared fn)
 ) -> Vec<RawCallMeta> {
     let mut out = Vec::new();
-    let mut call_counts: HashMap<usize, u32> = HashMap::new();
+    let mut call_counts: FxHashMap<usize, u32> = FxHashMap::default();
     detect_js_ts_node(root, source, nodes, param_names, &mut call_counts, &mut out);
     out
 }
@@ -514,15 +505,15 @@ fn detect_js_ts_node(
     node: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    param_names: &HashMap<String, bool>,
-    call_counts: &mut HashMap<usize, u32>,
+    param_names: &FxHashSet<String>,
+    call_counts: &mut FxHashMap<usize, u32>,
     out: &mut Vec<RawCallMeta>,
 ) {
     if node.kind() == "call_expression" {
         let line = node.start_position().row as u32;
         let (flags, dispatch_type) = classify_js_call(node, source, param_names);
         if flags & CallMeta::FLAG_DIRECT == 0 {
-            record_indirect(line, "", flags, &dispatch_type, nodes, call_counts, out);
+            record_indirect(line, flags, &dispatch_type, nodes, call_counts, out);
         } else {
             advance_direct(line, nodes, call_counts);
         }
@@ -536,7 +527,7 @@ fn detect_js_ts_node(
 fn classify_js_call(
     call: Node<'_>,
     source: &[u8],
-    param_names: &HashMap<String, bool>,
+    param_names: &FxHashSet<String>,
 ) -> (u8, String) {
     let Some(function) = call.child_by_field_name("function") else {
         return (CallMeta::FLAG_DIRECT, String::new());
@@ -545,7 +536,7 @@ fn classify_js_call(
     match function.kind() {
         "identifier" => {
             let name = node_text(function, source).unwrap_or_default();
-            if param_names.get(name).copied().unwrap_or(false) {
+            if param_names.contains(name) {
                 return (CallMeta::FLAG_CALLBACK, String::new());
             }
             (CallMeta::FLAG_DIRECT, String::new())
@@ -567,7 +558,7 @@ fn classify_js_call(
                 // Check if the object is a parameter (callback invoked as method).
                 if let Some(obj) = function.child_by_field_name("object") {
                     let obj_name = node_text(obj, source).unwrap_or_default();
-                    if param_names.get(obj_name).copied().unwrap_or(false) {
+                    if param_names.contains(obj_name) {
                         return (CallMeta::FLAG_CALLBACK, String::new());
                     }
                 }
@@ -580,8 +571,8 @@ fn classify_js_call(
 
 /// Collect all parameter names from function/method definitions in the file,
 /// marking them as potential callback identifiers.
-pub fn collect_js_param_names(root: Node<'_>, source: &[u8]) -> HashMap<String, bool> {
-    let mut map: HashMap<String, bool> = HashMap::new();
+pub fn collect_js_param_names(root: Node<'_>, source: &[u8]) -> FxHashSet<String> {
+    let mut map: FxHashSet<String> = FxHashSet::default();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -602,7 +593,7 @@ pub fn collect_js_param_names(root: Node<'_>, source: &[u8]) -> HashMap<String, 
     map
 }
 
-fn collect_params_js(fn_node: Node<'_>, source: &[u8], out: &mut HashMap<String, bool>) {
+fn collect_params_js(fn_node: Node<'_>, source: &[u8], out: &mut FxHashSet<String>) {
     let Some(params) = fn_node
         .child_by_field_name("parameters")
         .or_else(|| fn_node.child_by_field_name("parameter"))
@@ -614,13 +605,13 @@ fn collect_params_js(fn_node: Node<'_>, source: &[u8], out: &mut HashMap<String,
         match p.kind() {
             "identifier" => {
                 if let Some(name) = node_text(p, source) {
-                    out.insert(name.to_string(), true);
+                    out.insert(name.to_string());
                 }
             }
             "required_parameter" | "optional_parameter" | "formal_parameters" => {
                 if let Some(pat) = p.child_by_field_name("pattern") {
                     if let Some(name) = node_text(pat, source) {
-                        out.insert(name.to_string(), true);
+                        out.insert(name.to_string());
                     }
                 }
             }
@@ -641,10 +632,10 @@ pub fn detect_python_indirect(
     root: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    param_names: &HashMap<String, bool>,
+    param_names: &FxHashSet<String>,
 ) -> Vec<RawCallMeta> {
     let mut out = Vec::new();
-    let mut call_counts: HashMap<usize, u32> = HashMap::new();
+    let mut call_counts: FxHashMap<usize, u32> = FxHashMap::default();
     detect_python_node(root, source, nodes, param_names, &mut call_counts, &mut out);
     out
 }
@@ -653,15 +644,15 @@ fn detect_python_node(
     node: Node<'_>,
     source: &[u8],
     nodes: &[RawNode],
-    param_names: &HashMap<String, bool>,
-    call_counts: &mut HashMap<usize, u32>,
+    param_names: &FxHashSet<String>,
+    call_counts: &mut FxHashMap<usize, u32>,
     out: &mut Vec<RawCallMeta>,
 ) {
     if node.kind() == "call" {
         let line = node.start_position().row as u32;
         let (flags, dispatch_type) = classify_python_call(node, source, param_names);
         if flags & CallMeta::FLAG_DIRECT == 0 {
-            record_indirect(line, "", flags, &dispatch_type, nodes, call_counts, out);
+            record_indirect(line, flags, &dispatch_type, nodes, call_counts, out);
         } else {
             advance_direct(line, nodes, call_counts);
         }
@@ -675,7 +666,7 @@ fn detect_python_node(
 fn classify_python_call(
     call: Node<'_>,
     source: &[u8],
-    param_names: &HashMap<String, bool>,
+    param_names: &FxHashSet<String>,
 ) -> (u8, String) {
     // Python: call node has `function` field.
     let Some(function) = call.child_by_field_name("function") else {
@@ -689,7 +680,7 @@ fn classify_python_call(
             if name == "getattr" {
                 return (CallMeta::FLAG_DYNAMIC_DISPATCH, String::new());
             }
-            if param_names.get(name).copied().unwrap_or(false) {
+            if param_names.contains(name) {
                 return (CallMeta::FLAG_CALLBACK, String::new());
             }
             (CallMeta::FLAG_DIRECT, String::new())
@@ -707,7 +698,7 @@ fn classify_python_call(
             // Callback parameter invoked as method: `cb.method()`.
             if let Some(obj) = function.child_by_field_name("object") {
                 let obj_name = node_text(obj, source).unwrap_or_default();
-                if param_names.get(obj_name).copied().unwrap_or(false) {
+                if param_names.contains(obj_name) {
                     return (CallMeta::FLAG_DYNAMIC_DISPATCH, String::new());
                 }
             }
@@ -720,8 +711,8 @@ fn classify_python_call(
 }
 
 /// Collect function parameter names from all function definitions in the file.
-pub fn collect_python_param_names(root: Node<'_>, source: &[u8]) -> HashMap<String, bool> {
-    let mut map: HashMap<String, bool> = HashMap::new();
+pub fn collect_python_param_names(root: Node<'_>, source: &[u8]) -> FxHashSet<String> {
+    let mut map: FxHashSet<String> = FxHashSet::default();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         if n.kind() == "function_definition" {
@@ -737,14 +728,14 @@ pub fn collect_python_param_names(root: Node<'_>, source: &[u8]) -> HashMap<Stri
     map
 }
 
-fn collect_python_params(params: Node<'_>, source: &[u8], out: &mut HashMap<String, bool>) {
+fn collect_python_params(params: Node<'_>, source: &[u8], out: &mut FxHashSet<String>) {
     let mut c = params.walk();
     for p in params.children(&mut c) {
         match p.kind() {
             "identifier" => {
                 if let Some(name) = node_text(p, source) {
                     if name != "self" && name != "cls" {
-                        out.insert(name.to_string(), true);
+                        out.insert(name.to_string());
                     }
                 }
             }
@@ -752,7 +743,7 @@ fn collect_python_params(params: Node<'_>, source: &[u8], out: &mut HashMap<Stri
                 if let Some(name_node) = p.child_by_field_name("name") {
                     if let Some(name) = node_text(name_node, source) {
                         if name != "self" && name != "cls" {
-                            out.insert(name.to_string(), true);
+                            out.insert(name.to_string());
                         }
                     }
                 }
@@ -760,7 +751,7 @@ fn collect_python_params(params: Node<'_>, source: &[u8], out: &mut HashMap<Stri
             "list_splat_pattern" | "dictionary_splat_pattern" => {
                 if let Some(inner) = p.named_child(0) {
                     if let Some(name) = node_text(inner, source) {
-                        out.insert(name.to_string(), true);
+                        out.insert(name.to_string());
                     }
                 }
             }
