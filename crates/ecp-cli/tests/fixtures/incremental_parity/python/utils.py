@@ -9,8 +9,8 @@ def slugify(text: str) -> str:
     return re.sub(r"[\s_-]+", "-", text).strip("-")
 
 
-def hash_password(password: str, salt: str) -> str:
-    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+def fingerprint_content(content: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}{content}".encode()).hexdigest()
 
 
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
