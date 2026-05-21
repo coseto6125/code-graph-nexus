@@ -68,5 +68,8 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["process", "signal"] }
 
+[dev-dependencies]
+proptest = "1"
+
 [lints]
 workspace = true
