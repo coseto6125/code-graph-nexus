@@ -1,9 +1,7 @@
 use super::receiver_types::extract_csharp_calls;
 use super::spec::CSharpSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{
-    detect_ast_framework_patterns, enclosing_class, FrameworkPatternSpec,
-};
+use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
@@ -345,26 +343,7 @@ impl LanguageProvider for CSharpProvider {
         let raw_function_metas =
             crate::function_meta::csharp::extract(tree.root_node(), source, &nodes, file_category);
 
-        let owner_classes: Vec<Option<String>> = (0..nodes.len())
-            .map(|i| {
-                if matches!(
-                    nodes[i].kind,
-                    NodeKind::Method
-                        | NodeKind::Function
-                        | NodeKind::Constructor
-                        | NodeKind::Property
-                ) {
-                    enclosing_class(&nodes, nodes[i].span).map(|(name, _)| name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (node, owner) in nodes.iter_mut().zip(owner_classes) {
-            if owner.is_some() {
-                node.owner_class = owner;
-            }
-        }
+        crate::framework_helpers::stamp_owner_class_by_span(&mut nodes);
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes: vec![],

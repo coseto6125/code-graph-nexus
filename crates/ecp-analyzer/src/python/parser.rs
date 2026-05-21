@@ -1045,26 +1045,7 @@ impl LanguageProvider for PythonProvider {
         let raw_function_metas =
             crate::function_meta::python::extract(tree.root_node(), source, &nodes, file_category);
 
-        let owner_classes: Vec<Option<String>> = (0..nodes.len())
-            .map(|i| {
-                if matches!(
-                    nodes[i].kind,
-                    NodeKind::Method
-                        | NodeKind::Function
-                        | NodeKind::Constructor
-                        | NodeKind::Property
-                ) {
-                    enclosing_class(&nodes, nodes[i].span).map(|(name, _)| name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (node, owner) in nodes.iter_mut().zip(owner_classes) {
-            if owner.is_some() {
-                node.owner_class = owner;
-            }
-        }
+        crate::framework_helpers::stamp_owner_class_by_span(&mut nodes);
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,

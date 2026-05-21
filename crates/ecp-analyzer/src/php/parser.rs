@@ -2,7 +2,7 @@ use super::receiver_types::extract_php_calls;
 use super::spec::PhpSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_class, enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
@@ -571,29 +571,7 @@ impl LanguageProvider for PhpProvider {
             routes.clear();
         }
 
-        // Populate owner_class for methods/properties via span containment.
-        // Scans the already-collected class nodes in the same file — zero
-        // cross-file dependency.
-        let owner_classes: Vec<Option<String>> = (0..nodes.len())
-            .map(|i| {
-                if matches!(
-                    nodes[i].kind,
-                    NodeKind::Method
-                        | NodeKind::Function
-                        | NodeKind::Constructor
-                        | NodeKind::Property
-                ) {
-                    enclosing_class(&nodes, nodes[i].span).map(|(name, _)| name)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (node, owner) in nodes.iter_mut().zip(owner_classes) {
-            if owner.is_some() {
-                node.owner_class = owner;
-            }
-        }
+        crate::framework_helpers::stamp_owner_class_by_span(&mut nodes);
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
