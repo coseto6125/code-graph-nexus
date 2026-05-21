@@ -37,11 +37,12 @@
 //! in `Foo.java` may extend an abstract class in `Bar.java`. The `SymbolTable`
 //! global index is queried when a heritage name is not found in the same file.
 
+use crate::framework_helpers::{span_area, span_contains};
 use crate::resolution::index::SymbolTable;
 use ecp_core::analyzer::types::{LocalGraph, RawNode};
 use ecp_core::graph::{Edge, NodeKind, RelType};
 use ecp_core::pool::StringPool;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// `(name, span)` pair for a class/struct/interface node, used in span
 /// containment checks inside [`innermost_class`].
@@ -224,17 +225,17 @@ fn innermost_class<'a>(
     method_span: (u32, u32, u32, u32),
     classes: &[ClassEntry<'a>],
 ) -> Option<&'a str> {
-    let (ms, mc, me, mec) = method_span;
     classes
         .iter()
-        .filter(|(_, (cs, cc, ce, cec))| (*cs, *cc) <= (ms, mc) && (*ce, *cec) >= (me, mec))
-        .min_by_key(|(_, (cs, cc, ce, cec))| (ce.wrapping_sub(*cs), cec.wrapping_sub(*cc)))
+        .filter(|(_, class_span)| span_contains(*class_span, method_span))
+        .min_by_key(|(_, class_span)| span_area(*class_span))
         .map(|(name, _)| *name)
 }
 
 /// Return the **immediate** supertype names for `class_name` (one hop only).
 /// Gathers from all `class_heritage` entries for that name (handles same short
-/// name in multiple files — unlikely but safe). Deduplicates.
+/// name in multiple files — unlikely but safe). Deduplicates via FxHashSet
+/// (O(H) vs the O(H²) `out.contains(h)` per insert).
 fn immediate_heritage(
     class_name: &str,
     class_heritage: &FxHashMap<String, Vec<Vec<String>>>,
@@ -242,10 +243,11 @@ fn immediate_heritage(
     let Some(all_heritages) = class_heritage.get(class_name) else {
         return Vec::new();
     };
+    let mut seen: FxHashSet<&str> = FxHashSet::default();
     let mut out: Vec<String> = Vec::new();
     for heritage_list in all_heritages {
         for h in heritage_list {
-            if !out.contains(h) {
+            if seen.insert(h.as_str()) {
                 out.push(h.clone());
             }
         }

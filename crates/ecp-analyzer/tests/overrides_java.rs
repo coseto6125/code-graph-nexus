@@ -5,48 +5,18 @@
 //! 2. Post-process integration tests — assert that `emit_edges` emits
 //!    `RelType::Overrides` edges from the subtype method to the supertype method.
 
+mod overrides_support;
+
 use ecp_analyzer::java::parser::JavaProvider;
-use ecp_analyzer::post_process::overrides;
-use ecp_analyzer::resolution::index::SymbolTable;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawNode};
-use ecp_core::graph::RelType;
-use ecp_core::pool::StringPool;
+use ecp_core::analyzer::types::LocalGraph;
+use overrides_support::{has_decorator, run_overrides};
 use std::path::Path;
 
 fn parse(path: &str, src: &str) -> LocalGraph {
     let p = JavaProvider::new().expect("provider");
     p.parse_file(Path::new(path), src.as_bytes())
         .expect("parse")
-}
-
-fn build_symbol_table(local_graphs: &[LocalGraph]) -> SymbolTable {
-    let mut st = SymbolTable::new();
-    let mut current = 0u32;
-    for lg in local_graphs {
-        let path_str = lg.file_path.to_string_lossy().replace('\\', "/");
-        for rn in &lg.nodes {
-            st.register_node(&path_str, &rn.name, current, rn.kind);
-            current += 1;
-        }
-    }
-    st
-}
-
-fn run_overrides(local_graphs: &[LocalGraph]) -> Vec<(u32, u32)> {
-    let st = build_symbol_table(local_graphs);
-    let mut sp = StringPool::new();
-    let mut edges = Vec::new();
-    overrides::emit_edges(local_graphs, &st, &mut sp, &mut edges);
-    edges
-        .into_iter()
-        .filter(|e| matches!(e.rel_type, RelType::Overrides))
-        .map(|e| (e.source, e.target))
-        .collect()
-}
-
-fn has_decorator(node: &RawNode, d: &str) -> bool {
-    node.decorators.iter().any(|dec| dec.contains(d))
 }
 
 // ── Layer 1: parser capture ────────────────────────────────────────────────
