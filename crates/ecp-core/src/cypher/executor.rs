@@ -1332,6 +1332,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1419,6 +1421,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1493,6 +1497,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1755,6 +1761,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1866,6 +1874,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -2218,6 +2228,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -2339,6 +2351,8 @@ mod tests {
             traces_data: vec![],
             blind_spots: vec![],
             route_shapes: vec![],
+            call_metas: vec![],
+            function_metas: vec![],
         };
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec();
         let archived =
