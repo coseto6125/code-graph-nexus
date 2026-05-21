@@ -443,7 +443,10 @@ impl LanguageProvider for RustProvider {
                 &tree,
                 source,
                 &self.query,
-                &[crate::event_topic::REDIS_RUST, crate::event_topic::KAFKA_RUST],
+                &[
+                    crate::event_topic::REDIS_RUST,
+                    crate::event_topic::KAFKA_RUST,
+                ],
                 &imports,
                 &mut pool,
             );

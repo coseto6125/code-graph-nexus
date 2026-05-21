@@ -190,4 +190,4 @@
                   key: (literal_element (identifier) @_stopic_key
                     (#eq? @_stopic_key "Topic"))
                   value: (literal_element
-                    (interpreted_string_literal) @kafka.topic))))))))))))
+                    (interpreted_string_literal) @kafka.topic))))))))))
