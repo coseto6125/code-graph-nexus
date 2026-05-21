@@ -10,6 +10,7 @@ use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
 use ecp_core::graph::NodeKind;
+use ecp_core::pool::StringPool;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
@@ -537,6 +538,22 @@ impl LanguageProvider for TypeScriptProvider {
         );
         let schema_fields = (!fields.is_empty()).then(|| fields.into_boxed_slice());
 
+        // `RawEventTopic.topic_literal` is a `StrRef` into this local pool; the
+        // pool drops at end of scope and the builder must re-intern the literal
+        // before resolution.
+        let event_topics = {
+            let mut pool = StringPool::new();
+            let topics = crate::event_topic::extract_event_topics(
+                &tree,
+                source,
+                &self.query,
+                &[crate::event_topic::REDIS_TS],
+                &imports,
+                &mut pool,
+            );
+            (!topics.is_empty()).then(|| topics.into_boxed_slice())
+        };
+
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
@@ -548,7 +565,7 @@ impl LanguageProvider for TypeScriptProvider {
             fanout_refs: vec![],
             blind_spots: vec![],
             schema_fields,
-            event_topics: None,
+            event_topics,
             tx_scopes: None,
             call_metas,
             raw_function_metas,
