@@ -45,6 +45,7 @@ pub mod ruby;
 pub mod rust;
 pub mod solidity;
 pub mod sql;
+pub mod svelte;
 pub mod swift;
 pub mod typescript;
 pub mod verilog;
