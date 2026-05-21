@@ -188,6 +188,25 @@ impl FrameworkId {
     pub const fn as_str(self) -> &'static str {
         FRAMEWORK_NAMES[self as usize]
     }
+
+    /// Decode a u8 (e.g. from a packed bitfield or corrupted archive) into a
+    /// FrameworkId. Out-of-range bytes fall back to `Unknown` rather than
+    /// invoking UB via `transmute` — preserves archive read safety when
+    /// `RawTxScope.packed` is consumed from a `graph.bin` written by a future
+    /// version with extra variants.
+    #[inline]
+    pub const fn from_u8(value: u8) -> Self {
+        if (value as usize) < FRAMEWORK_NAMES.len() {
+            // SAFETY: `value` is bounded by `FRAMEWORK_NAMES` length, which is
+            // layout-locked to the enum's sequential `#[repr(u8)]`
+            // discriminants 0..N. The `as_str()` const fn relies on the same
+            // invariant; any future variant reorder breaks both at the same
+            // call site and is caught by the startup `debug_assert_eq!`.
+            unsafe { std::mem::transmute::<u8, FrameworkId>(value) }
+        } else {
+            FrameworkId::Unknown
+        }
+    }
 }
 
 /// ORM / schema model field detected at static-analysis time.
@@ -214,12 +233,64 @@ pub struct RawEventTopic {
 }
 
 /// Transactional scope boundary (e.g. `@Transactional`, `atomic()`).
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+///
+/// Packed: high 24 bits = node index into `LocalGraph.nodes` (the
+/// Method / Function / Constructor whose body the boundary scopes),
+/// low 8 bits = `FrameworkId` discriminant. 4 bytes total — 7× denser
+/// than the prior (StrRef + FrameworkId + span) shape because the
+/// enclosing node already carries `name`, `span`, and `decorators`.
+/// Resolve via `nodes[scope.node_idx() as usize]`.
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[rkyv(compare(PartialEq))]
 #[rkyv(derive(Debug))]
 pub struct RawTxScope {
-    pub enclosing_fn: StrRef,
-    pub source_pattern: FrameworkId,
-    pub span: (u32, u32, u32, u32),
+    /// Bit-packed `(node_idx << 8) | framework_id_u8`. Always access via
+    /// the `node_idx()` / `framework()` methods — direct field reads will
+    /// break if the packing format changes.
+    pub packed: u32,
+}
+
+impl RawTxScope {
+    /// Largest node index that fits in the high 24 bits.
+    pub const NODE_IDX_MAX: u32 = (1 << 24) - 1;
+
+    /// Construct a packed scope. `debug_assert!` enforces the u24 limit on
+    /// `node_idx` — files with more than 16 M symbol nodes are not realistic
+    /// for static analysis and would indicate a generated-code fixture
+    /// pathology.
+    #[inline]
+    pub fn new(node_idx: u32, framework: FrameworkId) -> Self {
+        debug_assert!(
+            node_idx <= Self::NODE_IDX_MAX,
+            "RawTxScope::new: node_idx {} exceeds u24 limit",
+            node_idx
+        );
+        Self {
+            packed: (node_idx << 8) | (framework as u32),
+        }
+    }
+
+    #[inline]
+    pub const fn node_idx(self) -> u32 {
+        self.packed >> 8
+    }
+
+    #[inline]
+    pub const fn framework(self) -> FrameworkId {
+        FrameworkId::from_u8((self.packed & 0xFF) as u8)
+    }
+}
+
+impl ArchivedRawTxScope {
+    #[inline]
+    pub fn node_idx(&self) -> u32 {
+        self.packed.to_native() >> 8
+    }
+
+    #[inline]
+    pub fn framework(&self) -> FrameworkId {
+        FrameworkId::from_u8((self.packed.to_native() & 0xFF) as u8)
+    }
 }
 
 /// Reflection-style fan-out reference: a single call site whose target cannot
