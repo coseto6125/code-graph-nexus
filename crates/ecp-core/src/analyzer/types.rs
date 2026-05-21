@@ -1,5 +1,4 @@
 use crate::graph::NodeKind;
-use crate::pool::StrRef;
 use rkyv::{Archive, Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -105,22 +104,13 @@ pub enum PubSub {
     Subscribe,
 }
 
-// D4: All identifier-bearing fields use StrRef (string-pool indirect, 4-byte
-// offset+len) from day-1 to avoid per-parse heap allocs on the hot path.
-// `framework` / `source_pattern` / `lib` are compile-time constants (callers
-// pass `&'static str` literals); however, because `LocalGraph` derives
-// `Archive`, rkyv requires every field to be archivable — `&'static str` has
-// no rkyv impl, so these fields are stored as `String`. The caller's
-// `&'static str` is moved in via `String::from(...)` with zero runtime
-// allocation overhead beyond the one-time pass at build time.
-
 /// ORM / schema model field detected at static-analysis time.
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[rkyv(derive(Debug))]
 pub struct RawSchemaField {
-    pub name: StrRef,
+    pub name: String,
     pub type_class: SchemaType,
-    pub owner_class: StrRef,
+    pub owner_class: String,
     pub framework: String,
     pub span: (u32, u32, u32, u32),
 }
@@ -130,10 +120,10 @@ pub struct RawSchemaField {
 #[rkyv(derive(Debug))]
 pub struct RawEventTopic {
     /// None = dynamic topic, upstream emits BlindSpot
-    pub topic_literal: Option<StrRef>,
+    pub topic_literal: Option<String>,
     pub direction: PubSub,
     pub lib: String,
-    pub enclosing_fn: StrRef,
+    pub enclosing_fn: String,
     pub span: (u32, u32, u32, u32),
 }
 
@@ -141,7 +131,7 @@ pub struct RawEventTopic {
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[rkyv(derive(Debug))]
 pub struct RawTxScope {
-    pub enclosing_fn: StrRef,
+    pub enclosing_fn: String,
     pub source_pattern: String,
     pub span: (u32, u32, u32, u32),
 }
@@ -195,10 +185,4 @@ pub struct LocalGraph {
     pub schema_fields: Vec<RawSchemaField>,
     pub event_topics: Vec<RawEventTopic>,
     pub tx_scopes: Vec<RawTxScope>,
-    /// Interned string pool for identifier-bearing fields in `schema_fields`,
-    /// `event_topics`, and `tx_scopes`. Parsers that emit those vectors create
-    /// a `StringPool`, intern names, then move `pool.bytes` here. Consumers
-    /// resolve `StrRef` values via `StrRef::resolve(&graph.pool_bytes)`.
-    /// Empty for parsers that emit none of the above.
-    pub pool_bytes: Vec<u8>,
 }

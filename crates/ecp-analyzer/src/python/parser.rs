@@ -13,7 +13,6 @@ use ecp_core::analyzer::types::{
     BlindSpot, LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode, RawRoute, RawTxScope,
 };
 use ecp_core::graph::NodeKind;
-use ecp_core::pool::StringPool;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor};
@@ -536,10 +535,8 @@ impl LanguageProvider for PythonProvider {
         // Resolved after `nodes` is populated (need enclosing class + sibling methods).
         let mut pending_getattr_sites: Vec<Span> = Vec::new();
 
-        // T10-1: tx-scope pool + vec. Pool must outlive the tx_scopes vec
-        // (StrRef offsets are into pool.bytes). Built incrementally in the
-        // match loop and moved into LocalGraph at return.
-        let mut tx_pool = StringPool::new();
+        // T10-1: tx_scopes collected during the match loop; appended below as
+        // tx.atomic / tx.db_session captures fire.
         let mut tx_scopes: Vec<RawTxScope> = Vec::new();
 
         while let Some(m) = matches.next() {
@@ -692,7 +689,7 @@ impl LanguageProvider for PythonProvider {
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         tx_scopes.push(RawTxScope {
-                            enclosing_fn: tx_pool.add(fn_name),
+                            enclosing_fn: fn_name.to_string(),
                             source_pattern: "django-atomic".to_string(),
                             span: node_span(&cap.node),
                         });
@@ -702,7 +699,7 @@ impl LanguageProvider for PythonProvider {
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         tx_scopes.push(RawTxScope {
-                            enclosing_fn: tx_pool.add(fn_name),
+                            enclosing_fn: fn_name.to_string(),
                             source_pattern: "pony-db-session".to_string(),
                             span: node_span(&cap.node),
                         });
@@ -1078,8 +1075,6 @@ impl LanguageProvider for PythonProvider {
                 node.owner_class = owner;
             }
         }
-        let pool_bytes = tx_pool.bytes;
-
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
@@ -1093,7 +1088,6 @@ impl LanguageProvider for PythonProvider {
             schema_fields: vec![],
             event_topics: vec![],
             tx_scopes,
-            pool_bytes,
         })
     }
 }

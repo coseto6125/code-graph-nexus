@@ -7,7 +7,6 @@ use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawTxScope};
 use ecp_core::graph::NodeKind;
-use ecp_core::pool::StringPool;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
@@ -439,7 +438,6 @@ impl LanguageProvider for KotlinProvider {
         // T10-1: @Transactional on a method/constructor → RawTxScope.
         // Kotlin uses the same JVM annotation model as Java; decorator text
         // includes the leading `@`.
-        let mut pool = StringPool::new();
         let tx_scopes: Vec<RawTxScope> = nodes
             .iter()
             .filter(|n| {
@@ -452,12 +450,11 @@ impl LanguageProvider for KotlinProvider {
                     .any(|d| d == "@Transactional" || d.starts_with("@Transactional("))
             })
             .map(|n| RawTxScope {
-                enclosing_fn: pool.add(&n.name),
+                enclosing_fn: n.name.clone(),
                 source_pattern: "java-transactional".to_string(),
                 span: n.span,
             })
             .collect();
-        let pool_bytes = pool.bytes;
 
         Ok(LocalGraph {
             content_hash: [0; 8],
@@ -472,7 +469,6 @@ impl LanguageProvider for KotlinProvider {
             schema_fields: vec![],
             event_topics: vec![],
             tx_scopes,
-            pool_bytes,
         })
     }
 }

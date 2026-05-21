@@ -9,9 +9,7 @@ fn parse(src: &str) -> ecp_core::analyzer::types::LocalGraph {
 }
 
 fn resolve_fn(graph: &ecp_core::analyzer::types::LocalGraph, scope_idx: usize) -> &str {
-    graph.tx_scopes[scope_idx]
-        .enclosing_fn
-        .resolve(&graph.pool_bytes)
+    graph.tx_scopes[scope_idx].enclosing_fn.as_str()
 }
 
 #[test]
@@ -33,7 +31,7 @@ class OrderService {
         "exactly one tx_scope expected; got: {:?}",
         g.tx_scopes
             .iter()
-            .map(|s| s.enclosing_fn.resolve(&g.pool_bytes))
+            .map(|s| s.enclosing_fn.as_str())
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "placeOrder");
@@ -101,7 +99,7 @@ class AccountService {
     let names: Vec<&str> = g
         .tx_scopes
         .iter()
-        .map(|s| s.enclosing_fn.resolve(&g.pool_bytes))
+        .map(|s| s.enclosing_fn.as_str())
         .collect();
     assert!(names.contains(&"deposit"), "deposit missing: {:?}", names);
     assert!(names.contains(&"withdraw"), "withdraw missing: {:?}", names);

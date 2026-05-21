@@ -9,9 +9,7 @@ fn parse(src: &str) -> ecp_core::analyzer::types::LocalGraph {
 }
 
 fn resolve_fn(graph: &ecp_core::analyzer::types::LocalGraph, scope_idx: usize) -> &str {
-    graph.tx_scopes[scope_idx]
-        .enclosing_fn
-        .resolve(&graph.pool_bytes)
+    graph.tx_scopes[scope_idx].enclosing_fn.as_str()
 }
 
 #[test]
@@ -33,7 +31,7 @@ def list_orders():
         "exactly one tx_scope expected; got: {:?}",
         g.tx_scopes
             .iter()
-            .map(|s| s.enclosing_fn.resolve(&g.pool_bytes))
+            .map(|s| s.enclosing_fn.as_str())
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "place_order");
@@ -59,7 +57,7 @@ def delete_user():
         "exactly one tx_scope expected; got: {:?}",
         g.tx_scopes
             .iter()
-            .map(|s| s.enclosing_fn.resolve(&g.pool_bytes))
+            .map(|s| s.enclosing_fn.as_str())
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "get_user");
@@ -93,12 +91,7 @@ def plain_func():
     let by_pattern: std::collections::HashMap<&str, &str> = g
         .tx_scopes
         .iter()
-        .map(|s| {
-            (
-                s.source_pattern.as_str(),
-                s.enclosing_fn.resolve(&g.pool_bytes),
-            )
-        })
+        .map(|s| (s.source_pattern.as_str(), s.enclosing_fn.as_str()))
         .collect();
     assert_eq!(
         by_pattern.get("django-atomic").copied(),

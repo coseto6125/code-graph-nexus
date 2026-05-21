@@ -190,7 +190,6 @@ impl LanguageProvider for DockerComposeProvider {
                         schema_fields: vec![],
                         event_topics: vec![],
                         tx_scopes: vec![],
-                        pool_bytes: vec![],
                     });
                 }
             }
@@ -329,7 +328,6 @@ impl LanguageProvider for DockerComposeProvider {
             schema_fields: vec![],
             event_topics: vec![],
             tx_scopes: vec![],
-            pool_bytes: vec![],
         })
     }
 }
