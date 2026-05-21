@@ -1,12 +1,16 @@
 //! FQN (fully-qualified-name) helpers for `ecp inspect` and `ecp impact`.
 //!
-//! ## Why derive owner from HasMethod edges, not a stored field?
+//! ## Owner-class resolution strategy
 //!
-//! `Node` in the archived graph has no `owner_class` field — the field lives
+//! On `main`, the archived `Node` has no `owner_class` field — the field lives
 //! on `RawNode` (intermediate parse stage) and is used to emit `HasMethod`
-//! edges during graph construction but is not persisted. Walking the
-//! incoming edge set for `HasMethod` is the correct zero-copy approach and
-//! avoids a schema bump.
+//! edges during graph construction but is not persisted. Walking the incoming
+//! edge set for `HasMethod` / `HasProperty` is the zero-copy stopgap.
+//!
+//! Follow-up: when PR #285 (`fix/t1-11-rename-owner-class`) lands and adds
+//! `Node.owner_class: StrRef` to the archived schema, `resolve_owner_class`
+//! collapses to a single field read — O(1) instead of O(in-degree). The
+//! current edge-walk semantics stay correct in the meantime.
 
 use ecp_core::graph::{ArchivedRelType, ArchivedZeroCopyGraph};
 
@@ -48,15 +52,20 @@ pub fn format_fqn(owner: Option<&str>, name: &str) -> String {
 /// bare symbol name.
 ///
 /// - `"Foo.validate"` → `(Some("Foo"), "validate")`
+/// - `"pkg.Foo.validate"` → `(Some("pkg.Foo"), "validate")`
 /// - `"validate"` → `(None, "validate")`
 ///
-/// Splits on the FIRST `.` only so that namespaced names like
-/// `"pkg.Foo.validate"` are treated as owner=`"pkg.Foo"`, name=`"validate"`.
-/// Callers that only have single-level classes will never see that case, but
-/// the convention is stable.
+/// Splits on the **last** `.` so the bare name on the right matches
+/// `Node.name` (which is always a bare identifier) while everything left of
+/// the final dot becomes the owner prefix. This admits namespaced owners
+/// (`pkg.Foo`) without changing the single-level (`Foo.validate`) contract.
+///
+/// `rename` (PR #285) currently splits on the first `.` — that PR will be
+/// migrated to share this helper as a follow-up to keep dot semantics
+/// uniform across the CLI.
 pub fn split_fqn_target(s: &str) -> (Option<&str>, &str) {
-    match s.rfind('.') {
-        Some(dot_pos) => (Some(&s[..dot_pos]), &s[dot_pos + 1..]),
+    match s.rsplit_once('.') {
+        Some((owner, name)) => (Some(owner), name),
         None => (None, s),
     }
 }
