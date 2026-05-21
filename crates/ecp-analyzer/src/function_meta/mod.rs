@@ -20,9 +20,14 @@ use ecp_core::analyzer::types::{RawFunctionMeta, RawNode};
 use ecp_core::graph::{FileCategory, NodeKind};
 use tree_sitter::Node;
 
+pub mod csharp;
+pub mod dart;
+pub mod java;
 pub mod javascript;
+pub mod kotlin;
 pub mod python;
 pub mod rust_lang;
+pub mod swift;
 pub mod typescript;
 
 /// Span-keyed index entry: `(span, &RawNode)`.
@@ -40,6 +45,26 @@ pub(super) fn ts_span(n: &Node<'_>) -> (u32, u32, u32, u32) {
 /// the rare non-UTF-8 region.
 pub(super) fn node_text<'a>(n: &Node<'_>, source: &'a [u8]) -> &'a str {
     std::str::from_utf8(&source[n.start_byte()..n.end_byte()]).unwrap_or("")
+}
+
+/// Find the first direct child of `node` matching `kind`. Used by
+/// kotlin/dart/swift extractors to pick out specific child grammar nodes
+/// without re-implementing the cursor walk per language.
+pub(super) fn find_child_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut c = node.walk();
+    if !c.goto_first_child() {
+        return None;
+    }
+    loop {
+        let child = c.node();
+        if child.kind() == kind {
+            return Some(child);
+        }
+        if !c.goto_next_sibling() {
+            break;
+        }
+    }
+    None
 }
 
 /// Sorted span index over Function/Method/Constructor nodes — enables
