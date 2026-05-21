@@ -1100,6 +1100,7 @@ impl LanguageProvider for PythonProvider {
                 &[
                     crate::event_topic::KAFKA_PYTHON,
                     crate::event_topic::CELERY_PYTHON,
+                    crate::event_topic::REDIS_PYTHON,
                 ],
                 &imports,
                 &mut pool,

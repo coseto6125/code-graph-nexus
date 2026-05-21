@@ -173,6 +173,10 @@ pub enum FrameworkId {
     /// (fire-and-forget) so LLMs know task invocations are durable
     /// (broker-backed queue with retry semantics).
     Celery,
+    /// Redis pub/sub — fire-and-forget channel model (T5-26).
+    /// Distinguished from Kafka (durable log) and RabbitMQ (queued AMQP)
+    /// so LLMs know subscribers MUST be online when publish fires.
+    Redis,
     // ── Fallback for frameworks not yet listed; promote to its own variant
     //    when adding emit support, do not extend silently. ──
     Unknown,
@@ -196,6 +200,7 @@ pub const FRAMEWORK_NAMES: &[&str] = &[
     "pony-db-session",
     "protobuf",
     "celery",
+    "redis",
     "unknown",
 ];
 
@@ -237,6 +242,7 @@ impl FrameworkId {
             14 => Self::PonyDbSession,
             15 => Self::Protobuf,
             16 => Self::Celery,
+            17 => Self::Redis,
             _ => Self::Unknown,
         }
     }
