@@ -54,13 +54,20 @@ fn tiny_byte_budget_aborts_large_source() {
 
 #[test]
 fn generous_budget_completes_large_source() {
-    // Windows GHA runners parsed 650 KB (50_000 lines) at ~1.05s — just over
-    // the 1s default. 20_000 lines / 260 KB keeps the test meaningful (still
-    // exercises a realistic large source) while leaving safety margin on the
-    // slowest supported CI tier.
+    // With mimalloc as the test allocator (above), Windows comfortably stays
+    // under the 1 s DEFAULT at 50_000 lines — same as Linux / macOS. The
+    // +10 % Windows budget below remains as defense-in-depth against future
+    // GHA scheduler slowdowns (observed 1.05 s before mimalloc landed).
     let mut p = rust_parser();
-    let src = "fn main() {}\n".repeat(20_000);
-    let tree = parse_with_budget(&mut p, src.as_bytes(), ParseBudget::DEFAULT);
+    let src = "fn main() {}\n".repeat(50_000);
+    #[cfg(target_os = "windows")]
+    let budget = ParseBudget {
+        max_duration: ParseBudget::DEFAULT.max_duration + ParseBudget::DEFAULT.max_duration / 10,
+        max_bytes: ParseBudget::DEFAULT.max_bytes,
+    };
+    #[cfg(not(target_os = "windows"))]
+    let budget = ParseBudget::DEFAULT;
+    let tree = parse_with_budget(&mut p, src.as_bytes(), budget);
     assert!(
         tree.is_some(),
         "default budget must comfortably parse {} bytes of trivial source",
