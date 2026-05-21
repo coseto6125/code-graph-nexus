@@ -5,44 +5,17 @@
 //! script Section nodes, and template expression non-capture.
 
 use ecp_analyzer::astro::parser::AstroProvider;
-use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::graph::NodeKind;
-use std::path::Path;
+
+mod sfc_helpers;
+use sfc_helpers::{find_node, import_sources, node_names_by_kind, parse_with};
 
 fn parse(src: &str) -> ecp_core::analyzer::types::LocalGraph {
-    AstroProvider::new()
-        .expect("AstroProvider::new")
-        .parse_file(Path::new("Comp.astro"), src.as_bytes())
-        .expect("parse_file")
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-fn node_names_by_kind(graph: &ecp_core::analyzer::types::LocalGraph, kind: NodeKind) -> Vec<&str> {
-    graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == kind)
-        .map(|n| n.name.as_str())
-        .collect()
-}
-
-fn find_node<'a>(
-    graph: &'a ecp_core::analyzer::types::LocalGraph,
-    name: &str,
-) -> &'a ecp_core::analyzer::types::RawNode {
-    graph
-        .nodes
-        .iter()
-        .find(|n| n.name == name)
-        .unwrap_or_else(|| {
-            let names: Vec<_> = graph.nodes.iter().map(|n| &n.name).collect();
-            panic!("node `{name}` not found; graph contains: {names:#?}")
-        })
-}
-
-fn import_sources(graph: &ecp_core::analyzer::types::LocalGraph) -> Vec<&str> {
-    graph.imports.iter().map(|i| i.source.as_str()).collect()
+    parse_with(
+        AstroProvider::new().expect("AstroProvider::new"),
+        "Comp.astro",
+        src,
+    )
 }
 
 // ── Test 1: Basic frontmatter — imports + const → Import + Const nodes ────────

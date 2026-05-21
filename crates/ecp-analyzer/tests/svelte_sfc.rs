@@ -5,44 +5,17 @@
 //! template directives not leaking JS Function nodes.
 
 use ecp_analyzer::svelte::parser::SvelteProvider;
-use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::graph::NodeKind;
-use std::path::Path;
+
+mod sfc_helpers;
+use sfc_helpers::{find_node, import_sources, node_names_by_kind, parse_with};
 
 fn parse(src: &str) -> ecp_core::analyzer::types::LocalGraph {
-    SvelteProvider::new()
-        .expect("SvelteProvider::new")
-        .parse_file(Path::new("Comp.svelte"), src.as_bytes())
-        .expect("parse_file")
-}
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-fn node_names_by_kind(graph: &ecp_core::analyzer::types::LocalGraph, kind: NodeKind) -> Vec<&str> {
-    graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == kind)
-        .map(|n| n.name.as_str())
-        .collect()
-}
-
-fn find_node<'a>(
-    graph: &'a ecp_core::analyzer::types::LocalGraph,
-    name: &str,
-) -> &'a ecp_core::analyzer::types::RawNode {
-    graph
-        .nodes
-        .iter()
-        .find(|n| n.name == name)
-        .unwrap_or_else(|| {
-            let names: Vec<_> = graph.nodes.iter().map(|n| &n.name).collect();
-            panic!("node `{name}` not found; graph contains: {names:#?}")
-        })
-}
-
-fn import_sources(graph: &ecp_core::analyzer::types::LocalGraph) -> Vec<&str> {
-    graph.imports.iter().map(|i| i.source.as_str()).collect()
+    parse_with(
+        SvelteProvider::new().expect("SvelteProvider::new"),
+        "Comp.svelte",
+        src,
+    )
 }
 
 // ── Test 1: Basic SFC — script + template + style → Sections + Function ───────
