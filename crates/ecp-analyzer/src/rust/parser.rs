@@ -433,11 +433,8 @@ impl LanguageProvider for RustProvider {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas,
-=======
             raw_function_metas,
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         })
     }
 }

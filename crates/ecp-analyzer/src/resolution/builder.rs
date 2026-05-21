@@ -6,12 +6,8 @@ use crate::resolution::resolver::Resolver;
 use aho_corasick::{AhoCorasick, MatchKind};
 use ecp_core::analyzer::types::{LocalGraph, RawNode};
 use ecp_core::graph::{
-<<<<<<< HEAD
-    BlindSpotRecord, CallMeta, Edge, File, FileCategory, Node, NodeKind, RelType, RouteShape,
-=======
-    BlindSpotRecord, Edge, File, FileCategory, FunctionMeta, Node, NodeKind, RelType, RouteShape,
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
-    ZeroCopyGraph,
+    BlindSpotRecord, CallMeta, Edge, File, FileCategory, FunctionMeta, Node, NodeKind, RelType,
+    RouteShape, ZeroCopyGraph,
 };
 use ecp_core::pool::{StrRef, StringPool};
 use rayon::prelude::*;
@@ -1405,13 +1401,8 @@ impl GraphBuilder {
             files,
             blind_spots: all_blind_spots,
             route_shapes: route_shapes_out,
-<<<<<<< HEAD
             call_metas,
-            function_metas: vec![],
-=======
-            call_metas: vec![],
             function_metas,
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         }
     }
 }
@@ -1817,11 +1808,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
         let target = LocalGraph {
             file_path: "src/b.ts".into(),
@@ -1845,11 +1833,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
 
         let mut builder = GraphBuilder::new();
@@ -2002,11 +1987,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
 
         let mut builder = GraphBuilder::new();
@@ -2092,11 +2074,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
         let mut builder = GraphBuilder::new();
         builder.add_graph(g);
@@ -2160,11 +2139,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
 
         let mut builder = GraphBuilder::new();
@@ -2209,11 +2185,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         }
     }
 
@@ -2313,11 +2286,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         };
 
         let mut builder = GraphBuilder::new();
@@ -2414,11 +2384,8 @@ mod tests {
                     schema_fields: None,
                     event_topics: None,
                     tx_scopes: None,
-<<<<<<< HEAD
                     call_metas: vec![],
-=======
                     raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
                 },
                 LocalGraph {
                     file_path: "src/bar.rs".into(),
@@ -2469,11 +2436,8 @@ mod tests {
                     schema_fields: None,
                     event_topics: None,
                     tx_scopes: None,
-<<<<<<< HEAD
                     call_metas: vec![],
-=======
                     raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
                 },
             ]
         }
@@ -2598,11 +2562,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         }
     }
 
@@ -2629,11 +2590,8 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
-<<<<<<< HEAD
             call_metas: vec![],
-=======
             raw_function_metas: vec![],
->>>>>>> 9367228 (feat(meta): per-language FunctionMeta extraction — Python, Rust, TS, JS)
         }
     }
 
