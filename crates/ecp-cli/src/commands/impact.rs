@@ -214,6 +214,7 @@ fn classify_symbol(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coverage_bfs_for_symbol(
     graph: &ecp_core::graph::ArchivedZeroCopyGraph,
     symbol_idx: usize,
