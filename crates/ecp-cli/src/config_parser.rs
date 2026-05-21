@@ -202,8 +202,8 @@ pub fn parse_configs(repo_path: &Path) -> PathAliases {
 /// represent and is silently skipped (the skipped entry still maps in Jest —
 /// we just can't pre-compute a path for the resolver).
 ///
-/// Values are `string | [string, ...]`; we collect the first string per
-/// entry (the primary replacement).
+/// Values are `string | [string, ...]`; arrays are registered in order so
+/// fallback paths match Jest's resolution behavior.
 fn parse_jest_module_name_mapper(json: &serde_json::Value, aliases: &mut PathAliases) {
     let Some(mapper) = json
         .pointer("/moduleNameMapper")
@@ -215,18 +215,18 @@ fn parse_jest_module_name_mapper(json: &serde_json::Value, aliases: &mut PathAli
         let Some(alias_pattern) = jest_regex_to_alias(regex_key) else {
             continue;
         };
-        let replacement = match target_val {
-            serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Array(arr) => {
-                let Some(first) = arr.first().and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                first.to_string()
-            }
-            _ => continue,
+        let replacements = match target_val {
+            serde_json::Value::String(s) => vec![jest_replacement_to_glob(s)],
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(jest_replacement_to_glob)
+                .collect(),
+            _ => Vec::new(),
         };
-        let replacement = jest_replacement_to_glob(&replacement);
-        aliases.add(alias_pattern, vec![replacement]);
+        if !replacements.is_empty() {
+            aliases.add(alias_pattern, replacements);
+        }
     }
 }
 
@@ -258,8 +258,7 @@ fn parse_jest_module_name_mapper_js(content: &str, aliases: &mut PathAliases) {
         let Some(alias_pattern) = jest_regex_to_alias(key) else {
             continue;
         };
-        let replacement = jest_replacement_to_glob(val);
-        aliases.add(alias_pattern, vec![replacement]);
+        aliases.add(alias_pattern, vec![jest_replacement_to_glob(val)]);
     }
 }
 
@@ -999,11 +998,10 @@ mod tests {
             found.push(c.to_string());
             true
         });
-        // Only the first array entry is registered as a replacement.
-        assert!(
-            found.contains(&"src/lib/utils".to_string()),
-            "jest.config.json array value first entry must resolve; got {:?}",
-            found
+        assert_eq!(
+            found,
+            vec!["src/lib/utils", "lib/utils"],
+            "jest.config.json array values must resolve in order"
         );
     }
 
