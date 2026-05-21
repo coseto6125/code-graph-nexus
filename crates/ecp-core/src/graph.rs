@@ -88,6 +88,7 @@ impl RelType {
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[rkyv(compare(PartialEq))]
 #[rkyv(derive(Debug))]
+#[repr(u8)]
 pub enum NodeKind {
     File,
     Function,
@@ -146,7 +147,7 @@ pub enum NodeKind {
     /// a symbol callers reach for directly, but `ecp inspect` needs it
     /// to enumerate associated functions per type.
     Impl,
-    // ── Schema / event / transaction expansion (T0-1) ───────────────────
+    // ── Schema / event / transaction expansion ─────────────────────────
     // Appended at the END to keep rkyv discriminants stable. Variants
     // address data-layer and event-driven patterns that previously collapsed
     // into `Property` / `Variable` / `Function` and obscured cross-service
@@ -243,6 +244,7 @@ impl NodeKind {
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[rkyv(compare(PartialEq))]
 #[rkyv(derive(Debug))]
+#[repr(u8)]
 pub enum RelType {
     Defines,
     Imports,
@@ -261,7 +263,7 @@ pub enum RelType {
     /// count as `fetch-url-match[|keys:a,b][|fetches:N]`, parsed by
     /// `ecp_analyzer::fetch_shape`.
     Fetches,
-    // ── Schema / event / transaction expansion (T0-1) ───────────────────
+    // ── Schema / event / transaction expansion ─────────────────────────
     // Appended at the END to keep rkyv discriminants stable.
     /// Heuristic: in-memory struct field → `SchemaField` when the struct
     /// derives an ORM trait. Low-confidence — verified by `is_heuristic()`.
@@ -275,8 +277,11 @@ pub enum RelType {
     /// Heuristic: `EventTopic` → `SchemaField` mirroring the event payload
     /// schema. Low-confidence — verified by `is_heuristic()`.
     EventTopicMirror,
-    /// `TransactionScope` → the function / method node that opens or
-    /// manages the transaction boundary.
+    /// Reverse-direction edge from a `TransactionScope` back to the
+    /// `Function` / `Method` that opens or manages it. Read as
+    /// "scope's opener is X" — the name follows the *relation*, not the
+    /// edge direction, so a single CSR slice from the scope answers
+    /// "who opens this scope?" without a join.
     OpensTxScope,
 }
 
