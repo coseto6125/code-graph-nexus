@@ -37,55 +37,40 @@
 
 use crate::framework_helpers::node_span;
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use crate::sfc_common;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor};
-
-type Span = (u32, u32, u32, u32);
+use tree_sitter::{Language, Parser, Query, QueryCursor};
 
 pub struct AstroProvider {
+    astro_language: Language,
+    ts_language: Language,
     astro_query: Query,
     ts_query: Query,
     ts_capture_by_idx: Vec<Option<NodeKind>>,
-}
-
-fn capture_kind(name: &str) -> Option<NodeKind> {
-    match name {
-        "function.name" => Some(NodeKind::Function),
-        "class.name" => Some(NodeKind::Class),
-        "method.name" => Some(NodeKind::Method),
-        "constructor.name" => Some(NodeKind::Constructor),
-        "interface.name" => Some(NodeKind::Interface),
-        "typedef.name" => Some(NodeKind::Typedef),
-        "property.name" => Some(NodeKind::Property),
-        "const.name" => Some(NodeKind::Const),
-        "variable.name" => Some(NodeKind::Variable),
-        "enum.name" => Some(NodeKind::Enum),
-        _ => None,
-    }
+    ts_root_span_indices: Vec<u32>,
 }
 
 impl AstroProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let astro_language = tree_sitter_astro::LANGUAGE.into();
+        let astro_language: Language = tree_sitter_astro::LANGUAGE.into();
         let astro_query = Query::new(&astro_language, include_str!("queries.scm"))?;
 
-        let ts_language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-        let ts_query_src = include_str!("../typescript/queries.scm");
-        let ts_query = Query::new(&ts_language, ts_query_src)?;
-        let ts_capture_by_idx = ts_query
-            .capture_names()
-            .iter()
-            .map(|n| capture_kind(n))
-            .collect();
+        let ts_language: Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let ts_query = Query::new(&ts_language, include_str!("../typescript/queries.scm"))?;
+        let ts_capture_by_idx = sfc_common::capture_kind_by_idx(&ts_query);
+        let ts_root_span_indices = sfc_common::root_span_indices(&ts_query);
 
         Ok(Self {
+            astro_language,
+            ts_language,
             astro_query,
             ts_query,
             ts_capture_by_idx,
+            ts_root_span_indices,
         })
     }
 }
@@ -97,9 +82,8 @@ impl LanguageProvider for AstroProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         // ── Pass 1: Astro SFC structure ───────────────────────────────────────
-        let astro_language = tree_sitter_astro::LANGUAGE.into();
         let mut astro_parser = Parser::new();
-        astro_parser.set_language(&astro_language)?;
+        astro_parser.set_language(&self.astro_language)?;
 
         let astro_tree = parse_with_budget(&mut astro_parser, source, ParseBudget::DEFAULT)
             .ok_or_else(|| anyhow::anyhow!("tree-sitter-astro failed to parse {:?}", path))?;
@@ -206,10 +190,12 @@ impl LanguageProvider for AstroProvider {
             let body_end = body_node.end_byte();
             let frontmatter_source = &source[body_start..body_end];
 
-            let (nodes, imports) = parse_frontmatter_content(
+            let (nodes, imports) = sfc_common::parse_embedded_script(
                 frontmatter_source,
                 &self.ts_query,
                 &self.ts_capture_by_idx,
+                &self.ts_root_span_indices,
+                &self.ts_language,
                 row_offset,
                 col_offset,
             );
@@ -229,194 +215,4 @@ impl LanguageProvider for AstroProvider {
             blind_spots: vec![],
         })
     }
-}
-
-/// Parse frontmatter content with tree-sitter-typescript, offsetting all span
-/// rows by `row_offset` so they reference positions in the containing .astro file.
-fn parse_frontmatter_content(
-    frontmatter_source: &[u8],
-    query: &Query,
-    capture_kind_by_idx: &[Option<NodeKind>],
-    row_offset: u32,
-    col_offset: u32,
-) -> (Vec<RawNode>, Vec<RawImport>) {
-    let language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    let mut parser = Parser::new();
-    if parser.set_language(&language).is_err() {
-        return (vec![], vec![]);
-    }
-    let Some(tree) = parse_with_budget(&mut parser, frontmatter_source, ParseBudget::DEFAULT)
-    else {
-        return (vec![], vec![]);
-    };
-
-    let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(query, tree.root_node(), frontmatter_source);
-
-    let idx_import = query.capture_index_for_name("import");
-    let idx_import_name = query.capture_index_for_name("import.name");
-    let idx_import_alias = query.capture_index_for_name("import.alias");
-    let idx_import_source = query.capture_index_for_name("import.source");
-    let idx_import_ns = query.capture_index_for_name("import.namespace");
-
-    let root_span_indices: Vec<u32> = query
-        .capture_names()
-        .iter()
-        .enumerate()
-        .filter(|(_, name)| {
-            matches!(
-                **name,
-                "function"
-                    | "class"
-                    | "method"
-                    | "constructor"
-                    | "interface"
-                    | "property"
-                    | "const"
-                    | "variable"
-                    | "typedef"
-                    | "enum"
-            )
-        })
-        .map(|(i, _)| i as u32)
-        .collect();
-
-    let export_idx = query.capture_index_for_name("export");
-
-    let mut nodes: Vec<RawNode> = Vec::new();
-    let mut imports: Vec<RawImport> = Vec::new();
-
-    while let Some(m) = matches.next() {
-        let mut name_node: Option<tree_sitter::Node> = None;
-        let mut kind: Option<NodeKind> = None;
-        let mut root_span_node: Option<tree_sitter::Node> = None;
-        let mut is_exported = false;
-
-        let mut import_name_node: Option<tree_sitter::Node> = None;
-        let mut import_alias_node: Option<tree_sitter::Node> = None;
-        let mut import_src_node: Option<tree_sitter::Node> = None;
-        let mut is_import = false;
-        let mut is_import_ns = false;
-
-        for cap in m.captures {
-            let ci = cap.index;
-            if let Some(Some(k)) = capture_kind_by_idx.get(ci as usize) {
-                name_node = Some(cap.node);
-                kind = Some(*k);
-            } else if Some(ci) == export_idx {
-                is_exported = true;
-            } else if Some(ci) == idx_import_name {
-                import_name_node = Some(cap.node);
-            } else if Some(ci) == idx_import_alias {
-                import_alias_node = Some(cap.node);
-            } else if Some(ci) == idx_import_source {
-                import_src_node = Some(cap.node);
-            } else if Some(ci) == idx_import {
-                is_import = true;
-            } else if Some(ci) == idx_import_ns {
-                is_import_ns = true;
-            } else if root_span_indices.contains(&ci) {
-                root_span_node = Some(cap.node);
-            }
-        }
-
-        if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
-            if let Ok(name_str) =
-                std::str::from_utf8(&frontmatter_source[n.start_byte()..n.end_byte()])
-            {
-                let raw_span = node_span(&root);
-                let span = offset_span(raw_span, row_offset, col_offset);
-                let mut existing = false;
-                for node in &mut nodes {
-                    if node.span == span && node.name == name_str {
-                        if k == NodeKind::Function
-                            && matches!(node.kind, NodeKind::Const | NodeKind::Variable)
-                        {
-                            node.kind = NodeKind::Function;
-                        }
-                        if is_exported {
-                            node.is_exported = true;
-                        }
-                        existing = true;
-                        break;
-                    }
-                }
-                if !existing {
-                    nodes.push(RawNode {
-                        name: name_str.to_string(),
-                        kind: k,
-                        span,
-                        is_exported,
-                        heritage: vec![],
-                        type_annotation: None,
-                        decorators: vec![],
-                        calls: vec![],
-                    });
-                }
-            }
-        }
-
-        if is_import {
-            if let (Some(i_name), Some(i_src)) = (import_name_node, import_src_node) {
-                if let (Ok(name_str), Ok(src_str)) = (
-                    std::str::from_utf8(
-                        &frontmatter_source[i_name.start_byte()..i_name.end_byte()],
-                    ),
-                    std::str::from_utf8(&frontmatter_source[i_src.start_byte()..i_src.end_byte()]),
-                ) {
-                    let alias_str = import_alias_node.and_then(|a| {
-                        std::str::from_utf8(&frontmatter_source[a.start_byte()..a.end_byte()])
-                            .ok()
-                            .map(|s| s.to_string())
-                    });
-                    imports.push(RawImport {
-                        imported_name: name_str.to_string(),
-                        source: src_str.to_string(),
-                        alias: alias_str,
-                        binding_kind: None,
-                    });
-                }
-            }
-        }
-
-        if is_import_ns {
-            if let (Some(a), Some(i_src)) = (import_alias_node, import_src_node) {
-                if let (Ok(alias_str), Ok(src_str)) = (
-                    std::str::from_utf8(&frontmatter_source[a.start_byte()..a.end_byte()]),
-                    std::str::from_utf8(&frontmatter_source[i_src.start_byte()..i_src.end_byte()]),
-                ) {
-                    imports.push(RawImport {
-                        imported_name: "*".to_string(),
-                        source: src_str.to_string(),
-                        alias: Some(alias_str.to_string()),
-                        binding_kind: None,
-                    });
-                }
-            }
-        }
-    }
-
-    (nodes, imports)
-}
-
-/// Add `row_offset` to the start and end rows of a span, leaving columns intact.
-/// Remaps frontmatter-local line numbers to .astro file line numbers.
-#[inline]
-fn offset_span(span: Span, row_offset: u32, col_offset: u32) -> Span {
-    let start_col = if span.0 == 0 {
-        span.1.saturating_add(col_offset)
-    } else {
-        span.1
-    };
-    let end_col = if span.2 == 0 {
-        span.3.saturating_add(col_offset)
-    } else {
-        span.3
-    };
-    (
-        span.0.saturating_add(row_offset),
-        start_col,
-        span.2.saturating_add(row_offset),
-        end_col,
-    )
 }

@@ -26,80 +26,53 @@
 
 use crate::framework_helpers::node_span;
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use crate::sfc_common;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor};
-
-/// Span type alias matching `framework_helpers::node_span` return.
-type Span = (u32, u32, u32, u32);
+use tree_sitter::{Language, Parser, Query, QueryCursor};
 
 pub struct VueProvider {
+    vue_language: Language,
+    ts_language: Language,
+    js_language: Language,
     vue_query: Query,
     ts_query: Query,
     js_query: Query,
     ts_capture_by_idx: Vec<Option<NodeKind>>,
     js_capture_by_idx: Vec<Option<NodeKind>>,
-}
-
-/// Pre-resolved capture name → NodeKind table for both TS and JS grammars.
-///
-/// TypeScript captures use `<kind>.name` convention (e.g. `function.name`).
-/// JavaScript captures use `name.<kind>` convention (e.g. `name.function`).
-/// Both are mapped here so the same `parse_script_content` helper works for
-/// either grammar without specialisation.
-fn capture_kind(name: &str) -> Option<NodeKind> {
-    match name {
-        // TypeScript-style captures
-        "function.name" => Some(NodeKind::Function),
-        "class.name" => Some(NodeKind::Class),
-        "method.name" => Some(NodeKind::Method),
-        "constructor.name" => Some(NodeKind::Constructor),
-        "interface.name" => Some(NodeKind::Interface),
-        "typedef.name" => Some(NodeKind::Typedef),
-        "property.name" => Some(NodeKind::Property),
-        "const.name" => Some(NodeKind::Const),
-        "variable.name" => Some(NodeKind::Variable),
-        "enum.name" => Some(NodeKind::Enum),
-        // JavaScript-style captures (name.<kind> convention)
-        "name.function" => Some(NodeKind::Function),
-        "name.class" => Some(NodeKind::Class),
-        "name.method" => Some(NodeKind::Method),
-        _ => None,
-    }
+    ts_root_span_indices: Vec<u32>,
+    js_root_span_indices: Vec<u32>,
 }
 
 impl VueProvider {
     pub fn new() -> anyhow::Result<Self> {
-        let vue_language = tree_sitter_vue::LANGUAGE.into();
+        let vue_language: Language = tree_sitter_vue::LANGUAGE.into();
         let vue_query = Query::new(&vue_language, include_str!("queries.scm"))?;
 
-        let ts_language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-        let ts_query_src = include_str!("../typescript/queries.scm");
-        let ts_query = Query::new(&ts_language, ts_query_src)?;
-        let ts_capture_by_idx = ts_query
-            .capture_names()
-            .iter()
-            .map(|n| capture_kind(n))
-            .collect();
+        let ts_language: Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let ts_query = Query::new(&ts_language, include_str!("../typescript/queries.scm"))?;
+        let ts_capture_by_idx = sfc_common::capture_kind_by_idx(&ts_query);
+        let ts_root_span_indices = sfc_common::root_span_indices(&ts_query);
 
-        let js_language = tree_sitter_javascript::LANGUAGE.into();
-        let js_query_src = include_str!("../javascript/queries.scm");
-        let js_query = Query::new(&js_language, js_query_src)?;
-        let js_capture_by_idx = js_query
-            .capture_names()
-            .iter()
-            .map(|n| capture_kind(n))
-            .collect();
+        let js_language: Language = tree_sitter_javascript::LANGUAGE.into();
+        let js_query = Query::new(&js_language, include_str!("../javascript/queries.scm"))?;
+        let js_capture_by_idx = sfc_common::capture_kind_by_idx(&js_query);
+        let js_root_span_indices = sfc_common::root_span_indices(&js_query);
 
         Ok(Self {
+            vue_language,
+            ts_language,
+            js_language,
             vue_query,
             ts_query,
             js_query,
             ts_capture_by_idx,
             js_capture_by_idx,
+            ts_root_span_indices,
+            js_root_span_indices,
         })
     }
 }
@@ -111,9 +84,8 @@ impl LanguageProvider for VueProvider {
 
     fn parse_file(&self, path: &Path, source: &[u8]) -> anyhow::Result<LocalGraph> {
         // ── Pass 1: Vue SFC structure ─────────────────────────────────────
-        let vue_language = tree_sitter_vue::LANGUAGE.into();
         let mut vue_parser = Parser::new();
-        vue_parser.set_language(&vue_language)?;
+        vue_parser.set_language(&self.vue_language)?;
 
         let vue_tree = parse_with_budget(&mut vue_parser, source, ParseBudget::DEFAULT)
             .ok_or_else(|| anyhow::anyhow!("tree-sitter-vue failed to parse {:?}", path))?;
@@ -226,20 +198,22 @@ impl LanguageProvider for VueProvider {
             let script_source = &source[body_start..body_end];
 
             let (nodes, imports) = if is_ts {
-                parse_script_content(
+                sfc_common::parse_embedded_script(
                     script_source,
                     &self.ts_query,
                     &self.ts_capture_by_idx,
-                    || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                    &self.ts_root_span_indices,
+                    &self.ts_language,
                     script_start_row,
                     script_start_col,
                 )
             } else {
-                parse_script_content(
+                sfc_common::parse_embedded_script(
                     script_source,
                     &self.js_query,
                     &self.js_capture_by_idx,
-                    || tree_sitter_javascript::LANGUAGE.into(),
+                    &self.js_root_span_indices,
+                    &self.js_language,
                     script_start_row,
                     script_start_col,
                 )
@@ -328,196 +302,4 @@ fn detect_setup_attr(start_tag: &tree_sitter::Node, source: &[u8]) -> bool {
         }
     }
     false
-}
-
-/// Parse a script block's raw source with the given `query` + `grammar`,
-/// returning `(nodes, imports)` with all span rows offset by `row_offset`
-/// so spans reference positions in the containing .vue file.
-fn parse_script_content(
-    script_source: &[u8],
-    query: &Query,
-    capture_kind_by_idx: &[Option<NodeKind>],
-    make_language: impl Fn() -> tree_sitter::Language,
-    row_offset: u32,
-    col_offset: u32,
-) -> (Vec<RawNode>, Vec<RawImport>) {
-    let language = make_language();
-    let mut parser = Parser::new();
-    if parser.set_language(&language).is_err() {
-        return (vec![], vec![]);
-    }
-    let Some(tree) = parse_with_budget(&mut parser, script_source, ParseBudget::DEFAULT) else {
-        return (vec![], vec![]);
-    };
-
-    let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(query, tree.root_node(), script_source);
-
-    // Pre-resolve capture indices for import handling (same names as TS/JS parsers).
-    let idx_import = query.capture_index_for_name("import");
-    let idx_import_name = query.capture_index_for_name("import.name");
-    let idx_import_alias = query.capture_index_for_name("import.alias");
-    let idx_import_source = query.capture_index_for_name("import.source");
-    let idx_import_ns = query.capture_index_for_name("import.namespace");
-
-    // Span-root anchors — capture names that carry the declaration node span
-    // (not the name identifier). TS uses e.g. `@function` / `@class`; JS uses
-    // the same names for its span-carrying captures.
-    let root_span_indices: Vec<u32> = query
-        .capture_names()
-        .iter()
-        .enumerate()
-        .filter(|(_, name)| {
-            matches!(
-                **name,
-                "function"
-                    | "class"
-                    | "method"
-                    | "constructor"
-                    | "interface"
-                    | "property"
-                    | "const"
-                    | "variable"
-                    | "typedef"
-                    | "enum"
-            )
-        })
-        .map(|(i, _)| i as u32)
-        .collect();
-
-    let export_idx = query.capture_index_for_name("export");
-
-    let mut nodes: Vec<RawNode> = Vec::new();
-    let mut imports: Vec<RawImport> = Vec::new();
-
-    while let Some(m) = matches.next() {
-        let mut name_node: Option<tree_sitter::Node> = None;
-        let mut kind: Option<NodeKind> = None;
-        let mut root_span_node: Option<tree_sitter::Node> = None;
-        let mut is_exported = false;
-
-        let mut import_name_node: Option<tree_sitter::Node> = None;
-        let mut import_alias_node: Option<tree_sitter::Node> = None;
-        let mut import_src_node: Option<tree_sitter::Node> = None;
-        let mut is_import = false;
-        let mut is_import_ns = false;
-
-        for cap in m.captures {
-            let ci = cap.index;
-            if let Some(Some(k)) = capture_kind_by_idx.get(ci as usize) {
-                name_node = Some(cap.node);
-                kind = Some(*k);
-            } else if Some(ci) == export_idx {
-                is_exported = true;
-            } else if Some(ci) == idx_import_name {
-                import_name_node = Some(cap.node);
-            } else if Some(ci) == idx_import_alias {
-                import_alias_node = Some(cap.node);
-            } else if Some(ci) == idx_import_source {
-                import_src_node = Some(cap.node);
-            } else if Some(ci) == idx_import {
-                is_import = true;
-            } else if Some(ci) == idx_import_ns {
-                is_import_ns = true;
-            } else if root_span_indices.contains(&ci) {
-                root_span_node = Some(cap.node);
-            }
-        }
-
-        if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
-            if let Ok(name_str) = std::str::from_utf8(&script_source[n.start_byte()..n.end_byte()])
-            {
-                let raw_span = node_span(&root);
-                let span = offset_span(raw_span, row_offset, col_offset);
-                let mut existing = false;
-                for node in &mut nodes {
-                    if node.span == span && node.name == name_str {
-                        if k == NodeKind::Function
-                            && matches!(node.kind, NodeKind::Const | NodeKind::Variable)
-                        {
-                            node.kind = NodeKind::Function;
-                        }
-                        if is_exported {
-                            node.is_exported = true;
-                        }
-                        existing = true;
-                        break;
-                    }
-                }
-                if !existing {
-                    nodes.push(RawNode {
-                        name: name_str.to_string(),
-                        kind: k,
-                        span,
-                        is_exported,
-                        heritage: vec![],
-                        type_annotation: None,
-                        decorators: vec![],
-                        calls: vec![],
-                    });
-                }
-            }
-        }
-
-        if is_import {
-            if let (Some(i_name), Some(i_src)) = (import_name_node, import_src_node) {
-                if let (Ok(name_str), Ok(src_str)) = (
-                    std::str::from_utf8(&script_source[i_name.start_byte()..i_name.end_byte()]),
-                    std::str::from_utf8(&script_source[i_src.start_byte()..i_src.end_byte()]),
-                ) {
-                    let alias_str = import_alias_node.and_then(|a| {
-                        std::str::from_utf8(&script_source[a.start_byte()..a.end_byte()])
-                            .ok()
-                            .map(|s| s.to_string())
-                    });
-                    imports.push(RawImport {
-                        imported_name: name_str.to_string(),
-                        source: src_str.to_string(),
-                        alias: alias_str,
-                        binding_kind: None,
-                    });
-                }
-            }
-        }
-
-        if is_import_ns {
-            if let (Some(a), Some(i_src)) = (import_alias_node, import_src_node) {
-                if let (Ok(alias_str), Ok(src_str)) = (
-                    std::str::from_utf8(&script_source[a.start_byte()..a.end_byte()]),
-                    std::str::from_utf8(&script_source[i_src.start_byte()..i_src.end_byte()]),
-                ) {
-                    imports.push(RawImport {
-                        imported_name: "*".to_string(),
-                        source: src_str.to_string(),
-                        alias: Some(alias_str.to_string()),
-                        binding_kind: None,
-                    });
-                }
-            }
-        }
-    }
-
-    (nodes, imports)
-}
-
-/// Add `row_offset` to the start and end rows of a span, leaving columns intact.
-/// This remaps script-local line numbers to .vue file line numbers.
-#[inline]
-fn offset_span(span: Span, row_offset: u32, col_offset: u32) -> Span {
-    let start_col = if span.0 == 0 {
-        span.1.saturating_add(col_offset)
-    } else {
-        span.1
-    };
-    let end_col = if span.2 == 0 {
-        span.3.saturating_add(col_offset)
-    } else {
-        span.3
-    };
-    (
-        span.0.saturating_add(row_offset),
-        start_col,
-        span.2.saturating_add(row_offset),
-        end_col,
-    )
 }
