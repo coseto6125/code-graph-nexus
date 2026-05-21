@@ -121,6 +121,19 @@ def run(cmd: list[str], cwd: Path | None = None) -> str:
     return r.stdout
 
 
+def _cypher_rows(label: str, query: str) -> list[list]:
+    """Run a cypher query and return its `rows`. Empty list on JSON failure;
+    callers distinguish "zero matches" from "decode failed" via the stderr
+    line emitted on the latter path.
+    """
+    out = run(["ecp", "cypher", "--repo", str(REPO), query, "--format", "json"])
+    try:
+        return json.loads(out).get("rows", [])
+    except json.JSONDecodeError as e:
+        print(f"!! {label}: {e}", file=sys.stderr)
+        return []
+
+
 def dump_rs(lang: str) -> set[tuple[str, str, str]]:
     """Cypher the root index with file-extension scoping for this lang.
 
@@ -133,15 +146,9 @@ def dump_rs(lang: str) -> set[tuple[str, str, str]]:
         return set()
     where = _ext_clause(exts, "n")
     q = f"MATCH (n) WHERE {where} RETURN n.kind, n.filePath, n.name"
-    out = run(["ecp", "cypher", "--repo", str(REPO), q, "--format", "json"])
-    try:
-        obj = json.loads(out)
-    except json.JSONDecodeError as e:
-        print(f"!! dump_rs({lang}): {e}", file=sys.stderr)
-        return set()
     prefix = f"{lang}/"
     sink: set[tuple[str, str, str]] = set()
-    for row in obj.get("rows", []):
+    for row in _cypher_rows(f"dump_rs({lang})", q):
         kind, fp, name = row[0], row[1], row[2]
         if kind in DROP_KINDS or is_anon(name):
             continue
@@ -274,17 +281,11 @@ def dump_rs_schema_nodes(lang: str) -> dict[str, set[tuple[str, str, str]]]:
     where = _ext_clause(exts, "n")
     labels = "|".join(SCHEMA_NODE_KINDS)
     q = f"MATCH (n:{labels}) WHERE {where} RETURN n.kind, n.filePath, n.name"
-    out = run(["ecp", "cypher", "--repo", str(REPO), q, "--format", "json"])
-    try:
-        obj = json.loads(out)
-    except json.JSONDecodeError as e:
-        print(f"!! dump_rs_schema_nodes({lang}): {e}", file=sys.stderr)
-        return {}
     prefix = f"{lang}/"
     buckets: dict[str, set[tuple[str, str, str]]] = {k: set() for k in SCHEMA_NODE_KINDS}
-    for row in obj.get("rows", []):
+    for row in _cypher_rows(f"dump_rs_schema_nodes({lang})", q):
         kind, fp, name = row[0], row[1], row[2]
-        if is_anon(name) or kind not in buckets:
+        if is_anon(name):
             continue
         if fp.startswith(prefix):
             fp = fp[len(prefix) :]
@@ -321,8 +322,10 @@ def diff_lang(lang: str) -> tuple[int, int, int, int, int]:
 def dump_schema_nodes_lang(lang: str) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     buckets = dump_rs_schema_nodes(lang)
+    if not buckets:
+        return
     for node_kind in SCHEMA_NODE_KINDS:
-        rows = buckets.get(node_kind, set())
+        rows = buckets[node_kind]
         (OUT_DIR / f"{lang}_rs_{node_kind.lower()}.txt").write_text(
             "\n".join(f"{k}\t{f}\t{n}" for k, f, n in sorted(rows)) + "\n"
         )

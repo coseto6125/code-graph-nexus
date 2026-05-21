@@ -12,7 +12,7 @@ use ecp_core::cypher::parser::parse_query;
 use ecp_core::graph::{
     ArchivedZeroCopyGraph, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use tempfile::tempdir;
 
@@ -21,9 +21,9 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
     let f_name = pool.add("alpha");
     let c_name = pool.add("Beta");
     let m_name = pool.add("gamma");
-    let f_uid = pool.add("Function:test.rs:alpha");
-    let c_uid = pool.add("Class:test.rs:Beta");
-    let m_uid = pool.add("Method:test.rs:Beta::gamma");
+    let f_uid = ecp_core::uid::compute(NodeKind::Function, "test.rs", None, "alpha");
+    let c_uid = ecp_core::uid::compute(NodeKind::Class, "test.rs", None, "Beta");
+    let m_uid = ecp_core::uid::compute(NodeKind::Method, "test.rs", Some("Beta"), "gamma");
 
     let graph = ZeroCopyGraph {
         magic: GRAPH_MAGIC,
@@ -39,6 +39,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 kind: NodeKind::Function,
                 span: (1, 0, 2, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: c_uid,
@@ -47,6 +48,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 kind: NodeKind::Class,
                 span: (3, 0, 4, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: m_uid,
@@ -55,6 +57,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
                 kind: NodeKind::Method,
                 span: (5, 0, 6, 0),
                 community_id: 0,
+                owner_class: c_name,
             },
         ],
         edges: vec![],
@@ -117,6 +120,19 @@ fn where_label_three_way_disjunction_covers_all() {
 fn where_label_unknown_label_matches_nothing() {
     let names = names_returned("MATCH (n) WHERE n:DoesNotExist RETURN n.name");
     assert!(names.is_empty(), "unknown label must produce zero rows");
+}
+
+/// Label that IS a real `NodeKind` variant but no node in the fixture
+/// carries it — must still return empty.  Pins the behaviour separately
+/// from the bogus-label case in case a future change starts validating
+/// label names against the enum at parse time.
+#[test]
+fn where_label_valid_kind_absent_in_fixture() {
+    let names = names_returned("MATCH (n) WHERE n:Trait RETURN n.name");
+    assert!(
+        names.is_empty(),
+        "valid-but-absent label must produce zero rows"
+    );
 }
 
 #[test]
