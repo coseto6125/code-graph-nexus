@@ -69,6 +69,7 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "tool-map",
     "peers",
     "review",
+    "find-transaction-patterns",
     // Hidden
     "admin",
     "group",
