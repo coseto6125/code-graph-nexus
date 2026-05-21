@@ -510,6 +510,13 @@ impl LanguageProvider for JavaScriptProvider {
 
         let param_names = collect_js_param_names(tree.root_node(), source);
         let call_metas = detect_js_ts_indirect(tree.root_node(), source, &nodes, &param_names);
+        let file_category = crate::resolution::builder::determine_category(&path.to_string_lossy());
+        let raw_function_metas = crate::function_meta::javascript::extract(
+            tree.root_node(),
+            source,
+            &nodes,
+            file_category,
+        );
 
         Ok(LocalGraph {
             content_hash: [0; 8],
@@ -525,6 +532,7 @@ impl LanguageProvider for JavaScriptProvider {
             event_topics: None,
             tx_scopes: None,
             call_metas,
+            raw_function_metas,
         })
     }
 }

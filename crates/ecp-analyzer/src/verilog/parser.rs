@@ -165,6 +165,7 @@ impl LanguageProvider for VerilogProvider {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         })
     }
 }

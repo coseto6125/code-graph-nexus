@@ -720,6 +720,7 @@ impl LanguageProvider for CProvider {
             event_topics: None,
             tx_scopes: None,
             call_metas,
+            raw_function_metas: vec![],
         })
     }
 }

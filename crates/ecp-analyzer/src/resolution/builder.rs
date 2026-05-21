@@ -1,12 +1,13 @@
 use crate::fetch_shape::{consumer_keys, fetch_urls, format_reason, response_shapes};
+use crate::framework_helpers::Span;
 use crate::resolution::index::{ResolveTarget, SymbolTable};
 use crate::resolution::path_aliases::PathAliases;
 use crate::resolution::resolver::Resolver;
 use aho_corasick::{AhoCorasick, MatchKind};
 use ecp_core::analyzer::types::{LocalGraph, RawNode};
 use ecp_core::graph::{
-    BlindSpotRecord, CallMeta, Edge, File, FileCategory, Node, NodeKind, RelType, RouteShape,
-    ZeroCopyGraph,
+    BlindSpotRecord, CallMeta, Edge, File, FileCategory, FunctionMeta, Node, NodeKind, RelType,
+    RouteShape, ZeroCopyGraph,
 };
 use ecp_core::pool::{StrRef, StringPool};
 use rayon::prelude::*;
@@ -755,6 +756,67 @@ impl GraphBuilder {
                 _t_pass17.elapsed().as_secs_f32()
             );
         }
+        let _t_pass18 = std::time::Instant::now();
+        // Pass 1.8: FunctionMeta collection.
+        //
+        // For each LocalGraph that has populated `raw_function_metas`, pair each
+        // entry with the corresponding graph node by span, then intern the strings
+        // into the pool and produce a `FunctionMeta`. The result is sorted by
+        // `node_idx` so `ZeroCopyGraph::function_meta()` binary-search works.
+        let mut function_metas: Vec<FunctionMeta> = Vec::new();
+        {
+            let mut node_offset: u32 = 0;
+            for local_graph in &self.local_graphs {
+                if !local_graph.raw_function_metas.is_empty() {
+                    let base = node_offset;
+                    // Sorted index → binary_search per node, so the inner loop
+                    // is O(N log F) instead of O(N*F).
+                    let mut meta_idx: Vec<(Span, usize)> = local_graph
+                        .raw_function_metas
+                        .iter()
+                        .enumerate()
+                        .map(|(i, m)| (m.span, i))
+                        .collect();
+                    meta_idx.sort_by_key(|(s, _)| *s);
+                    for (raw_idx, raw_node) in local_graph.nodes.iter().enumerate() {
+                        if !matches!(
+                            raw_node.kind,
+                            NodeKind::Function | NodeKind::Method | NodeKind::Constructor
+                        ) {
+                            continue;
+                        }
+                        let node_idx = base + raw_idx as u32;
+                        let Ok(slot) = meta_idx.binary_search_by_key(&raw_node.span, |(s, _)| *s)
+                        else {
+                            continue;
+                        };
+                        let rfm = &local_graph.raw_function_metas[meta_idx[slot].1];
+                        let params: Vec<StrRef> =
+                            rfm.params.iter().map(|s| string_pool.add(s)).collect();
+                        let return_type = string_pool.add(&rfm.return_type);
+                        let decorators: Vec<StrRef> =
+                            rfm.decorators.iter().map(|s| string_pool.add(s)).collect();
+                        function_metas.push(FunctionMeta {
+                            node_idx,
+                            flags: rfm.flags,
+                            params,
+                            return_type,
+                            decorators,
+                        });
+                    }
+                }
+                node_offset += local_graph.nodes.len() as u32;
+            }
+        }
+        // Sort by node_idx so binary search in function_meta() is valid.
+        function_metas.sort_unstable_by_key(|m| m.node_idx);
+        if prof {
+            eprintln!(
+                "prof build.pass18_function_meta: {:.3}s  count={}",
+                _t_pass18.elapsed().as_secs_f32(),
+                function_metas.len()
+            );
+        }
         let _t_pass2 = std::time::Instant::now();
         // Pass 2: Resolve imports and build edges
         //
@@ -1340,7 +1402,7 @@ impl GraphBuilder {
             blind_spots: all_blind_spots,
             route_shapes: route_shapes_out,
             call_metas,
-            function_metas: vec![],
+            function_metas,
         }
     }
 }
@@ -1747,6 +1809,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
         let target = LocalGraph {
             file_path: "src/b.ts".into(),
@@ -1771,6 +1834,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
 
         let mut builder = GraphBuilder::new();
@@ -1924,6 +1988,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
 
         let mut builder = GraphBuilder::new();
@@ -2010,6 +2075,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
         let mut builder = GraphBuilder::new();
         builder.add_graph(g);
@@ -2074,6 +2140,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
 
         let mut builder = GraphBuilder::new();
@@ -2119,6 +2186,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         }
     }
 
@@ -2219,6 +2287,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         };
 
         let mut builder = GraphBuilder::new();
@@ -2316,6 +2385,7 @@ mod tests {
                     event_topics: None,
                     tx_scopes: None,
                     call_metas: vec![],
+                    raw_function_metas: vec![],
                 },
                 LocalGraph {
                     file_path: "src/bar.rs".into(),
@@ -2367,6 +2437,7 @@ mod tests {
                     event_topics: None,
                     tx_scopes: None,
                     call_metas: vec![],
+                    raw_function_metas: vec![],
                 },
             ]
         }
@@ -2492,6 +2563,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         }
     }
 
@@ -2519,6 +2591,7 @@ mod tests {
             event_topics: None,
             tx_scopes: None,
             call_metas: vec![],
+            raw_function_metas: vec![],
         }
     }
 
