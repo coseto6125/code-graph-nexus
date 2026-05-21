@@ -432,11 +432,13 @@ impl LanguageProvider for JavaProvider {
                     crate::event_topic::REDIS_JAVA,
                     crate::event_topic::KAFKA_JAVA,
                     crate::event_topic::RABBITMQ_JAVA,
+                    crate::event_topic::SQS_JAVA,
                 ],
                 &imports,
             );
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
+
 
         Ok(LocalGraph {
             content_hash: [0; 8],
