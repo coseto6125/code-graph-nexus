@@ -51,7 +51,7 @@ pub struct AstroProvider {
     astro_query: Query,
     ts_query: Query,
     ts_capture_by_idx: Vec<Option<NodeKind>>,
-    ts_root_span_indices: Vec<u32>,
+    ts_root_span_mask: u64,
 }
 
 impl AstroProvider {
@@ -62,7 +62,7 @@ impl AstroProvider {
         let ts_language: Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         let ts_query = Query::new(&ts_language, include_str!("../typescript/queries.scm"))?;
         let ts_capture_by_idx = sfc_common::capture_kind_by_idx(&ts_query);
-        let ts_root_span_indices = sfc_common::root_span_indices(&ts_query);
+        let ts_root_span_mask = sfc_common::root_span_mask(&ts_query);
 
         Ok(Self {
             astro_language,
@@ -70,7 +70,7 @@ impl AstroProvider {
             astro_query,
             ts_query,
             ts_capture_by_idx,
-            ts_root_span_indices,
+            ts_root_span_mask,
         })
     }
 }
@@ -194,7 +194,7 @@ impl LanguageProvider for AstroProvider {
                 frontmatter_source,
                 &self.ts_query,
                 &self.ts_capture_by_idx,
-                &self.ts_root_span_indices,
+                self.ts_root_span_mask,
                 &self.ts_language,
                 row_offset,
                 col_offset,

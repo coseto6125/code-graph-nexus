@@ -43,8 +43,8 @@ pub struct VueProvider {
     js_query: Query,
     ts_capture_by_idx: Vec<Option<NodeKind>>,
     js_capture_by_idx: Vec<Option<NodeKind>>,
-    ts_root_span_indices: Vec<u32>,
-    js_root_span_indices: Vec<u32>,
+    ts_root_span_mask: u64,
+    js_root_span_mask: u64,
 }
 
 impl VueProvider {
@@ -55,12 +55,12 @@ impl VueProvider {
         let ts_language: Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         let ts_query = Query::new(&ts_language, include_str!("../typescript/queries.scm"))?;
         let ts_capture_by_idx = sfc_common::capture_kind_by_idx(&ts_query);
-        let ts_root_span_indices = sfc_common::root_span_indices(&ts_query);
+        let ts_root_span_mask = sfc_common::root_span_mask(&ts_query);
 
         let js_language: Language = tree_sitter_javascript::LANGUAGE.into();
         let js_query = Query::new(&js_language, include_str!("../javascript/queries.scm"))?;
         let js_capture_by_idx = sfc_common::capture_kind_by_idx(&js_query);
-        let js_root_span_indices = sfc_common::root_span_indices(&js_query);
+        let js_root_span_mask = sfc_common::root_span_mask(&js_query);
 
         Ok(Self {
             vue_language,
@@ -71,8 +71,8 @@ impl VueProvider {
             js_query,
             ts_capture_by_idx,
             js_capture_by_idx,
-            ts_root_span_indices,
-            js_root_span_indices,
+            ts_root_span_mask,
+            js_root_span_mask,
         })
     }
 }
@@ -202,7 +202,7 @@ impl LanguageProvider for VueProvider {
                     script_source,
                     &self.ts_query,
                     &self.ts_capture_by_idx,
-                    &self.ts_root_span_indices,
+                    self.ts_root_span_mask,
                     &self.ts_language,
                     script_start_row,
                     script_start_col,
@@ -212,7 +212,7 @@ impl LanguageProvider for VueProvider {
                     script_source,
                     &self.js_query,
                     &self.js_capture_by_idx,
-                    &self.js_root_span_indices,
+                    self.js_root_span_mask,
                     &self.js_language,
                     script_start_row,
                     script_start_col,

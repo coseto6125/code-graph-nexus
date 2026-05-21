@@ -6,19 +6,27 @@
 //! (capture dispatch, span remap, import + node emission) is identical
 //! across the three providers, so it lives here once.
 
-use crate::framework_helpers::node_span;
+use crate::framework_helpers::{node_span, Span};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::types::{RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Parser, Query, QueryCursor};
 
-pub type Span = (u32, u32, u32, u32);
-
-/// Map a tree-sitter capture name to a `NodeKind`. Handles both the TS
-/// convention (`<kind>.name`) and the JS convention (`name.<kind>`); a
-/// single dispatch table covers either grammar.
-pub fn capture_kind(name: &str) -> Option<NodeKind> {
+/// Map a tree-sitter capture name to a `NodeKind` for SFC embedded
+/// scripts. Handles both the TS convention (`<kind>.name`) and the JS
+/// convention (`name.<kind>`); a single dispatch table covers either
+/// grammar.
+///
+/// **Why this is not `TypeScriptSpec::CAPTURE_KIND ∪ JavaScriptSpec::CAPTURE_KIND`:**
+/// the JS spec table intentionally omits `variable.name` because the
+/// standalone JS parser runs an arrow-function / `const|let|var` dedup
+/// pass via `idx_variable_name` *before* the spec lookup (see
+/// `javascript/spec.rs:7-13`). SFC has no such pre-pass, so a JS query
+/// capture of `@variable.name` here must resolve to `NodeKind::Variable`
+/// directly — which the spec table won't do. Keep this list aligned
+/// with the union of both query files' captures, not the spec tables.
+pub(crate) fn capture_kind(name: &str) -> Option<NodeKind> {
     match name {
         "function.name" => Some(NodeKind::Function),
         "class.name" => Some(NodeKind::Class),
@@ -47,10 +55,15 @@ pub fn capture_kind_by_idx(query: &Query) -> Vec<Option<NodeKind>> {
         .collect()
 }
 
-/// Build the set of capture indices whose nodes carry the enclosing
+/// Build a bitmask of capture indices whose nodes carry the enclosing
 /// declaration span (the "root span" for a function/class/method/...).
 /// Used to distinguish a name-identifier capture from its enclosing node.
-pub fn root_span_indices(query: &Query) -> Vec<u32> {
+///
+/// A `u64` mask is enough — tree-sitter queries in this crate have well
+/// under 64 captures (TS query has ~25, JS query has ~10). The inner
+/// match loop checks membership with a single bit-test instead of an
+/// `O(K)` linear scan over a `Vec<u32>`.
+pub fn root_span_mask(query: &Query) -> u64 {
     query
         .capture_names()
         .iter()
@@ -70,8 +83,7 @@ pub fn root_span_indices(query: &Query) -> Vec<u32> {
                     | "enum"
             )
         })
-        .map(|(i, _)| i as u32)
-        .collect()
+        .fold(0u64, |acc, (i, _)| acc | (1u64 << i))
 }
 
 /// Remap a script-local span into outer-file coordinates by adding
@@ -106,7 +118,7 @@ pub fn parse_embedded_script(
     script_source: &[u8],
     query: &Query,
     capture_kind_by_idx: &[Option<NodeKind>],
-    root_span_indices: &[u32],
+    root_span_mask: u64,
     language: &Language,
     row_offset: u32,
     col_offset: u32,
@@ -161,7 +173,7 @@ pub fn parse_embedded_script(
                 is_import = true;
             } else if Some(ci) == idx_import_ns {
                 is_import_ns = true;
-            } else if root_span_indices.contains(&ci) {
+            } else if ci < 64 && (root_span_mask >> ci) & 1 != 0 {
                 root_span_node = Some(cap.node);
             }
         }
