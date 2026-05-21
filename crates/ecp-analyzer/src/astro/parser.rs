@@ -201,6 +201,7 @@ impl LanguageProvider for AstroProvider {
             // Its start_position().row gives that row in .astro file coordinates,
             // so we use it directly as the offset for inner-parse row remapping.
             let row_offset = body_node.start_position().row as u32;
+            let col_offset = body_node.start_position().column as u32;
             let body_start = body_node.start_byte();
             let body_end = body_node.end_byte();
             let frontmatter_source = &source[body_start..body_end];
@@ -210,6 +211,7 @@ impl LanguageProvider for AstroProvider {
                 &self.ts_query,
                 &self.ts_capture_by_idx,
                 row_offset,
+                col_offset,
             );
             all_nodes.extend(nodes);
             all_imports.extend(imports);
@@ -236,6 +238,7 @@ fn parse_frontmatter_content(
     query: &Query,
     capture_kind_by_idx: &[Option<NodeKind>],
     row_offset: u32,
+    col_offset: u32,
 ) -> (Vec<RawNode>, Vec<RawImport>) {
     let language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
     let mut parser = Parser::new();
@@ -322,7 +325,7 @@ fn parse_frontmatter_content(
                 std::str::from_utf8(&frontmatter_source[n.start_byte()..n.end_byte()])
             {
                 let raw_span = node_span(&root);
-                let span = offset_span(raw_span, row_offset);
+                let span = offset_span(raw_span, row_offset, col_offset);
                 let mut existing = false;
                 for node in &mut nodes {
                     if node.span == span && node.name == name_str {
@@ -399,11 +402,21 @@ fn parse_frontmatter_content(
 /// Add `row_offset` to the start and end rows of a span, leaving columns intact.
 /// Remaps frontmatter-local line numbers to .astro file line numbers.
 #[inline]
-fn offset_span(span: Span, row_offset: u32) -> Span {
+fn offset_span(span: Span, row_offset: u32, col_offset: u32) -> Span {
+    let start_col = if span.0 == 0 {
+        span.1.saturating_add(col_offset)
+    } else {
+        span.1
+    };
+    let end_col = if span.2 == 0 {
+        span.3.saturating_add(col_offset)
+    } else {
+        span.3
+    };
     (
         span.0.saturating_add(row_offset),
-        span.1,
+        start_col,
         span.2.saturating_add(row_offset),
-        span.3,
+        end_col,
     )
 }
