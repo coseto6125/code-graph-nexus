@@ -258,13 +258,11 @@ def _read_cached_ref(lang: str) -> set[tuple[str, str, str]] | None:
 
 
 def dump_rs_schema_nodes(lang: str, node_kind: str) -> set[tuple[str, str, str]]:
-    """Query ecp for SchemaField/EventTopic/TransactionScope nodes per language.
+    """Dump ecp-only node kinds (no oracle counterpart for these labels).
 
-    These node types exist only in ecp (not in ref-gitnexus oracle), so this
-    function queries ecp exclusively to build a baseline for the new schema
-    dimensions.
-
-    Returns (kind, filePath, name) tuples with file-extension scoping.
+    Returns an empty set for languages with no registered extensions in
+    LANG_EXTS — caller distinguishes "unknown lang" from "zero matches" via
+    the missing baseline file (we never write empty files for unknown langs).
     """
     exts = LANG_EXTS.get(lang, [])
     if not exts:
@@ -315,11 +313,6 @@ def diff_lang(lang: str) -> tuple[int, int, int, int, int]:
 
 
 def dump_schema_nodes_lang(lang: str) -> None:
-    """Dump ecp-only schema nodes (SchemaField/EventTopic/TransactionScope).
-
-    Since these node types exist only in ecp (not in ref-gitnexus), we emit
-    ecp counts per node type as a baseline for post-T4-7 parity tracking.
-    """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for node_kind in ("SchemaField", "EventTopic", "TransactionScope"):
         rows = dump_rs_schema_nodes(lang, node_kind)
@@ -343,7 +336,6 @@ def main() -> int:
             f"{lang:<12} rs={rs_n:>6} ref={ref_n:>6}  "
             f"rs_only={rs_only:>6} ref_only={ref_only:>6} common={common:>6}"
         )
-        # Also dump the three new schema node types (ecp-only, no oracle baseline)
         dump_schema_nodes_lang(lang)
     md = [
         "# Per-lang per-symbol parity diff",
