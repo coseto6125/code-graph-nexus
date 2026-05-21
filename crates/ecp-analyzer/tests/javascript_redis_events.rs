@@ -5,7 +5,7 @@
 //!
 //! Libraries under test: node-redis v4 (`redis` import), ioredis (`ioredis`).
 
-use ecp_analyzer::event_topic::{extract_event_topics, KAFKA_JS, REDIS_JS};
+use ecp_analyzer::event_topic::{extract_event_topics, REDIS_JS};
 use ecp_core::analyzer::types::{FrameworkId, PubSub, RawImport};
 use ecp_core::pool::StringPool;
 use tree_sitter::{Parser, Query};
@@ -35,7 +35,7 @@ fn run(
         &tree,
         src.as_bytes(),
         &query,
-        &[KAFKA_JS, REDIS_JS],
+        &[REDIS_JS],
         &imports,
         &mut pool,
     );
@@ -205,25 +205,5 @@ async function handler(req, res) {
     assert!(result.is_empty(), "non-redis import must produce nothing");
 }
 
-/// Kafka regression: REDIS_JS in config slice must not break KAFKA_JS captures.
-#[test]
-fn test_kafka_regression_with_redis_in_slice() {
-    let src = r#"
-import { Kafka } from 'kafkajs';
-
-async function publishOrder(data) {
-    const producer = kafka.producer();
-    await producer.send({ topic: 'orders', messages: [{ value: JSON.stringify(data) }] });
-}
-"#;
-    let (result, pool) = run(src, &["kafkajs"]);
-    assert_eq!(
-        result.len(),
-        1,
-        "Kafka detection must still work with REDIS_JS in slice"
-    );
-    assert_eq!(result[0].lib, FrameworkId::Kafka);
-    assert_eq!(result[0].direction, PubSub::Publish);
-    let lit = result[0].topic_literal.expect("topic_literal must be Some");
-    assert_eq!(pool.resolve(&lit), "orders");
-}
+// Kafka JS regression dropped: KAFKA_JS does not yet exist on `main`; add back
+// when the Kafka JS detector PR lands.

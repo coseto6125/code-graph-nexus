@@ -4,9 +4,7 @@
 //! query string against `redis` (sync) and `aioredis` (async) patterns.
 //! Also re-verifies Kafka + RabbitMQ regression isolation.
 
-use ecp_analyzer::event_topic::{
-    extract_event_topics, KAFKA_PYTHON, RABBITMQ_PYTHON, REDIS_PYTHON,
-};
+use ecp_analyzer::event_topic::{extract_event_topics, KAFKA_PYTHON, REDIS_PYTHON};
 use ecp_core::analyzer::types::{FrameworkId, PubSub, RawImport};
 use ecp_core::pool::StringPool;
 use tree_sitter::{Parser, Query};
@@ -36,7 +34,7 @@ fn run(
         &tree,
         src.as_bytes(),
         &query,
-        &[KAFKA_PYTHON, RABBITMQ_PYTHON, REDIS_PYTHON],
+        &[KAFKA_PYTHON, REDIS_PYTHON],
         &imports,
         &mut pool,
     );
@@ -272,31 +270,8 @@ def send_event(producer):
     assert_eq!(pool.resolve(&lit), "events");
 }
 
-// ── Regression: RabbitMQ still fires correctly in the same config slice ──
-
-/// pika basic_publish regression — must still work with REDIS_PYTHON in the slice.
-#[test]
-fn test_rabbitmq_regression_fires_on_pika_import() {
-    let src = r#"
-import pika
-
-def publish_order(channel, data):
-    channel.basic_publish(exchange='', routing_key='orders', body=data.encode())
-"#;
-    let (result, pool) = run(src, &["pika"]);
-    assert_eq!(
-        result.len(),
-        1,
-        "RabbitMQ regression: expected one RawEventTopic; got {:?}",
-        result
-    );
-    assert_eq!(result[0].lib, FrameworkId::RabbitMq);
-    assert_eq!(result[0].direction, PubSub::Publish);
-    let lit = result[0]
-        .topic_literal
-        .expect("rabbitmq topic_literal must be Some");
-    assert_eq!(pool.resolve(&lit), "orders");
-}
+// RabbitMQ regression dropped: RABBITMQ_PYTHON does not yet exist on `main`
+// (sibling PR #297, T5-8); add back when that detector lands.
 
 /// Redis import does not fire RabbitMQ config and vice versa — import gates isolate.
 #[test]
