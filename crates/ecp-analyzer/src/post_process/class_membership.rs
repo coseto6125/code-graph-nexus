@@ -263,6 +263,7 @@ mod tests {
             decorators: Vec::new(),
             calls: Vec::new(),
             owner_class: None,
+            content_hash: 0,
         }
     }
 
@@ -282,6 +283,7 @@ mod tests {
             decorators: Vec::new(),
             calls: Vec::new(),
             owner_class: None,
+            content_hash: 0,
         }
     }
 

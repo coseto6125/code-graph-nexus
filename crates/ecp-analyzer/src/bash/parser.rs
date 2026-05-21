@@ -115,6 +115,7 @@ impl LanguageProvider for BashProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

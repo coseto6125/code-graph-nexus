@@ -290,6 +290,7 @@ impl LanguageProvider for DockerComposeProvider {
                                     ),
                                     calls: vec![],
                                     owner_class: None,
+                                    content_hash: 0,
                                 });
                             }
                         }
@@ -313,6 +314,7 @@ impl LanguageProvider for DockerComposeProvider {
                     ),
                     calls,
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
         }

@@ -126,6 +126,7 @@ impl LanguageProvider for CrystalProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

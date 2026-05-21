@@ -56,6 +56,13 @@ pub struct RawNode {
     /// establish class membership — parsers have grammar-level access to the
     /// enclosing type that the post-pass must re-derive from spans.
     pub owner_class: Option<String>,
+    /// xxh3-64 hash of the symbol's raw source bytes
+    /// (`source[start_byte..end_byte]` from the tree-sitter node).
+    /// Computed by each language parser at parse time. `0` for synthetic
+    /// nodes that have no corresponding source span (e.g. delegate stubs).
+    /// Used by T7-4/5/6 incremental indexers to detect unchanged symbols
+    /// without re-parsing.
+    pub content_hash: u64,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]

@@ -69,6 +69,7 @@ fn build_graph_with_calls_edge() -> Vec<u8> {
                 span: (0, 0, 1, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
             Node {
                 uid: ecp_core::uid::compute(NodeKind::Function, "src/a.ts", None, "bar"),
@@ -78,6 +79,7 @@ fn build_graph_with_calls_edge() -> Vec<u8> {
                 span: (2, 0, 3, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             },
         ],
         edges: vec![Edge {

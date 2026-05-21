@@ -257,6 +257,7 @@ mod tests {
             span: (0, 0, 0, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         }
     }
 

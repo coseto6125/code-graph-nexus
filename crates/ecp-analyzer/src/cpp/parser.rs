@@ -379,6 +379,9 @@ impl LanguageProvider for CppProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[root.start_byte()..root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -405,6 +408,9 @@ impl LanguageProvider for CppProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[f_root.start_byte()..f_root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -438,6 +444,9 @@ impl LanguageProvider for CppProvider {
                             ),
                             calls: Vec::new(),
                             owner_class: None,
+                            content_hash: ecp_core::uid::xxh3_64_bytes(
+                                &source[v_root.start_byte()..v_root.end_byte()],
+                            ),
                         });
                     }
                 }
@@ -590,6 +599,7 @@ fn emit_macro_fallback(source: &[u8], nodes: &mut Vec<RawNode>) {
             span: (hit.line, hit.col_start, hit.line, hit.col_end),
             calls: Vec::new(),
             owner_class: None,
+            content_hash: 0,
         });
     }
 }

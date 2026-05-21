@@ -106,6 +106,7 @@ fn make_graph() -> ZeroCopyGraph {
         span: (line, 0, line + 1, 0),
         community_id: 0,
         owner_class: StrRef::default(),
+        content_hash: 0,
     };
     // node 0 = parseConfig, 1 = loadConfig, 2 = tokenize.
     // edges: parseConfig→tokenize (e0), loadConfig→parseConfig (e1).

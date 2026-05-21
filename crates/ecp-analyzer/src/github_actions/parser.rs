@@ -255,6 +255,7 @@ impl LanguageProvider for GitHubActionsProvider {
                     decorators: vec!["workflow".to_string()],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
         }
@@ -276,6 +277,7 @@ impl LanguageProvider for GitHubActionsProvider {
                     decorators: vec![decorator.to_string()],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 });
             };
 
@@ -373,6 +375,7 @@ impl LanguageProvider for GitHubActionsProvider {
                     decorators: vec!["job".to_string()],
                     calls: job_calls,
                     owner_class: None,
+                    content_hash: 0,
                 });
 
                 // Walk steps of this job
@@ -492,6 +495,7 @@ fn walk_steps(
                     decorators: vec![format!("run:{}", cmd_name)],
                     calls: vec![],
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
         }

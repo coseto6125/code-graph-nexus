@@ -461,6 +461,9 @@ impl LanguageProvider for PhpProvider {
                             ),
                             calls: Vec::new(),
                             owner_class: None,
+                            content_hash: ecp_core::uid::xxh3_64_bytes(
+                                &source[root.start_byte()..root.end_byte()],
+                            ),
                         });
                         i
                     });

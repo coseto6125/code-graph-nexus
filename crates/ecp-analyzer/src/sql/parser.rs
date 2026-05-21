@@ -125,6 +125,7 @@ impl LanguageProvider for SqlProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

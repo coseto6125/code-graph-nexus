@@ -316,6 +316,7 @@ mod tests {
             decorators: vec![],
             calls: vec![],
             owner_class: None,
+            content_hash: 0,
         }
     }
 

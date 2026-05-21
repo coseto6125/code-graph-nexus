@@ -283,6 +283,9 @@ impl LanguageProvider for JavaScriptProvider {
                             span: node_span,
                             calls: Vec::new(),
                             owner_class: None,
+                            content_hash: ecp_core::uid::xxh3_64_bytes(
+                                &source[root.start_byte()..root.end_byte()],
+                            ),
                         });
                     }
                 }
@@ -377,6 +380,9 @@ impl LanguageProvider for JavaScriptProvider {
                                     span: var_span,
                                     calls: Vec::new(),
                                     owner_class: None,
+                                    content_hash: ecp_core::uid::xxh3_64_bytes(
+                                        &source[decl_node.start_byte()..decl_node.end_byte()],
+                                    ),
                                 });
                             }
                         }

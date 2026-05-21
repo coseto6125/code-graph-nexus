@@ -138,6 +138,7 @@ impl LanguageProvider for HclProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

@@ -27,6 +27,7 @@ fn make_collision_graph() -> LocalGraph {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             },
             // Second definition — same (kind, path, owner, name) → same uid → collision.
             RawNode {
@@ -39,6 +40,7 @@ fn make_collision_graph() -> LocalGraph {
                 decorators: vec![],
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             },
         ],
         documents: vec![],

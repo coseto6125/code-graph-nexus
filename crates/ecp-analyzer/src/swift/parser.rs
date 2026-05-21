@@ -243,6 +243,9 @@ impl LanguageProvider for SwiftProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[ta_node.start_byte()..ta_node.end_byte()],
+                        ),
                     });
                     imports.push(RawImport {
                         alias: Some(lhs.clone()),
@@ -282,6 +285,9 @@ impl LanguageProvider for SwiftProvider {
                             span,
                             calls: Vec::new(),
                             owner_class: None,
+                            content_hash: ecp_core::uid::xxh3_64_bytes(
+                                &source[ec_root.start_byte()..ec_root.end_byte()],
+                            ),
                         });
                     }
                 }
@@ -307,6 +313,9 @@ impl LanguageProvider for SwiftProvider {
                     ),
                     calls: Vec::new(),
                     owner_class: None,
+                    content_hash: ecp_core::uid::xxh3_64_bytes(
+                        &source[ctor_node.start_byte()..ctor_node.end_byte()],
+                    ),
                 });
             }
 
@@ -381,6 +390,9 @@ impl LanguageProvider for SwiftProvider {
                         span,
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[pr_root.start_byte()..pr_root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -432,6 +444,9 @@ impl LanguageProvider for SwiftProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[root.start_byte()..root.end_byte()],
+                        ),
                     });
                 }
             }

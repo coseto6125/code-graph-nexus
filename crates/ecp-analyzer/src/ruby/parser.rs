@@ -312,6 +312,9 @@ impl LanguageProvider for RubyProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[root.start_byte()..root.end_byte()],
+                        ),
                     });
                 }
             }
@@ -389,6 +392,9 @@ impl LanguageProvider for RubyProvider {
                         decorators: Vec::new(),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: ecp_core::uid::xxh3_64_bytes(
+                            &source[child.start_byte()..child.end_byte()],
+                        ),
                     });
                 }
             }
@@ -604,6 +610,7 @@ impl LanguageProvider for RubyProvider {
                 span: (line, 0, line, 0),
                 calls: vec![],
                 owner_class: None,
+                content_hash: 0,
             });
         }
 

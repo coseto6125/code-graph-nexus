@@ -16,7 +16,9 @@ pub const GRAPH_MAGIC: [u8; 8] = *b"ECP-RS\0\0";
 /// v7: `Node.uid: StrRef` → `u64` (xxh3_64 streaming hash, T1-5).
 ///     Canonical bytes: `kind_as_str \0 path \0 owner_class_or_empty \0 name`.
 ///     1-cycle `FxHashMap` lookup; eliminates string-pool dereference on hot paths.
-pub const GRAPH_FORMAT_VERSION: u32 = 7;
+/// v8: `Node.content_hash: u64` added — per-symbol xxh3_64 of raw source bytes
+///     for T7-4/5/6 incremental skip (equal hash ↔ body unchanged).
+pub const GRAPH_FORMAT_VERSION: u32 = 8;
 
 impl std::str::FromStr for NodeKind {
     type Err = ();
@@ -337,6 +339,11 @@ pub struct Node {
     /// rkyv binary layout for v5 fields; format version bumped to 6.
     /// Used by `ecp rename` to isolate `Foo.validate` from `Bar.validate` (T1-11).
     pub owner_class: StrRef,
+    /// xxh3-64 hash of the symbol's raw source bytes. Promoted from
+    /// `RawNode.content_hash` by the builder. `0` for synthetic nodes
+    /// (routes, entry-points, delegate stubs) with no source span.
+    /// Enables T7-4/5/6 incremental skip: equal hash ↔ body unchanged.
+    pub content_hash: u64,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -667,6 +674,7 @@ mod tests {
                 span: (1, 0, 5, 0),
                 community_id: 0,
                 owner_class: StrRef::default(),
+                content_hash: 0,
             }],
             edges: vec![Edge {
                 source: 0,

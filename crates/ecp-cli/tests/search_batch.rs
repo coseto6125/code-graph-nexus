@@ -39,6 +39,7 @@ fn setup_fixture() -> BatchFixture {
             span: (i as u32, 0, i as u32 + 1, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         })
         .collect();
     let n = nodes.len() as u32;

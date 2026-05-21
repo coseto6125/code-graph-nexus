@@ -138,6 +138,7 @@ fn synthetic_graph_with_mirrors_field() -> Vec<u8> {
             span: (2, 0, 4, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: consumer_uid,
@@ -147,6 +148,7 @@ fn synthetic_graph_with_mirrors_field() -> Vec<u8> {
             span: (3, 0, 5, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
     ];
 

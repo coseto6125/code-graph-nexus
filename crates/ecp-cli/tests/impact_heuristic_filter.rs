@@ -135,6 +135,7 @@ fn synthetic_graph_two_nodes(rel_type: RelType, reason_str: &str) -> Vec<u8> {
             span: (1, 0, 3, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: tgt_uid,
@@ -144,6 +145,7 @@ fn synthetic_graph_two_nodes(rel_type: RelType, reason_str: &str) -> Vec<u8> {
             span: (2, 0, 4, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
     ];
     // source (0) → target (1)

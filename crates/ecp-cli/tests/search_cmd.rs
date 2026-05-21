@@ -40,6 +40,7 @@ fn seed_repo(home_ecp: &Path, dir_name: &str, sha_dir: &str, node_names: &[&str]
             span: (0, 0, 0, 10),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         })
         .collect();
     let files = vec![File {

@@ -31,6 +31,7 @@ fn mk_raw_node(name: &str, kind: NodeKind, decorators: Vec<String>) -> RawNode {
         decorators,
         calls: vec![],
         owner_class: None,
+        content_hash: 0,
     }
 }
 

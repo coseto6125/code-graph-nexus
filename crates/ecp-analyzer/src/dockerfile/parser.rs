@@ -130,6 +130,7 @@ impl LanguageProvider for DockerfileProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }
@@ -160,6 +161,7 @@ impl LanguageProvider for DockerfileProvider {
                     ),
                     calls: Vec::new(),
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
 
@@ -189,6 +191,7 @@ impl LanguageProvider for DockerfileProvider {
                     ),
                     calls: Vec::new(),
                     owner_class: None,
+                    content_hash: 0,
                 });
             }
 
@@ -214,6 +217,7 @@ impl LanguageProvider for DockerfileProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }
@@ -240,6 +244,7 @@ impl LanguageProvider for DockerfileProvider {
                         ),
                         calls: Vec::new(),
                         owner_class: None,
+                        content_hash: 0,
                     });
                 }
             }

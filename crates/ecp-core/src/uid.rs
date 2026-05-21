@@ -4,7 +4,7 @@
 //! valid Rust identifier or POSIX path component, so no two distinct
 //! `(kind, path, owner_class, name)` tuples can produce the same byte stream.
 
-use xxhash_rust::xxh3::Xxh3;
+use xxhash_rust::xxh3::{xxh3_64, Xxh3};
 
 use crate::graph::NodeKind;
 
@@ -24,4 +24,15 @@ pub fn compute(kind: NodeKind, path: &str, owner_class: Option<&str>, name: &str
     h.update(b"\0");
     h.update(name.as_bytes());
     h.digest()
+}
+
+/// One-shot xxh3-64 hash of raw bytes. Used for per-symbol content hashing
+/// (T7-2): `content_hash = xxh3_64_bytes(&source[start_byte..end_byte])`.
+///
+/// Wrapper over `xxhash_rust::xxh3::xxh3_64` exposed here so callers in
+/// `ecp_analyzer` obtain the hash via the existing `ecp_core` dependency
+/// rather than adding a new `xxhash-rust` dep to `ecp-analyzer`.
+#[inline]
+pub fn xxh3_64_bytes(bytes: &[u8]) -> u64 {
+    xxh3_64(bytes)
 }

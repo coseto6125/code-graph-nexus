@@ -150,6 +150,7 @@ fn mirrors_field_graph(
             span: (1, 0, 2, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
         Node {
             uid: mirror_uid,
@@ -159,6 +160,7 @@ fn mirrors_field_graph(
             span: (1, 0, 2, 0),
             community_id: 0,
             owner_class: StrRef::default(),
+            content_hash: 0,
         },
     ];
 
@@ -222,6 +224,7 @@ fn zero_mirrors_graph(symbol: &str, file: &str) -> Vec<u8> {
         span: (1, 0, 2, 0),
         community_id: 0,
         owner_class: StrRef::default(),
+        content_hash: 0,
     }];
 
     serialize_graph(&ZeroCopyGraph {
