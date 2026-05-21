@@ -11,6 +11,7 @@ use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
+use ecp_core::pool::StringPool;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
@@ -43,8 +44,12 @@ pub struct GoProvider {
 impl GoProvider {
     pub fn new() -> anyhow::Result<Self> {
         let language = tree_sitter_go::LANGUAGE.into();
-        let query_source = include_str!("queries.scm");
-        let query = Query::new(&language, query_source)?;
+        let query_source = format!(
+            "{}\n;; ---- framework queries ----\n{}",
+            include_str!("queries.scm"),
+            include_str!("frameworks.scm"),
+        );
+        let query = Query::new(&language, &query_source)?;
 
         // Pre-resolve capture-name → NodeKind from the spec table so the
         // hot loop stays an integer-index lookup (no per-capture string
@@ -614,6 +619,19 @@ impl LanguageProvider for GoProvider {
         let raw_function_metas =
             crate::function_meta::go::extract(tree.root_node(), source, &nodes, file_category);
 
+        let event_topics = {
+            let mut pool = StringPool::new();
+            let topics = crate::event_topic::extract_event_topics(
+                &tree,
+                source,
+                &self.query,
+                &[crate::event_topic::REDIS_GO],
+                &imports,
+                &mut pool,
+            );
+            (!topics.is_empty()).then(|| topics.into_boxed_slice())
+        };
+
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
@@ -625,7 +643,7 @@ impl LanguageProvider for GoProvider {
             fanout_refs: vec![],
             blind_spots: vec![],
             schema_fields: None,
-            event_topics: None,
+            event_topics,
             tx_scopes: None,
             call_metas: vec![],
             raw_function_metas,

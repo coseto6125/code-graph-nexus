@@ -326,6 +326,81 @@
           arguments: (argument_list
             . (string) @celery.topic))))))
 
+;; ---- Redis Python pub/sub (T5-26) ----
+;; Covers redis (sync) and aioredis (async).
+;; Import gate (`redis`, `aioredis`) is enforced by REDIS_PYTHON.import_gate.
+;; `redis.direction` binds the method name so classify_redis_direction can
+;; resolve Publish vs Subscribe direction. Non-literal channel → no capture.
+
+;; redis (sync): r.publish("channel", msg) inside a function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "publish"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; redis (sync): pubsub.subscribe("channel") inside a function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "subscribe"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; redis (sync): pubsub.psubscribe("pattern.*") inside a function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (call
+        function: (attribute
+          attribute: (identifier) @redis.direction (#eq? @redis.direction "psubscribe"))
+        arguments: (argument_list
+          . (string) @redis.topic)))))
+
+;; aioredis (async): await r.publish("channel", msg) inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "publish"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
+;; aioredis (async): await pubsub.subscribe("channel") inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "subscribe"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
+;; aioredis (async): await pubsub.psubscribe("pattern.*") inside an async function.
+(function_definition
+  name: (identifier) @redis.fn
+  body: (block
+    (_
+      (await
+        (call
+          function: (attribute
+            attribute: (identifier) @redis.direction (#eq? @redis.direction "psubscribe"))
+          arguments: (argument_list
+            . (string) @redis.topic))))))
+
 ;; ---- SQLAlchemy declarative ORM (T4-3) ----
 ;; Idiom A — classic Column() declarative (1.x and 2.x compatible).
 ;; Captures: owner class name, field identifier, first positional arg of Column()
