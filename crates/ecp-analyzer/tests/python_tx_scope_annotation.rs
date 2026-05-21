@@ -35,7 +35,7 @@ def list_orders():
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "place_order");
-    assert_eq!(g.tx_scopes[0].source_pattern, "django-atomic");
+    assert_eq!(g.tx_scopes[0].framework, "django-atomic");
 }
 
 #[test]
@@ -61,7 +61,7 @@ def delete_user():
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "get_user");
-    assert_eq!(g.tx_scopes[0].source_pattern, "pony-db-session");
+    assert_eq!(g.tx_scopes[0].framework, "pony-db-session");
 }
 
 #[test]
@@ -88,18 +88,18 @@ def plain_func():
         "two tx_scopes expected; got {}",
         g.tx_scopes.len()
     );
-    let by_pattern: std::collections::HashMap<&str, &str> = g
+    let by_framework: std::collections::HashMap<&str, &str> = g
         .tx_scopes
         .iter()
-        .map(|s| (s.source_pattern.as_str(), s.enclosing_fn.as_str()))
+        .map(|s| (s.framework.as_str(), s.enclosing_fn.as_str()))
         .collect();
     assert_eq!(
-        by_pattern.get("django-atomic").copied(),
+        by_framework.get("django-atomic").copied(),
         Some("create_order"),
         "django-atomic scope missing or wrong fn"
     );
     assert_eq!(
-        by_pattern.get("pony-db-session").copied(),
+        by_framework.get("pony-db-session").copied(),
         Some("fetch_user"),
         "pony-db-session scope missing or wrong fn"
     );

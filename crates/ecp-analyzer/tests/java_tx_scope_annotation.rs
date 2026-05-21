@@ -35,7 +35,7 @@ public class OrderService {
             .collect::<Vec<_>>()
     );
     assert_eq!(resolve_fn(&g, 0), "placeOrder");
-    assert_eq!(g.tx_scopes[0].source_pattern, "java-transactional");
+    assert_eq!(g.tx_scopes[0].framework, "spring-transactional");
 }
 
 #[test]
@@ -71,7 +71,7 @@ public class PaymentService {
         "tx_scope expected for @Transactional with args"
     );
     assert_eq!(resolve_fn(&g, 0), "processPayment");
-    assert_eq!(g.tx_scopes[0].source_pattern, "java-transactional");
+    assert_eq!(g.tx_scopes[0].framework, "spring-transactional");
 }
 
 #[test]

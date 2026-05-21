@@ -45,6 +45,11 @@ const HTTP_FRAMEWORK_MODULES: &[&str] = &[
     "litestar",
 ];
 
+/// Transaction-scope framework names. Order matches the capture-index lookup
+/// in `parse_file` (tx_atomic_handler / tx_db_session_handler) so the dispatch
+/// reads as a flat table.
+const TX_FRAMEWORK_SPEC: &[&str] = &["django-atomic", "pony-db-session"];
+
 /// Blind-spot kind/hint pairs. Order matches the capture-index lookup in
 /// `parse_file` (eval / exec / compile / dynamic-import / builtin-import /
 /// cross-getattr) so the dispatch reads as a flat table.
@@ -353,7 +358,6 @@ struct PythonCaptureIndices {
     django_signal_connect_name: Option<u32>,
     django_signal_connect_handler: Option<u32>,
     celery_task_handler: Option<u32>,
-    // T10-1: transaction boundary decorator captures.
     tx_atomic_handler: Option<u32>,
     tx_db_session_handler: Option<u32>,
     reflection_getattr_site: Option<u32>,
@@ -535,8 +539,6 @@ impl LanguageProvider for PythonProvider {
         // Resolved after `nodes` is populated (need enclosing class + sibling methods).
         let mut pending_getattr_sites: Vec<Span> = Vec::new();
 
-        // T10-1: tx_scopes collected during the match loop; appended below as
-        // tx.atomic / tx.db_session captures fire.
         let mut tx_scopes: Vec<RawTxScope> = Vec::new();
 
         while let Some(m) = matches.next() {
@@ -684,23 +686,18 @@ impl LanguageProvider for PythonProvider {
                             span: node_span(&cap.node),
                         });
                     }
-                } else if cap_idx == idx.tx_atomic_handler {
+                } else if cap_idx == idx.tx_atomic_handler || cap_idx == idx.tx_db_session_handler {
+                    let framework = if cap_idx == idx.tx_atomic_handler {
+                        TX_FRAMEWORK_SPEC[0]
+                    } else {
+                        TX_FRAMEWORK_SPEC[1]
+                    };
                     if let Ok(fn_name) =
                         std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
                     {
                         tx_scopes.push(RawTxScope {
                             enclosing_fn: fn_name.to_string(),
-                            source_pattern: "django-atomic".to_string(),
-                            span: node_span(&cap.node),
-                        });
-                    }
-                } else if cap_idx == idx.tx_db_session_handler {
-                    if let Ok(fn_name) =
-                        std::str::from_utf8(&source[cap.node.start_byte()..cap.node.end_byte()])
-                    {
-                        tx_scopes.push(RawTxScope {
-                            enclosing_fn: fn_name.to_string(),
-                            source_pattern: "pony-db-session".to_string(),
+                            framework: framework.to_string(),
                             span: node_span(&cap.node),
                         });
                     }

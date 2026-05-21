@@ -1,7 +1,9 @@
 use super::receiver_types::extract_kotlin_calls;
 use super::spec::KotlinSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{enclosing_class, has_import_from, node_span, MODULE_LEVEL_SOURCE};
+use crate::framework_helpers::{
+    enclosing_class, has_import_from, is_jvm_transactional, node_span, MODULE_LEVEL_SOURCE,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
@@ -435,23 +437,17 @@ impl LanguageProvider for KotlinProvider {
                 node.owner_class = owner;
             }
         }
-        // T10-1: @Transactional on a method/constructor → RawTxScope.
-        // Kotlin uses the same JVM annotation model as Java; decorator text
-        // includes the leading `@`.
         let tx_scopes: Vec<RawTxScope> = nodes
             .iter()
             .filter(|n| {
                 matches!(
                     n.kind,
                     NodeKind::Method | NodeKind::Function | NodeKind::Constructor
-                ) && n
-                    .decorators
-                    .iter()
-                    .any(|d| d == "@Transactional" || d.starts_with("@Transactional("))
+                ) && n.decorators.iter().any(|d| is_jvm_transactional(d))
             })
             .map(|n| RawTxScope {
                 enclosing_fn: n.name.clone(),
-                source_pattern: "java-transactional".to_string(),
+                framework: "spring-transactional".to_string(),
                 span: n.span,
             })
             .collect();

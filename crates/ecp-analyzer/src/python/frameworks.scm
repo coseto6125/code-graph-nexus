@@ -84,7 +84,7 @@
   definition: (function_definition
     name: (identifier) @celery.task.handler))
 
-;; ---- T10-1: Transaction boundary decorators ----
+;; ---- Transaction boundary decorators ----
 ;; Django / generic: `@transaction.atomic` on a function or method.
 (decorated_definition
   (decorator

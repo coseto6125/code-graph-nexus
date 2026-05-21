@@ -132,7 +132,10 @@ pub struct RawEventTopic {
 #[rkyv(derive(Debug))]
 pub struct RawTxScope {
     pub enclosing_fn: String,
-    pub source_pattern: String,
+    /// Source framework / library that defines the transaction boundary
+    /// (e.g. `"spring-transactional"`, `"django-atomic"`, `"pony-db-session"`).
+    /// Mirrors `RawSchemaField.framework` / `RawEventTopic.lib` naming.
+    pub framework: String,
     pub span: (u32, u32, u32, u32),
 }
 

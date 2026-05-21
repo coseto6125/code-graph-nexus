@@ -227,6 +227,15 @@ pub fn detect_ast_framework_patterns(
     out
 }
 
+/// Match a Spring `@Transactional` JVM annotation against a decorator string
+/// captured by tree-sitter (which preserves the leading `@`). Covers both the
+/// bare marker (`@Transactional`) and the parameterized form
+/// (`@Transactional(propagation = ...)`).
+#[inline]
+pub fn is_jvm_transactional(decorator: &str) -> bool {
+    decorator == "@Transactional" || decorator.starts_with("@Transactional(")
+}
+
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;

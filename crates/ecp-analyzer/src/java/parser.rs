@@ -1,7 +1,7 @@
 use super::receiver_types::extract_java_calls;
 use super::spec::JavaSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{enclosing_class, has_import_from, node_span};
+use crate::framework_helpers::{enclosing_class, has_import_from, is_jvm_transactional, node_span};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
@@ -434,21 +434,15 @@ impl LanguageProvider for JavaProvider {
                 node.owner_class = owner;
             }
         }
-        // T10-1: @Transactional on a method/constructor → RawTxScope.
-        // Decorator text from tree-sitter includes the leading `@`, so we
-        // match on the prefix to cover both `@Transactional` (marker) and
-        // `@Transactional(...)` (annotation with arguments).
         let tx_scopes: Vec<RawTxScope> = nodes
             .iter()
             .filter(|n| {
                 matches!(n.kind, NodeKind::Method | NodeKind::Constructor)
-                    && n.decorators
-                        .iter()
-                        .any(|d| d == "@Transactional" || d.starts_with("@Transactional("))
+                    && n.decorators.iter().any(|d| is_jvm_transactional(d))
             })
             .map(|n| RawTxScope {
                 enclosing_fn: n.name.clone(),
-                source_pattern: "java-transactional".to_string(),
+                framework: "spring-transactional".to_string(),
                 span: n.span,
             })
             .collect();
