@@ -31,6 +31,19 @@ fn count_kind(graph: &ecp_core::analyzer::types::LocalGraph, kind: NodeKind) -> 
     graph.nodes.iter().filter(|n| n.kind == kind).count()
 }
 
+fn names_of(graph: &ecp_core::analyzer::types::LocalGraph, kind: NodeKind) -> Vec<&str> {
+    graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == kind)
+        .map(|n| n.name.as_str())
+        .collect()
+}
+
+fn import_sources(graph: &ecp_core::analyzer::types::LocalGraph) -> Vec<&str> {
+    graph.imports.iter().map(|i| i.source.as_str()).collect()
+}
+
 // ── Vue: Component.vue ───────────────────────────────────────────────────────
 //
 // Baseline (scripts/parity/sfc_snapshot_baseline.txt):
@@ -72,12 +85,7 @@ fn vue_component_snapshot() {
         "Vue: Function count"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"increment"),
         "Vue: increment function missing"
@@ -87,12 +95,7 @@ fn vue_component_snapshot() {
         "Vue: decrement function missing"
     );
 
-    let sections: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Section)
-        .map(|n| n.name.as_str())
-        .collect();
+    let sections = names_of(&graph, NodeKind::Section);
     assert!(
         sections.contains(&"template"),
         "Vue: template section missing"
@@ -103,7 +106,7 @@ fn vue_component_snapshot() {
     );
     assert!(sections.contains(&"style"), "Vue: style section missing");
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"vue"),
         "Vue: import from 'vue' missing"
@@ -155,18 +158,13 @@ fn svelte_counter_snapshot() {
         "Svelte: Function count"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"increment"),
         "Svelte: increment function missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"svelte"),
         "Svelte: import from 'svelte' missing"
@@ -210,12 +208,7 @@ fn astro_page_snapshot() {
     );
     assert_eq!(count_kind(&graph, NodeKind::Const), 1, "Astro: Const count");
 
-    let sections: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Section)
-        .map(|n| n.name.as_str())
-        .collect();
+    let sections = names_of(&graph, NodeKind::Section);
     assert!(
         sections.contains(&"frontmatter"),
         "Astro: frontmatter section missing"
@@ -225,18 +218,13 @@ fn astro_page_snapshot() {
         "Astro: template section missing"
     );
 
-    let interfaces: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Interface)
-        .map(|n| n.name.as_str())
-        .collect();
+    let interfaces = names_of(&graph, NodeKind::Interface);
     assert!(
         interfaces.contains(&"User"),
         "Astro: User interface missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"../layouts/Base.astro"),
         "Astro: Layout import missing"
@@ -291,12 +279,7 @@ fn vue_options_api_snapshot_match() {
         "Vue OptionsApi: no top-level Function nodes expected in Options API"
     );
 
-    let methods: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Method)
-        .map(|n| n.name.as_str())
-        .collect();
+    let methods = names_of(&graph, NodeKind::Method);
     for name in &["data", "doubled", "increment", "reset", "mounted"] {
         assert!(
             methods.contains(name),
@@ -304,7 +287,7 @@ fn vue_options_api_snapshot_match() {
         );
     }
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"vue"),
         "Vue OptionsApi: import from 'vue' missing"
@@ -364,35 +347,20 @@ fn vue_props_and_emits_snapshot_match() {
         "Vue PropsAndEmits: Function count (onClick, reset)"
     );
 
-    let interfaces: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Interface)
-        .map(|n| n.name.as_str())
-        .collect();
+    let interfaces = names_of(&graph, NodeKind::Interface);
     assert!(
         interfaces.contains(&"ButtonProps"),
         "Vue PropsAndEmits: ButtonProps interface missing"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"onClick"),
         "Vue PropsAndEmits: onClick missing"
     );
     assert!(fns.contains(&"reset"), "Vue PropsAndEmits: reset missing");
 
-    let sections: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Section)
-        .map(|n| n.name.as_str())
-        .collect();
+    let sections = names_of(&graph, NodeKind::Section);
     assert!(
         sections.contains(&"script setup"),
         "Vue PropsAndEmits: script setup section missing"
@@ -444,12 +412,7 @@ fn vue_multi_block_snapshot_match() {
         "Vue MultiBlock: Function count (sharedHelper, greet)"
     );
 
-    let sections: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Section)
-        .map(|n| n.name.as_str())
-        .collect();
+    let sections = names_of(&graph, NodeKind::Section);
     assert!(
         sections.contains(&"script"),
         "Vue MultiBlock: plain script section missing"
@@ -463,12 +426,7 @@ fn vue_multi_block_snapshot_match() {
         "Vue MultiBlock: template section missing"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"sharedHelper"),
         "Vue MultiBlock: sharedHelper (from plain <script>) missing"
@@ -523,12 +481,7 @@ fn svelte_context_module_snapshot_match() {
         "Svelte ContextModule: Function count (formatCount, greet)"
     );
 
-    let sections: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Section)
-        .map(|n| n.name.as_str())
-        .collect();
+    let sections = names_of(&graph, NodeKind::Section);
     assert!(
         sections.contains(&"script module"),
         "Svelte ContextModule: 'script module' section missing"
@@ -538,12 +491,7 @@ fn svelte_context_module_snapshot_match() {
         "Svelte ContextModule: instance 'script' section missing"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"formatCount"),
         "Svelte ContextModule: formatCount (from module block) missing"
@@ -553,7 +501,7 @@ fn svelte_context_module_snapshot_match() {
         "Svelte ContextModule: greet (from instance block) missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"svelte/store"),
         "Svelte ContextModule: svelte/store import missing"
@@ -604,12 +552,7 @@ fn svelte_runes_snapshot_match() {
         "Svelte Runes: Function count (increment)"
     );
 
-    let consts: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Const)
-        .map(|n| n.name.as_str())
-        .collect();
+    let consts = names_of(&graph, NodeKind::Const);
     assert!(
         consts.contains(&"count"),
         "Svelte Runes: count ($state) missing"
@@ -619,12 +562,7 @@ fn svelte_runes_snapshot_match() {
         "Svelte Runes: doubled ($derived) missing"
     );
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"increment"),
         "Svelte Runes: increment missing"
@@ -675,12 +613,7 @@ fn svelte_template_directives_snapshot_match() {
         "Svelte TemplateDirectives: Function count (loadData only — template directives do not leak)"
     );
 
-    let consts: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Const)
-        .map(|n| n.name.as_str())
-        .collect();
+    let consts = names_of(&graph, NodeKind::Const);
     for name in &["items", "show", "promise"] {
         assert!(
             consts.contains(name),
@@ -688,12 +621,7 @@ fn svelte_template_directives_snapshot_match() {
         );
     }
 
-    let fns: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Function)
-        .map(|n| n.name.as_str())
-        .collect();
+    let fns = names_of(&graph, NodeKind::Function);
     assert!(
         fns.contains(&"loadData"),
         "Svelte TemplateDirectives: loadData missing"
@@ -739,12 +667,7 @@ fn astro_multiple_imports_snapshot_match() {
         "Astro MultipleImports: Const count (title, posts)"
     );
 
-    let consts: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Const)
-        .map(|n| n.name.as_str())
-        .collect();
+    let consts = names_of(&graph, NodeKind::Const);
     assert!(
         consts.contains(&"title"),
         "Astro MultipleImports: title const missing"
@@ -754,7 +677,7 @@ fn astro_multiple_imports_snapshot_match() {
         "Astro MultipleImports: posts const missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     for src in &[
         "../components/Header.astro",
         "../components/Footer.astro",
@@ -813,12 +736,7 @@ fn astro_conditional_render_snapshot_match() {
         "Astro ConditionalRender: no Function nodes (template JSX must not leak)"
     );
 
-    let consts: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Const)
-        .map(|n| n.name.as_str())
-        .collect();
+    let consts = names_of(&graph, NodeKind::Const);
     assert!(
         consts.contains(&"isLoggedIn"),
         "Astro ConditionalRender: isLoggedIn missing"
@@ -828,7 +746,7 @@ fn astro_conditional_render_snapshot_match() {
         "Astro ConditionalRender: users missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"../components/Alert.astro"),
         "Astro ConditionalRender: Alert.astro import missing"
@@ -880,29 +798,19 @@ fn astro_typed_props_snapshot_match() {
         "Astro TypedProps: Const count (slug)"
     );
 
-    let interfaces: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Interface)
-        .map(|n| n.name.as_str())
-        .collect();
+    let interfaces = names_of(&graph, NodeKind::Interface);
     assert!(
         interfaces.contains(&"Props"),
         "Astro TypedProps: Props interface missing"
     );
 
-    let consts: Vec<&str> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.kind == NodeKind::Const)
-        .map(|n| n.name.as_str())
-        .collect();
+    let consts = names_of(&graph, NodeKind::Const);
     assert!(
         consts.contains(&"slug"),
         "Astro TypedProps: slug const missing"
     );
 
-    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    let import_srcs = import_sources(&graph);
     assert!(
         import_srcs.contains(&"astro:assets"),
         "Astro TypedProps: astro:assets import missing"
