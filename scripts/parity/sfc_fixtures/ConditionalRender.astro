@@ -1,0 +1,11 @@
+---
+import Alert from '../components/Alert.astro'
+
+const isLoggedIn = true
+const users = ['Alice', 'Bob', 'Carol']
+---
+
+{isLoggedIn && <Alert message="Welcome back!" />}
+<ul>
+  {users.map(u => <li>{u}</li>)}
+</ul>

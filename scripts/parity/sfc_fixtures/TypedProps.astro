@@ -1,0 +1,18 @@
+---
+import { Image } from 'astro:assets'
+
+interface Props {
+  title: string
+  description: string
+  imageUrl: string
+}
+
+const { title, description, imageUrl } = Astro.props
+const slug = title.toLowerCase().replace(/\s+/g, '-')
+---
+
+<article>
+  <h1>{title}</h1>
+  <p>{description}</p>
+  <Image src={imageUrl} alt={title} width={800} height={400} />
+</article>

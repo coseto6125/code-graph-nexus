@@ -246,3 +246,665 @@ fn astro_page_snapshot() {
         "Astro: fetchUsers import missing"
     );
 }
+
+// ── Vue: OptionsApi.vue ──────────────────────────────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 8  imports: 2
+//   Section: 3, Method: 5
+//
+// Options API object methods (data, computed, methods, lifecycle hooks) are
+// captured as Method nodes — no Function nodes expected from this pattern.
+
+#[test]
+fn vue_options_api_snapshot_match() {
+    let src = fixture("OptionsApi.vue");
+    let graph = VueProvider::new()
+        .expect("VueProvider::new")
+        .parse_file(Path::new("OptionsApi.vue"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        8,
+        "Vue OptionsApi.vue: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        2,
+        "Vue OptionsApi.vue: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        3,
+        "Vue OptionsApi: Section count"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Method),
+        5,
+        "Vue OptionsApi: Method count (data, doubled, increment, reset, mounted)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        0,
+        "Vue OptionsApi: no top-level Function nodes expected in Options API"
+    );
+
+    let methods: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Method)
+        .map(|n| n.name.as_str())
+        .collect();
+    for name in &["data", "doubled", "increment", "reset", "mounted"] {
+        assert!(
+            methods.contains(name),
+            "Vue OptionsApi: method '{name}' missing"
+        );
+    }
+
+    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    assert!(
+        import_srcs.contains(&"vue"),
+        "Vue OptionsApi: import from 'vue' missing"
+    );
+    assert!(
+        import_srcs.contains(&"../utils/format"),
+        "Vue OptionsApi: format import missing"
+    );
+}
+
+// ── Vue: PropsAndEmits.vue ───────────────────────────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 8  imports: 1
+//   Section: 2, Interface: 1, Const: 3, Function: 2
+//
+// Vue 3 macros (defineProps, defineEmits, defineExpose) are captured as
+// Const nodes (variable declarations). Interface node from ButtonProps TS type.
+
+#[test]
+fn vue_props_and_emits_snapshot_match() {
+    let src = fixture("PropsAndEmits.vue");
+    let graph = VueProvider::new()
+        .expect("VueProvider::new")
+        .parse_file(Path::new("PropsAndEmits.vue"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        8,
+        "Vue PropsAndEmits.vue: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        1,
+        "Vue PropsAndEmits.vue: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        2,
+        "Vue PropsAndEmits: Section count"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Interface),
+        1,
+        "Vue PropsAndEmits: Interface count (ButtonProps)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        3,
+        "Vue PropsAndEmits: Const count (props, emit, isDisabled)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        2,
+        "Vue PropsAndEmits: Function count (onClick, reset)"
+    );
+
+    let interfaces: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Interface)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        interfaces.contains(&"ButtonProps"),
+        "Vue PropsAndEmits: ButtonProps interface missing"
+    );
+
+    let fns: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Function)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        fns.contains(&"onClick"),
+        "Vue PropsAndEmits: onClick missing"
+    );
+    assert!(fns.contains(&"reset"), "Vue PropsAndEmits: reset missing");
+
+    let sections: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Section)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        sections.contains(&"script setup"),
+        "Vue PropsAndEmits: script setup section missing"
+    );
+}
+
+// ── Vue: MultiBlock.vue ──────────────────────────────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 6  imports: 2
+//   Section: 3, Const: 1, Function: 2
+//
+// Both <script> and <script setup> blocks are parsed independently.
+// Parser emits a separate Section node for each, so 3 Sections total
+// (template + script + script setup). Symbols from both blocks are merged.
+
+#[test]
+fn vue_multi_block_snapshot_match() {
+    let src = fixture("MultiBlock.vue");
+    let graph = VueProvider::new()
+        .expect("VueProvider::new")
+        .parse_file(Path::new("MultiBlock.vue"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        6,
+        "Vue MultiBlock.vue: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        2,
+        "Vue MultiBlock.vue: import count changed (one per block)"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        3,
+        "Vue MultiBlock: Section count (template, script, script setup)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        1,
+        "Vue MultiBlock: Const count (message)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        2,
+        "Vue MultiBlock: Function count (sharedHelper, greet)"
+    );
+
+    let sections: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Section)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        sections.contains(&"script"),
+        "Vue MultiBlock: plain script section missing"
+    );
+    assert!(
+        sections.contains(&"script setup"),
+        "Vue MultiBlock: script setup section missing"
+    );
+    assert!(
+        sections.contains(&"template"),
+        "Vue MultiBlock: template section missing"
+    );
+
+    let fns: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Function)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        fns.contains(&"sharedHelper"),
+        "Vue MultiBlock: sharedHelper (from plain <script>) missing"
+    );
+    assert!(
+        fns.contains(&"greet"),
+        "Vue MultiBlock: greet (from <script setup>) missing"
+    );
+}
+
+// ── Svelte: ContextModule.svelte (snapshot-only) ─────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 7  imports: 2
+//   Section: 3, Const: 2, Function: 2
+//
+// <script context="module"> emits Section named "script module".
+// Both blocks parsed independently; symbols from both are merged into graph.
+
+#[test]
+fn svelte_context_module_snapshot_match() {
+    let src = fixture("ContextModule.svelte");
+    let graph = SvelteProvider::new()
+        .expect("SvelteProvider::new")
+        .parse_file(Path::new("ContextModule.svelte"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        7,
+        "Svelte ContextModule.svelte: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        2,
+        "Svelte ContextModule.svelte: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        3,
+        "Svelte ContextModule: Section count (style, script module, script)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        2,
+        "Svelte ContextModule: Const count (globalCount, name)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        2,
+        "Svelte ContextModule: Function count (formatCount, greet)"
+    );
+
+    let sections: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Section)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        sections.contains(&"script module"),
+        "Svelte ContextModule: 'script module' section missing"
+    );
+    assert!(
+        sections.contains(&"script"),
+        "Svelte ContextModule: instance 'script' section missing"
+    );
+
+    let fns: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Function)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        fns.contains(&"formatCount"),
+        "Svelte ContextModule: formatCount (from module block) missing"
+    );
+    assert!(
+        fns.contains(&"greet"),
+        "Svelte ContextModule: greet (from instance block) missing"
+    );
+
+    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    assert!(
+        import_srcs.contains(&"svelte/store"),
+        "Svelte ContextModule: svelte/store import missing"
+    );
+}
+
+// ── Svelte: Runes.svelte (snapshot-only) ─────────────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 4  imports: 0
+//   Section: 1, Const: 2, Function: 1
+//
+// Svelte 5 runes: $state/$derived LHS captured as Const; $effect (no LHS)
+// not captured. No imports, no style block.
+
+#[test]
+fn svelte_runes_snapshot_match() {
+    let src = fixture("Runes.svelte");
+    let graph = SvelteProvider::new()
+        .expect("SvelteProvider::new")
+        .parse_file(Path::new("Runes.svelte"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        4,
+        "Svelte Runes.svelte: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        0,
+        "Svelte Runes.svelte: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        1,
+        "Svelte Runes: Section count (script only)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        2,
+        "Svelte Runes: Const count ($state/$derived vars)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        1,
+        "Svelte Runes: Function count (increment)"
+    );
+
+    let consts: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Const)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        consts.contains(&"count"),
+        "Svelte Runes: count ($state) missing"
+    );
+    assert!(
+        consts.contains(&"doubled"),
+        "Svelte Runes: doubled ($derived) missing"
+    );
+
+    let fns: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Function)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        fns.contains(&"increment"),
+        "Svelte Runes: increment missing"
+    );
+}
+
+// ── Svelte: TemplateDirectives.svelte (snapshot-only) ────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 5  imports: 0
+//   Section: 1, Const: 3, Function: 1
+//
+// {#if}/{#each}/{#await} template directives are NOT parsed as JS and must
+// NOT produce any Function/Const nodes — only script block symbols appear.
+
+#[test]
+fn svelte_template_directives_snapshot_match() {
+    let src = fixture("TemplateDirectives.svelte");
+    let graph = SvelteProvider::new()
+        .expect("SvelteProvider::new")
+        .parse_file(Path::new("TemplateDirectives.svelte"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        5,
+        "Svelte TemplateDirectives.svelte: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        0,
+        "Svelte TemplateDirectives.svelte: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        1,
+        "Svelte TemplateDirectives: Section count (script only — no template Section)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        3,
+        "Svelte TemplateDirectives: Const count (items, show, promise)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        1,
+        "Svelte TemplateDirectives: Function count (loadData only — template directives do not leak)"
+    );
+
+    let consts: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Const)
+        .map(|n| n.name.as_str())
+        .collect();
+    for name in &["items", "show", "promise"] {
+        assert!(
+            consts.contains(name),
+            "Svelte TemplateDirectives: '{name}' missing"
+        );
+    }
+
+    let fns: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Function)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        fns.contains(&"loadData"),
+        "Svelte TemplateDirectives: loadData missing"
+    );
+}
+
+// ── Astro: MultipleImports.astro (snapshot-only) ─────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 4  imports: 5
+//   Section: 2, Const: 2
+//
+// Five imports (3 Astro components + 2 utility named imports) all captured.
+// Only top-level const declarations captured (no template JSX leakage).
+
+#[test]
+fn astro_multiple_imports_snapshot_match() {
+    let src = fixture("MultipleImports.astro");
+    let graph = AstroProvider::new()
+        .expect("AstroProvider::new")
+        .parse_file(Path::new("MultipleImports.astro"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        4,
+        "Astro MultipleImports.astro: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        5,
+        "Astro MultipleImports.astro: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        2,
+        "Astro MultipleImports: Section count (frontmatter, template)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        2,
+        "Astro MultipleImports: Const count (title, posts)"
+    );
+
+    let consts: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Const)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        consts.contains(&"title"),
+        "Astro MultipleImports: title const missing"
+    );
+    assert!(
+        consts.contains(&"posts"),
+        "Astro MultipleImports: posts const missing"
+    );
+
+    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    for src in &[
+        "../components/Header.astro",
+        "../components/Footer.astro",
+        "../components/Card.astro",
+        "../utils/slug",
+        "../utils/date",
+    ] {
+        assert!(
+            import_srcs.contains(src),
+            "Astro MultipleImports: import from '{src}' missing"
+        );
+    }
+}
+
+// ── Astro: ConditionalRender.astro (snapshot-only) ───────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 4  imports: 1
+//   Section: 2, Const: 2
+//
+// Template JSX expressions ({cond && <X />}, {arr.map(...)}) are NOT parsed
+// and must NOT produce Function nodes — only frontmatter symbols appear.
+
+#[test]
+fn astro_conditional_render_snapshot_match() {
+    let src = fixture("ConditionalRender.astro");
+    let graph = AstroProvider::new()
+        .expect("AstroProvider::new")
+        .parse_file(Path::new("ConditionalRender.astro"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        4,
+        "Astro ConditionalRender.astro: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        1,
+        "Astro ConditionalRender.astro: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        2,
+        "Astro ConditionalRender: Section count (frontmatter, template)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        2,
+        "Astro ConditionalRender: Const count (isLoggedIn, users)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Function),
+        0,
+        "Astro ConditionalRender: no Function nodes (template JSX must not leak)"
+    );
+
+    let consts: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Const)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        consts.contains(&"isLoggedIn"),
+        "Astro ConditionalRender: isLoggedIn missing"
+    );
+    assert!(
+        consts.contains(&"users"),
+        "Astro ConditionalRender: users missing"
+    );
+
+    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    assert!(
+        import_srcs.contains(&"../components/Alert.astro"),
+        "Astro ConditionalRender: Alert.astro import missing"
+    );
+}
+
+// ── Astro: TypedProps.astro (snapshot-only) ──────────────────────────────────
+//
+// Baseline (sfc_snapshot_baseline.txt):
+//   total_nodes: 4  imports: 1
+//   Section: 2, Interface: 1, Const: 1
+//
+// TypeScript Interface node captured from Props interface.
+// Destructure pattern `const { title, ... } = Astro.props` does NOT emit
+// individual Const nodes (only the slug const is captured separately).
+
+#[test]
+fn astro_typed_props_snapshot_match() {
+    let src = fixture("TypedProps.astro");
+    let graph = AstroProvider::new()
+        .expect("AstroProvider::new")
+        .parse_file(Path::new("TypedProps.astro"), &src)
+        .expect("parse_file");
+
+    assert_eq!(
+        graph.nodes.len(),
+        4,
+        "Astro TypedProps.astro: total node count changed"
+    );
+    assert_eq!(
+        graph.imports.len(),
+        1,
+        "Astro TypedProps.astro: import count changed"
+    );
+
+    assert_eq!(
+        count_kind(&graph, NodeKind::Section),
+        2,
+        "Astro TypedProps: Section count (frontmatter, template)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Interface),
+        1,
+        "Astro TypedProps: Interface count (Props)"
+    );
+    assert_eq!(
+        count_kind(&graph, NodeKind::Const),
+        1,
+        "Astro TypedProps: Const count (slug)"
+    );
+
+    let interfaces: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Interface)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        interfaces.contains(&"Props"),
+        "Astro TypedProps: Props interface missing"
+    );
+
+    let consts: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Const)
+        .map(|n| n.name.as_str())
+        .collect();
+    assert!(
+        consts.contains(&"slug"),
+        "Astro TypedProps: slug const missing"
+    );
+
+    let import_srcs: Vec<&str> = graph.imports.iter().map(|i| i.source.as_str()).collect();
+    assert!(
+        import_srcs.contains(&"astro:assets"),
+        "Astro TypedProps: astro:assets import missing"
+    );
+}

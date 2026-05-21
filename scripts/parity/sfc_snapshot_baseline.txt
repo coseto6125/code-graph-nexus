@@ -34,6 +34,67 @@
   Interface    : 1  (User)
   Const        : 1  (users)
 
+=== Vue OptionsApi.vue (snapshot-only — Options API pattern) ===
+  total_nodes  : 8
+  imports      : 2
+  Section      : 3  (template, script, style)
+  Method       : 5  (data, doubled, increment, reset, mounted)
+
+=== Vue PropsAndEmits.vue (snapshot-only — Vue 3 macros) ===
+  total_nodes  : 8
+  imports      : 1
+  Section      : 2  (template, script setup)
+  Interface    : 1  (ButtonProps)
+  Const        : 3  (props, emit, isDisabled)
+  Function     : 2  (onClick, reset)
+
+=== Vue MultiBlock.vue (snapshot-only — dual script blocks) ===
+  total_nodes  : 6
+  imports      : 2
+  Section      : 3  (template, script, script setup)
+  Const        : 1  (message)
+  Function     : 2  (sharedHelper, greet)
+
+=== Svelte ContextModule.svelte (snapshot-only — module + instance blocks) ===
+  total_nodes  : 7
+  imports      : 2
+  Section      : 3  (style, script module, script)
+  Const        : 2  (globalCount, name)
+  Function     : 2  (formatCount, greet)
+
+=== Svelte Runes.svelte (snapshot-only — Svelte 5 rune syntax) ===
+  total_nodes  : 4
+  imports      : 0
+  Section      : 1  (script)
+  Const        : 2  (count, doubled)
+  Function     : 1  (increment)
+
+=== Svelte TemplateDirectives.svelte (snapshot-only — template directives do not leak) ===
+  total_nodes  : 5
+  imports      : 0
+  Section      : 1  (script)
+  Const        : 3  (items, show, promise)
+  Function     : 1  (loadData)
+
+=== Astro MultipleImports.astro (snapshot-only — many imports captured) ===
+  total_nodes  : 4
+  imports      : 5
+  Section      : 2  (frontmatter, template)
+  Const        : 2  (title, posts)
+
+=== Astro ConditionalRender.astro (snapshot-only — template JSX does not leak) ===
+  total_nodes  : 4
+  imports      : 1
+  Section      : 2  (frontmatter, template)
+  Const        : 2  (isLoggedIn, users)
+
+=== Astro TypedProps.astro (snapshot-only — TS interface + const captured) ===
+  total_nodes  : 4
+  imports      : 1
+  Section      : 2  (frontmatter, template)
+  Interface    : 1  (Props)
+  Const        : 1  (slug)
+
 # Parity notes (Vue vs ref-gitnexus):
 #   ref-gitnexus does not parse .vue files out of the box in its default
 #   configuration. Vue parity against the oracle requires a corpus of real
