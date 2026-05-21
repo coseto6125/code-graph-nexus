@@ -11,7 +11,7 @@ use ecp_core::graph::{
     Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph, GRAPH_FORMAT_VERSION,
     GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use std::fs;
 use tempfile::tempdir;
@@ -105,6 +105,7 @@ fn make_graph() -> ZeroCopyGraph {
         kind: NodeKind::Function,
         span: (line, 0, line + 1, 0),
         community_id: 0,
+        owner_class: StrRef::default(),
     };
     // node 0 = parseConfig, 1 = loadConfig, 2 = tokenize.
     // edges: parseConfig→tokenize (e0), loadConfig→parseConfig (e1).

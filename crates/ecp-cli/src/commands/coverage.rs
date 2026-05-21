@@ -387,7 +387,7 @@ mod tests {
         BlindSpotRecord, Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph,
         GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
     };
-    use ecp_core::pool::StringPool;
+    use ecp_core::pool::{StrRef, StringPool};
 
     /// rkyv-archive an in-memory `ZeroCopyGraph` and pass the borrowed
     /// `ArchivedZeroCopyGraph` into the test body.
@@ -574,6 +574,7 @@ mod tests {
                 kind: NodeKind::Function,
                 span: (0, 0, 1, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: uid_b,
@@ -582,6 +583,7 @@ mod tests {
                 kind: NodeKind::Function,
                 span: (1, 0, 2, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
         ];
         g.edges = vec![
@@ -669,6 +671,7 @@ mod tests {
                 kind: NodeKind::Function,
                 span: (0, 0, 1, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: uid_c,
@@ -677,6 +680,7 @@ mod tests {
                 kind: NodeKind::Class,
                 span: (2, 0, 3, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: uid_v,
@@ -685,6 +689,7 @@ mod tests {
                 kind: NodeKind::Variable,
                 span: (4, 0, 5, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
         ];
         g.edges = vec![Edge {

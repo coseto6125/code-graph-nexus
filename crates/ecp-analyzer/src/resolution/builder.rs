@@ -375,6 +375,8 @@ impl GraphBuilder {
                 uid_buf.push_str(&raw_node.name);
                 let uid_ref = string_pool.add(&uid_buf);
                 let name_ref = string_pool.add(&raw_node.name);
+                let owner_class_ref =
+                    string_pool.add(raw_node.owner_class.as_deref().unwrap_or(""));
 
                 nodes.push(Node {
                     uid: uid_ref,
@@ -383,6 +385,7 @@ impl GraphBuilder {
                     kind: raw_node.kind,
                     span: raw_node.span,
                     community_id: 0,
+                    owner_class: owner_class_ref,
                 });
 
                 current_node_idx += 1;
@@ -453,6 +456,7 @@ impl GraphBuilder {
                             kind: ecp_core::graph::NodeKind::Route,
                             span: raw_node.span,
                             community_id: 0,
+                            owner_class: StrRef::default(),
                         });
 
                         route_edges.push(Edge {
@@ -482,6 +486,7 @@ impl GraphBuilder {
                         kind: ecp_core::graph::NodeKind::Route,
                         span: raw_route.span,
                         community_id: 0,
+                        owner_class: StrRef::default(),
                     });
 
                     // Resolve the imperative-route handler, if the parser captured
@@ -734,6 +739,7 @@ impl GraphBuilder {
                     kind: NodeKind::EntryPoint,
                     span: (0, 0, 0, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 });
 
                 // Encode score in the edge reason: "{tag}:{score}:{reason}".
@@ -1186,6 +1192,7 @@ impl GraphBuilder {
                     .map(|n| n.span)
                     .unwrap_or((0, 0, 0, 0)),
                 community_id: process_node_community,
+                owner_class: StrRef::default(),
             });
 
             for (step_idx, &member_idx) in tr.trace.iter().enumerate() {
@@ -1273,6 +1280,7 @@ impl GraphBuilder {
                 kind: NodeKind::File,
                 span: (0, 0, 0, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             });
             file_node_idx.insert(path_str, file_node_id);
         }

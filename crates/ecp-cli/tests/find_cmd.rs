@@ -9,7 +9,7 @@ use ecp_core::graph::{
     Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph, GRAPH_FORMAT_VERSION,
     GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -72,6 +72,7 @@ fn build_graph(nodes_spec: &[NodeSpec<'_>], extra_edges: &[(usize, usize)]) -> (
                 kind: ns.kind,
                 span: (ns.line, 0, ns.line + 10, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             }
         })
         .collect();

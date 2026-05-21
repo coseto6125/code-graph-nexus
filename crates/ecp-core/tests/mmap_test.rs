@@ -1,7 +1,7 @@
 use ecp_core::graph::{
     ArchivedZeroCopyGraph, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use memmap2::Mmap;
 use rkyv::rancor::Error;
 use std::fs::File;
@@ -31,6 +31,7 @@ fn test_mmap_graph_access() {
             kind: NodeKind::Function,
             span: (1, 0, 10, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         }],
         edges: vec![],
         out_offsets: vec![0, 0],

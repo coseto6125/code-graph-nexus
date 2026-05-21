@@ -11,7 +11,9 @@ pub const GRAPH_MAGIC: [u8; 8] = *b"ECP-RS\0\0";
 /// the new reader (or vice-versa). The reader refuses any version it
 /// does not recognize, so a stale CLI does not segfault on a fresh
 /// `graph.bin` and a fresh CLI does not silently misinterpret old data.
-pub const GRAPH_FORMAT_VERSION: u32 = 5;
+///
+/// v6: `Node.owner_class: StrRef` added for method rename isolation (T1-11).
+pub const GRAPH_FORMAT_VERSION: u32 = 6;
 
 impl std::str::FromStr for NodeKind {
     type Err = ();
@@ -86,11 +88,12 @@ impl RelType {
     }
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[rkyv(compare(PartialEq))]
 #[rkyv(derive(Debug))]
 #[repr(u8)]
 pub enum NodeKind {
+    #[default]
     File,
     Function,
     Class,
@@ -314,7 +317,7 @@ impl ArchivedRelType {
     }
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Default)]
 #[rkyv(derive(Debug))]
 pub struct Node {
     pub uid: StrRef,
@@ -323,6 +326,11 @@ pub struct Node {
     pub kind: NodeKind,
     pub span: (u32, u32, u32, u32), // start_line, start_col, end_line, end_col
     pub community_id: u16,          // 0 = unassigned
+    /// Owning class/struct for methods and properties; `StrRef::default()` (len=0)
+    /// means module-level symbol with no owner.  Appended at the END to preserve
+    /// rkyv binary layout for v5 fields; format version bumped to 6.
+    /// Used by `ecp rename` to isolate `Foo.validate` from `Bar.validate` (T1-11).
+    pub owner_class: StrRef,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -652,6 +660,7 @@ mod tests {
                 kind: NodeKind::Function,
                 span: (1, 0, 5, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             }],
             edges: vec![Edge {
                 source: 0,

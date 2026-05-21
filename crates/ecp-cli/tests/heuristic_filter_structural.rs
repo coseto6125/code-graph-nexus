@@ -1,5 +1,5 @@
 use ecp_core::graph::{Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph};
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use std::path::Path;
 use std::process::Command;
@@ -127,6 +127,7 @@ fn synthetic_graph_with_mirrors_field() -> Vec<u8> {
             kind: NodeKind::Function,
             span: (2, 0, 4, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: consumer_uid,
@@ -135,6 +136,7 @@ fn synthetic_graph_with_mirrors_field() -> Vec<u8> {
             kind: NodeKind::Function,
             span: (3, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
     ];
 

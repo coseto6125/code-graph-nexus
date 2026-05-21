@@ -306,6 +306,7 @@ mod tests {
             kind,
             span: (0, 0, 0, 0),
             community_id: 1,
+            owner_class: StrRef::default(),
         }
     }
 

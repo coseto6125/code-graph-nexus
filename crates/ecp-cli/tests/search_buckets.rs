@@ -1,7 +1,7 @@
 use ecp_core::graph::{
     File, FileCategory, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -37,6 +37,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: pool.add("Function:tests/widget_test.rs:widget_test_fn"),
@@ -45,6 +46,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: pool.add("Function:vendor/tree-sitter/src/widget_grammar.c:widget_ref"),
@@ -53,6 +55,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: pool.add("Document:docs/widget.md:widget_doc"),
@@ -61,6 +64,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             kind: NodeKind::Document,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: pool.add("Function:config/widget.toml:widget_cfg"),
@@ -69,6 +73,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
     ];
 
@@ -303,6 +308,7 @@ fn empty_buckets_emit_empty_array_in_json() {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         }],
         edges: vec![],
         out_offsets: vec![0; 2],
@@ -397,6 +403,7 @@ fn text_format_empty_bucket_shows_none() {
             kind: NodeKind::Function,
             span: (1, 0, 5, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         }],
         edges: vec![],
         out_offsets: vec![0; 2],
@@ -455,6 +462,7 @@ fn each_bucket_independently_capped_at_top_k() {
             kind: NodeKind::Function,
             span: (i as u32, 0, i as u32 + 1, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         })
         .collect();
     let n = nodes.len() as u32;

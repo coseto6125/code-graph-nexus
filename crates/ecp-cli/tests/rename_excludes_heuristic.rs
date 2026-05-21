@@ -15,7 +15,7 @@ use ecp_core::graph::{
     Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph, GRAPH_FORMAT_VERSION,
     GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use std::path::Path;
 use std::process::Command;
@@ -139,6 +139,7 @@ fn mirrors_field_graph(
             kind: NodeKind::Function,
             span: (1, 0, 2, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
         Node {
             uid: mirror_uid,
@@ -147,6 +148,7 @@ fn mirrors_field_graph(
             kind: NodeKind::Function,
             span: (1, 0, 2, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         },
     ];
 
@@ -209,6 +211,7 @@ fn zero_mirrors_graph(symbol: &str, file: &str) -> Vec<u8> {
         kind: NodeKind::Function,
         span: (1, 0, 2, 0),
         community_id: 0,
+        owner_class: StrRef::default(),
     }];
 
     serialize_graph(&ZeroCopyGraph {

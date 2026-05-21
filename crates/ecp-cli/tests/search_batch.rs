@@ -7,7 +7,7 @@
 use ecp_core::graph::{
     File, FileCategory, Node, NodeKind, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use std::io::Write;
 use std::path::PathBuf;
@@ -38,6 +38,7 @@ fn setup_fixture() -> BatchFixture {
             kind: NodeKind::Function,
             span: (i as u32, 0, i as u32 + 1, 0),
             community_id: 0,
+            owner_class: StrRef::default(),
         })
         .collect();
     let n = nodes.len() as u32;

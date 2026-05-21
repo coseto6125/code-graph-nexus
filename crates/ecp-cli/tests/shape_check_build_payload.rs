@@ -9,7 +9,7 @@ use ecp_core::graph::{
     Edge, File, FileCategory, Node, NodeKind, RelType, ZeroCopyGraph, GRAPH_FORMAT_VERSION,
     GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use serde_json::Value;
 use std::process::Command;
@@ -70,6 +70,7 @@ fn build_graph_with_calls_edge() -> Vec<u8> {
                 kind: NodeKind::Function,
                 span: (0, 0, 1, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: uid_b,
@@ -78,6 +79,7 @@ fn build_graph_with_calls_edge() -> Vec<u8> {
                 kind: NodeKind::Function,
                 span: (2, 0, 3, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
         ],
         edges: vec![Edge {

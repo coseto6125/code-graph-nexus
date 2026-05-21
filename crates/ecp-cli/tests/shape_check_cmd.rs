@@ -12,7 +12,7 @@ use ecp_core::graph::{
     Edge, File, FileCategory, Node, NodeKind, RelType, RouteShape, ZeroCopyGraph,
     GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
 };
-use ecp_core::pool::StringPool;
+use ecp_core::pool::{StrRef, StringPool};
 use rkyv::rancor::Error;
 use serde_json::Value;
 use std::path::Path;
@@ -126,6 +126,7 @@ fn build_graph(
                 kind: NodeKind::Function,
                 span: (1, 0, 5, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
             Node {
                 uid: route_uid,
@@ -134,6 +135,7 @@ fn build_graph(
                 kind: NodeKind::Route,
                 span: (1, 0, 5, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             },
         ],
         edges,

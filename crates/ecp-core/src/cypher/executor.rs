@@ -1270,7 +1270,7 @@ mod tests {
     use crate::graph::{
         Edge, File, FileCategory, Node, ZeroCopyGraph, GRAPH_FORMAT_VERSION, GRAPH_MAGIC,
     };
-    use crate::pool::StringPool;
+    use crate::pool::{StrRef, StringPool};
 
     // -----------------------------------------------------------------------
     // Fixture helpers
@@ -1306,6 +1306,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (0, 0, 5, 1),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: uid_b,
@@ -1314,6 +1315,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (6, 0, 8, 1),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
             ],
             edges: vec![Edge {
@@ -1378,6 +1380,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (0, 0, 1, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: ub,
@@ -1386,6 +1389,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (2, 0, 3, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: uc,
@@ -1394,6 +1398,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (4, 0, 5, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
             ],
             edges: vec![
@@ -1463,6 +1468,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (i * 2, 0, i * 2 + 1, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 })
                 .collect(),
             edges: vec![
@@ -1750,6 +1756,7 @@ mod tests {
                 kind: NodeKind::Function,
                 span: (0, 0, 1, 0),
                 community_id: 0,
+                owner_class: StrRef::default(),
             }],
             edges: vec![],
             out_offsets: vec![0, 0],
@@ -1829,6 +1836,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (0, 0, 1, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: u_la,
@@ -1837,6 +1845,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (2, 0, 3, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: u_lb,
@@ -1845,6 +1854,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (4, 0, 5, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
             ],
             edges: vec![
@@ -2208,6 +2218,7 @@ mod tests {
                     kind: NodeKind::Function,
                     span: (0, 0, 1, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
                 Node {
                     uid: u2,
@@ -2216,6 +2227,7 @@ mod tests {
                     kind: NodeKind::Method,
                     span: (2, 0, 3, 0),
                     community_id: 0,
+                    owner_class: StrRef::default(),
                 },
             ],
             edges: vec![],
@@ -2340,6 +2352,7 @@ mod tests {
                 // span: start_row=0, start_col=0, end_row=2, end_col=1
                 span: (0, 0, 2, 1),
                 community_id: 0,
+                owner_class: StrRef::default(),
             }],
             edges: vec![],
             out_offsets: vec![0, 0],
