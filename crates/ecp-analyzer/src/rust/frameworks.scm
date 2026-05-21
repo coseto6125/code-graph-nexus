@@ -1,5 +1,76 @@
 ;; Framework-aware queries for Rust (Tier 1: Axum/Actix routes + Redis pub/sub).
 
+;; ---- Kafka Rust (T5-7) ----
+;; Covers rdkafka: FutureRecord::to("topic") producer and
+;; consumer.subscribe(&["topic"]) consumer.
+;; Import gate (rdkafka) is enforced by KAFKA_RUST.import_gate — these
+;; queries fire on syntax alone; the extractor filters by import at runtime.
+;;
+;; Anchored to `function_item` to co-capture the enclosing function name.
+;; Variable topic args produce no capture (no fabrication).
+
+;; rdkafka producer: producer.send(FutureRecord::to("topic"), ...)
+;; Captures the string literal in FutureRecord::to("topic") inside a function_item.
+(function_item
+  name: (identifier) @kafka.rust.fn
+  body: (block
+    (_
+      (call_expression
+        function: (field_expression
+          field: (field_identifier) @kafka.rust.direction
+          (#eq? @kafka.rust.direction "send"))
+        arguments: (arguments
+          (call_expression
+            function: (field_expression
+              value: (call_expression
+                function: (scoped_identifier) @_future_record_to
+                (#match? @_future_record_to "FutureRecord::to")
+                arguments: (arguments
+                  (string_literal) @kafka.topic))))
+          (_))))))
+
+;; rdkafka producer: await form — producer.send(...).await inside function_item.
+(function_item
+  name: (identifier) @kafka.rust.fn
+  body: (block
+    (_
+      (await_expression
+        (call_expression
+          function: (field_expression
+            field: (field_identifier) @kafka.rust.direction
+            (#eq? @kafka.rust.direction "send"))
+          arguments: (arguments
+            (call_expression
+              function: (field_expression
+                value: (call_expression
+                  function: (scoped_identifier) @_afuture_record_to
+                  (#match? @_afuture_record_to "FutureRecord::to")
+                  arguments: (arguments
+                    (string_literal) @kafka.topic))))
+            (_)))))))
+
+;; rdkafka consumer: consumer.subscribe(&["topic", ...]) inside function_item.
+;; Captures the first string_literal in the slice literal.
+;; NOTE: subscribe() is commonly chained: consumer.subscribe(&[...]).expect(...)
+;; The subscribe call_expression is the `value` of the outer field_expression.
+;; Match it via the field_expression parent's value field.
+(function_item
+  name: (identifier) @kafka.rust.fn
+  body: (block
+    (_
+      (call_expression
+        function: (field_expression
+          value: (call_expression
+            function: (field_expression
+              field: (field_identifier) @kafka.rust.direction
+              (#eq? @kafka.rust.direction "subscribe"))
+            arguments: (arguments
+              (reference_expression
+                (array_expression
+                  . (string_literal) @kafka.topic)))))))))
+
+;; ---- Axum router subset ----
+
 ;; Axum: .route("/path", METHOD(handler_ident))
 ;; Captures the handler identifier passed as argument to a method call (get/post/put/delete/patch)
 ;; that is itself the second argument to .route(...).

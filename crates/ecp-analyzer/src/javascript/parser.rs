@@ -542,7 +542,7 @@ impl LanguageProvider for JavaScriptProvider {
                 &tree,
                 source,
                 &self.query,
-                &[crate::event_topic::REDIS_JS],
+                &[crate::event_topic::REDIS_JS, crate::event_topic::KAFKA_NODE],
                 &imports,
                 &mut pool,
             );
