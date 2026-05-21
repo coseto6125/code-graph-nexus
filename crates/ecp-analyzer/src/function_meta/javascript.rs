@@ -70,7 +70,6 @@ fn collect_fn_nodes<'a>(
         if let Some((_, raw)) = fn_spans.iter().find(|(s, _)| *s == span) {
             if let Some(meta) = extract_one(&node, source, raw, file_category) {
                 out.push(meta);
-                return; // don't recurse into this function
             }
         }
     }

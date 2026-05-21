@@ -209,3 +209,19 @@ fn ts_function_metas_sorted_by_node_idx() {
         assert!(g.function_meta(m.node_idx).is_some());
     }
 }
+
+#[test]
+fn ts_nested_function_has_function_meta() {
+    let src =
+        "function outer(): number { function inner(value: number): number { return value; } return inner(1); }\n";
+    let g = analyze(src);
+
+    let outer = meta(&g, "outer");
+    let inner = meta(&g, "inner");
+
+    assert_eq!(
+        outer.return_type.resolve(g.string_pool.as_slice()),
+        "number"
+    );
+    assert_eq!(inner.params.len(), 2);
+}

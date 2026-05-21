@@ -76,8 +76,6 @@ fn collect_fn_nodes<'a>(
             if let Some(meta) = extract_one(&node, source, raw, file_category) {
                 out.push(meta);
             }
-            // Don't recurse into the matched function to avoid double-counting nested fns.
-            return;
         }
     }
 

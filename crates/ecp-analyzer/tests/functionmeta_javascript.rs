@@ -176,6 +176,18 @@ fn js_function_metas_sorted_by_node_idx() {
     }
 }
 
+#[test]
+fn js_nested_function_has_function_meta() {
+    let src = "function outer() { function inner(value) { return value; } return inner(1); }\n";
+    let g = analyze(src);
+
+    let outer = meta(&g, "outer");
+    let inner = meta(&g, "inner");
+
+    assert!(!outer.is_async());
+    assert_eq!(inner.params.len(), 2);
+}
+
 // ── multi-decorator (legacy/stage-3 decorators) ───────────────────────────────
 
 #[test]
