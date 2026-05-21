@@ -439,7 +439,6 @@ impl LanguageProvider for JavaProvider {
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
 
-
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes: vec![],
