@@ -17,31 +17,85 @@
 > the session. Body content below is preserved verbatim from the
 > reconstruction; only this note and the status table were added.
 
-## Status snapshot at restoration time
+## Status snapshot
 
-Many tasks referenced below have already shipped. For canonical merge
-SHAs, consult `git log --all --grep '<task>'`.
+Last refreshed 2026-05-21 by grep-verification against `origin/main`
+(not just by trusting PR titles). Source-of-truth columns:
 
-| Phase | Tasks | Status |
-|---|---|---|
-| 0 — schema preamble | T0-1, T0-2 | shipped (#261, #263) |
-| 1 — Symbol Identity | T1-1 (= T1-3 per D5), T1-2 | shipped (#267, #262) |
-| 1 — Symbol Identity | T1-4 … T1-12 | pending (9 tasks) |
-| 4 — Hybrid surface | T-H1, T-H2, T-H3 | shipped (#264, #265, #266) |
-| 7 — Incremental | T7-1, T7-3 | in-flight (#268, #269) |
-| 7 — Incremental | T7-2 | local branch `feat/t7-2-symbol-hashes`, not pushed |
-| 7 — Incremental | T7-4 … T7-7 | pending (4 tasks) |
-| 4 — Schema cross-binding | T4-1 | in-flight (#270) |
-| 4 — Schema cross-binding | T4-2 … T4-8 | pending (7 tasks) |
-| 5 — Event Flow | T5-0 | in-flight (#271) |
-| 5 — Event Flow | T5-1 … T5-34 (5 Celery SKIP) | pending (~28 tasks) |
-| 10 — Transaction Boundary | T10-1 + T10-2 + T10-3 (collapsed) | shipped (#275) |
-| 10 — Transaction Boundary | T10-4 (`find-transaction-patterns` CLI) | pending |
-| Phase 5 — docs | T-P1, T-P2 | pending |
+- `grep evidence` cites the actual symbol / file the verification looked
+  at — so future drift can re-check the same anchor instead of guessing
+- `status` distinguishes **shipped on main** from **PR open** from
+  **truly pending** (no branch, no PR)
+
+| Phase | Task | Status | Evidence on `origin/main` |
+|---|---|---|---|
+| 0 | T0-1 (schema variants) | shipped #261 | `NodeKind::{SchemaField,EventTopic,TransactionScope}` in `graph.rs` |
+| 0 | T0-2 (LocalGraph raw vecs) | shipped #263 | `LocalGraph.schema_fields/event_topics/tx_scopes` in `types.rs` |
+| 1 | T1-1 (= T1-3 per D5) owner_class 14-lang | shipped #267 | `RawNode.owner_class` + `stamp_owner_class_by_span` in `framework_helpers.rs` |
+| 1 | T1-2 streaming xxh3_64 helper | shipped #262 | `crates/ecp-core/src/uid.rs` |
+| 1 | **T1-4** `Node.owner_class` (struct field) | **pending** | `Node` in `graph.rs:319-326` has only `uid/name/file_idx/kind/span/community_id` |
+| 1 | **T1-5** `Node.uid: u64` | **pending** | `pub uid: StrRef` in `graph.rs:320` |
+| 1 | **T1-6** Resolver `FxHashMap<u64, NodeId>` | **respec needed** | Current resolver is `SymbolTable` (custom) — not the vanilla `HashMap` the roadmap assumed; T1-6 as written is moot |
+| 1 | T1-7 `GRAPH_FORMAT_VERSION` bump 4 → 5 | **bump done, rollback-safety partial** | `GRAPH_FORMAT_VERSION = 5` in `graph.rs:14` ✓; auto-reindex + `.v4.bak` rollback path needs re-audit |
+| 1 | **T1-8** FQN in `inspect` | **pending** | zero `fqn`/`owner_class` refs in `commands/inspect.rs` |
+| 1 | **T1-9** FQN in `impact` | **pending** | zero `fqn`/`owner_class` refs in `commands/impact.rs` |
+| 1 | **T1-10** Cypher uid migration | pending (blocks-on T1-5) | `executor.rs:1146` still `uid.resolve(&graph.string_pool)` |
+| 1 | **T1-11** `ecp rename` owner_class isolation ⚠️ | **pending — LOAD-BEARING ACCURACY BUG** | `rename.rs:270` filters `n.name.resolve(...) == target_symbol` only — two classes with same method name collide today |
+| 1 | T1-12 sentinel/bool cleanup | pending | `__impl_target__` sentinel removed from rust parser already (T1-1 work) — verify class_membership fallback still safe to drop |
+| 4 (hybrid) | T-H1 impact filter | shipped #264 | `is_heuristic()` filter in BFS edge loop |
+| 4 (hybrid) | T-H2 rename hard-exclude + count surface | shipped #265 | `heuristic_mirror_count` in `rename.rs` |
+| 4 (hybrid) | T-H3 inspect separate section | shipped #266 | `heuristic_outgoing`/`heuristic_note` in `inspect.rs` |
+| 7 | T7-1 `parse_to_fragment` real impl | shipped #268 | `parse_to_fragment` in `overlay_writer.rs` |
+| 7 | T7-2 per-symbol content hash | **pending** | zero `symbol_hashes`/`SymbolHash` in `crates/ecp-{core,analyzer}` — earlier "local branch exists" note now stale, branch not in remote |
+| 7 | T7-3 shadow-candidates | shipped #269 | `crates/ecp-analyzer/src/incremental/shadow_candidates.rs` |
+| 7 | **T7-4** wire `reanalyze_files` into `auto_ensure` | **pending** | `auto_ensure.rs:158` calls `apply_l1_overlay_updates`; `reanalyze_files` at `reanalyze.rs:73` has no `auto_ensure` caller |
+| 7 | T7-5/6/7 | pending | overlay zero-copy / skip-unchanged / parity gate — no commit evidence |
+| 4 (schema) | T4-1 SchemaFieldExtractor skeleton | **in-flight PR #270** | `crates/ecp-analyzer/src/schema_field/{config,extract,mod}.rs` present |
+| 4 (schema) | T4-2 Pydantic | pending | no `pydantic*` source file |
+| 4 (schema) | T4-3 SQLAlchemy | pending | no `sqlalchemy*` source file |
+| 4 (schema) | T4-4 TS interface | pending | not in `typescript/queries.scm` |
+| 4 (schema) | T4-5 protobuf | pending | no protobuf provider crate dir |
+| 4 (schema) | T4-6 OpenAPI | pending | no `openapi` source dir |
+| 4 (schema) | T4-7 SchemaFieldIndex + `MirrorsField` | pending | no `pass2_emit_schema_field_mirrors` in `builder.rs` |
+| 4 (schema) | T4-8 `find-schema-bindings` CLI | pending | no `find_schema*` in `commands/` |
+| 5 (event) | T5-0 normalize | **in-flight PR #271** | `event_topic/normalize.rs` ships with `split_camel_case` consecutive-caps fix |
+| 5 (event) | T5-1 `RawEventTopic` collector | **pending** | `event_topic/mod.rs` is 19 bytes (essentially empty) |
+| 5 (event) | T5-2 … T5-31 (25 detectors, 5 Celery SKIP) | pending | no `kafka*/rabbitmq*/sqs*/celery*` files |
+| 5 (event) | T5-32 coverage matrix doc | pending | T5-2..31 not done |
+| 5 (event) | T5-33 `EventTopicMirror` heuristic | pending | depends on T5-2..31 subset gate (D7) |
+| 5 (event) | T5-34 `find-event-mirrors` CLI | pending | no `find_event*` in `commands/` |
+| 10 | T10-1 + T10-2 + T10-3 (collapsed) | shipped #275 | `RawTxScope` packed + `NodeKind::TransactionScope` + `OpensTxScope` edge |
+| 10 | T10-4 `find-transaction-patterns` CLI | pending | no `find_tx*`/`saga*`/`outbox*` in `commands/` |
+| Phase 5 | T-P1 parity baselines refresh | pending | `scripts/parity/round*_baseline.txt` not regenerated |
+| Phase 5 | T-P2 user-doc updates | pending | skill text + README blurbs |
+
+### Things to highlight (vs. literal reading of body below)
+
+- **T1-11 is a real bug**, not just a missing nice-to-have. Today
+  `ecp rename Foo.validate xxx` will rewrite every `validate` in the
+  graph regardless of owner class. This is the load-bearing accuracy
+  claim of Feature #1; until T1-11 lands, the rename CLI's user-visible
+  contract is silently broken on any codebase with same-name methods
+  across classes.
+- **T1-6 is not a no-op rename**. The roadmap body assumes a flat
+  `HashMap<String, NodeId>` resolver. Main has since shipped a custom
+  `SymbolTable` with `stem_index`/`register_node_with_meta`/
+  `lookup_in_file`. T1-6 as written doesn't apply; either re-spec it
+  to "swap the in-memory resolution-key encoding to u64 once T1-5 lands"
+  or close it.
+- **T1-7 is partly done**. The version bump itself (4 → 5) is on main.
+  The auto-reindex + `.v4.bak` rollback path described in the body
+  needs a separate audit of `engine.rs:122-170` + `auto_ensure.rs:37-42`
+  to confirm it matches the spec.
+- **T7-2 evidence weakened**. Earlier restore-note claimed a local
+  branch `feat/t7-2-symbol-hashes` had a commit ready. The current
+  refresh can't find that branch on remote nor any `symbol_hashes`
+  identifier in `crates/`. Treat T7-2 as fully pending until proven
+  otherwise.
 
 The snapshot is intentionally NOT woven into the body — the body stays
-verbatim as the canonical planning artefact, and status drift gets
-tracked by overwriting just this table in follow-up commits.
+verbatim as the canonical planning artefact. Status drift gets tracked
+by overwriting just this table in follow-up commits.
 
 ---
 
