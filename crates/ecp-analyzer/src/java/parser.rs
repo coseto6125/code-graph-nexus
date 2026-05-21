@@ -1,7 +1,7 @@
 use super::receiver_types::extract_java_calls;
 use super::spec::JavaSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{has_import_from, node_span};
+use crate::framework_helpers::{collect_jvm_transactional_scopes, has_import_from, node_span};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
@@ -415,6 +415,8 @@ impl LanguageProvider for JavaProvider {
             crate::resolution::builder::determine_category(path.to_str().unwrap_or(""));
         let raw_function_metas =
             crate::function_meta::java::extract(tree.root_node(), source, &nodes, file_category);
+        let tx_scopes =
+            collect_jvm_transactional_scopes(&nodes, &[NodeKind::Method, NodeKind::Constructor]);
 
         crate::framework_helpers::stamp_owner_class_by_span(&mut nodes);
         Ok(LocalGraph {
@@ -429,7 +431,7 @@ impl LanguageProvider for JavaProvider {
             blind_spots: vec![],
             schema_fields: None,
             event_topics: None,
-            tx_scopes: None,
+            tx_scopes,
             call_metas: vec![],
             raw_function_metas,
         })

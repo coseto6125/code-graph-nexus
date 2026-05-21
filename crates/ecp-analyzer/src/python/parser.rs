@@ -3,7 +3,7 @@ use super::spec::PythonSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
-    Span, MODULE_LEVEL_SOURCE,
+    point_in_span, Span, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_python_param_names, detect_python_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
@@ -11,7 +11,8 @@ use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{
-    BlindSpot, LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode, RawRoute,
+    BlindSpot, FrameworkId, LocalGraph, RawFanoutRef, RawFrameworkRef, RawImport, RawNode,
+    RawRoute, RawTxScope,
 };
 use ecp_core::graph::{FileCategory, NodeKind};
 use std::path::Path;
@@ -354,6 +355,8 @@ struct PythonCaptureIndices {
     django_signal_connect_name: Option<u32>,
     django_signal_connect_handler: Option<u32>,
     celery_task_handler: Option<u32>,
+    tx_atomic_handler: Option<u32>,
+    tx_db_session_handler: Option<u32>,
     reflection_getattr_site: Option<u32>,
     blind_eval: Option<u32>,
     blind_exec: Option<u32>,
@@ -423,6 +426,8 @@ impl PythonProvider {
             django_signal_connect_handler: query
                 .capture_index_for_name("django.signal.connect_handler"),
             celery_task_handler: query.capture_index_for_name("celery.task.handler"),
+            tx_atomic_handler: query.capture_index_for_name("tx.atomic.handler"),
+            tx_db_session_handler: query.capture_index_for_name("tx.db_session.handler"),
             reflection_getattr_site: query.capture_index_for_name("reflection.getattr.site"),
             blind_eval: query.capture_index_for_name("blind.eval"),
             blind_exec: query.capture_index_for_name("blind.exec"),
@@ -530,6 +535,13 @@ impl LanguageProvider for PythonProvider {
         // Reflection fan-out sites: outer `getattr(self, name)()` call spans.
         // Resolved after `nodes` is populated (need enclosing class + sibling methods).
         let mut pending_getattr_sites: Vec<Span> = Vec::new();
+
+        // Pending transaction-scope decorator hits. Each entry is
+        // `(handler_name_start_row, handler_name_start_col, framework)`.
+        // Resolved against `nodes` after the match loop closes — we need
+        // to find the Function/Method/Constructor whose body span contains
+        // this position to record the `node_idx` in `RawTxScope::new`.
+        let mut pending_tx_scopes: Vec<(u32, u32, FrameworkId)> = Vec::new();
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -676,6 +688,14 @@ impl LanguageProvider for PythonProvider {
                             span: node_span(&cap.node),
                         });
                     }
+                } else if cap_idx == idx.tx_atomic_handler || cap_idx == idx.tx_db_session_handler {
+                    let framework = if cap_idx == idx.tx_atomic_handler {
+                        FrameworkId::DjangoAtomic
+                    } else {
+                        FrameworkId::PonyDbSession
+                    };
+                    let pos = cap.node.start_position();
+                    pending_tx_scopes.push((pos.row as u32, pos.column as u32, framework));
                 } else if cap_idx == idx.reflection_getattr_site {
                     pending_getattr_sites.push(node_span(&cap.node));
                 } else {
@@ -1045,6 +1065,8 @@ impl LanguageProvider for PythonProvider {
         let raw_function_metas =
             crate::function_meta::python::extract(tree.root_node(), source, &nodes, file_category);
 
+        let tx_scopes = resolve_tx_scopes(&nodes, &pending_tx_scopes);
+
         crate::framework_helpers::stamp_owner_class_by_span(&mut nodes);
         Ok(LocalGraph {
             content_hash: [0; 8],
@@ -1058,9 +1080,42 @@ impl LanguageProvider for PythonProvider {
             blind_spots,
             schema_fields: None,
             event_topics: None,
-            tx_scopes: None,
+            tx_scopes,
             call_metas,
             raw_function_metas,
         })
     }
+}
+
+/// Match each pending `(handler_row, handler_col, framework)` against the
+/// Function/Method/Constructor whose span contains that position and emit a
+/// packed `RawTxScope`. The captured identifier is `name: (identifier)` of a
+/// `function_definition`, so the handler position falls inside the function
+/// node's span (which is the surrounding `function_definition`).
+///
+/// `pending_tx_scopes` is typically small (<10 per file); a linear scan is
+/// faster than building a HashMap below ~50 entries due to hash overhead.
+fn resolve_tx_scopes(
+    nodes: &[RawNode],
+    pending_tx_scopes: &[(u32, u32, FrameworkId)],
+) -> Option<Box<[RawTxScope]>> {
+    if pending_tx_scopes.is_empty() {
+        return None;
+    }
+    let scopes: Vec<RawTxScope> = pending_tx_scopes
+        .iter()
+        .filter_map(|&(row, col, framework)| {
+            nodes
+                .iter()
+                .enumerate()
+                .find(|(_, n)| {
+                    matches!(
+                        n.kind,
+                        NodeKind::Function | NodeKind::Method | NodeKind::Constructor
+                    ) && point_in_span(n.span, row, col)
+                })
+                .map(|(idx, _)| RawTxScope::new(idx as u32, framework))
+        })
+        .collect();
+    (!scopes.is_empty()).then(|| scopes.into_boxed_slice())
 }
