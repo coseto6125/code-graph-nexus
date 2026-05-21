@@ -1,7 +1,9 @@
 use super::receiver_types::{collect_bindings, extract_cpp_calls};
 use super::spec::CppSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
+use crate::framework_helpers::{
+    detect_ast_framework_patterns, enclosing_class, FrameworkPatternSpec,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
@@ -342,6 +344,7 @@ impl LanguageProvider for CppProvider {
                             end.column as u32,
                         ),
                         calls: Vec::new(),
+                        owner_class: None,
                     });
                 }
             }
@@ -367,6 +370,7 @@ impl LanguageProvider for CppProvider {
                             end.column as u32,
                         ),
                         calls: Vec::new(),
+                        owner_class: None,
                     });
                 }
             }
@@ -399,6 +403,7 @@ impl LanguageProvider for CppProvider {
                                 end.column as u32,
                             ),
                             calls: Vec::new(),
+                            owner_class: None,
                         });
                     }
                 }
@@ -485,6 +490,29 @@ impl LanguageProvider for CppProvider {
         // fallback restores full recall.
         emit_macro_fallback(source, &mut nodes);
 
+        // Populate owner_class for methods/properties via span containment.
+        // Scans the already-collected class nodes in the same file — zero
+        // cross-file dependency.
+        let owner_classes: Vec<Option<String>> = (0..nodes.len())
+            .map(|i| {
+                if matches!(
+                    nodes[i].kind,
+                    NodeKind::Method
+                        | NodeKind::Function
+                        | NodeKind::Constructor
+                        | NodeKind::Property
+                ) {
+                    enclosing_class(&nodes, nodes[i].span).map(|(name, _)| name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (node, owner) in nodes.iter_mut().zip(owner_classes) {
+            if owner.is_some() {
+                node.owner_class = owner;
+            }
+        }
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes: vec![],
@@ -524,6 +552,7 @@ fn emit_macro_fallback(source: &[u8], nodes: &mut Vec<RawNode>) {
             kind: NodeKind::Macro,
             span: (hit.line, hit.col_start, hit.line, hit.col_end),
             calls: Vec::new(),
+            owner_class: None,
         });
     }
 }
