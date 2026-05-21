@@ -10,7 +10,6 @@ use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
-use ecp_core::pool::StringPool;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
@@ -438,14 +437,12 @@ impl LanguageProvider for RustProvider {
         );
 
         let event_topics = {
-            let mut pool = StringPool::new();
             let topics = crate::event_topic::extract_event_topics(
                 &tree,
                 source,
                 &self.query,
                 &[crate::event_topic::REDIS_RUST],
                 &imports,
-                &mut pool,
             );
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
