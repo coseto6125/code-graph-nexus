@@ -2,7 +2,7 @@ use super::receiver_types::extract_js_calls;
 use super::spec::JavaScriptSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_class, enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
@@ -282,6 +282,7 @@ impl LanguageProvider for JavaScriptProvider {
                             kind: k,
                             span: node_span,
                             calls: Vec::new(),
+                            owner_class: None,
                         });
                     }
                 }
@@ -375,6 +376,7 @@ impl LanguageProvider for JavaScriptProvider {
                                     kind: var_kind,
                                     span: var_span,
                                     calls: Vec::new(),
+                                    owner_class: None,
                                 });
                             }
                         }
@@ -518,6 +520,26 @@ impl LanguageProvider for JavaScriptProvider {
             file_category,
         );
 
+        let owner_classes: Vec<Option<String>> = (0..nodes.len())
+            .map(|i| {
+                if matches!(
+                    nodes[i].kind,
+                    NodeKind::Method
+                        | NodeKind::Function
+                        | NodeKind::Constructor
+                        | NodeKind::Property
+                ) {
+                    enclosing_class(&nodes, nodes[i].span).map(|(name, _)| name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (node, owner) in nodes.iter_mut().zip(owner_classes) {
+            if owner.is_some() {
+                node.owner_class = owner;
+            }
+        }
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
