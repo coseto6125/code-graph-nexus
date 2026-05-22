@@ -8,11 +8,59 @@ use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
+use ecp_core::analyzer::types::{
+    BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute,
+};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Node, Parser, Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index lookup in
+/// `parse_file` (eval / Function-ctor / dynamic-import / dynamic-require)
+/// so the dispatch reads as a flat table.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "ts-eval",
+        "eval(arg) — runtime JS execution; argument expression is not statically determinable as a callee",
+    ),
+    (
+        "ts-function-ctor",
+        "Function(arg) / new Function(arg) — runtime function compilation; body source is not statically determinable",
+    ),
+    (
+        "ts-dynamic-import",
+        "import(<expr>) with non-literal specifier — dynamic module loading; target module depends on runtime value",
+    ),
+    (
+        "ts-dynamic-require",
+        "require(<expr>) with non-literal specifier — dynamic CommonJS load; target module depends on runtime value",
+    ),
+];
+
+/// True iff the first positional argument of `call_node` is a string
+/// literal (`"foo"`, `'foo'`, or a template string with no interpolation).
+/// Used to skip BlindSpot emission for `import("./foo")` / `require("fs")`
+/// — those resolve via the Imports edge and are not blind.
+fn first_arg_is_literal_string(call_node: &Node) -> bool {
+    let Some(args) = call_node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let Some(first) = args.named_child(0) else {
+        return false;
+    };
+    match first.kind() {
+        "string" => true,
+        "template_string" => {
+            let mut cursor = first.walk();
+            let has_interp = first
+                .children(&mut cursor)
+                .any(|c| c.kind() == "template_substitution");
+            !has_interp
+        }
+        _ => false,
+    }
+}
 
 pub struct TypeScriptProvider {
     query: Query,
@@ -68,6 +116,11 @@ struct TypeScriptCaptureIndices {
     /// string literal is a route, gated by `has_nestjs` import presence).
     nestjs_decorator_verb: Option<u32>,
     nestjs_decorator_path: Option<u32>,
+    // BlindSpot captures (FU-001 P1).
+    blind_eval: Option<u32>,
+    blind_function_ctor: Option<u32>,
+    blind_dynamic_import: Option<u32>,
+    blind_dynamic_require: Option<u32>,
 }
 
 impl TypeScriptProvider {
@@ -108,6 +161,10 @@ impl TypeScriptProvider {
             nestjs_method: query.capture_index_for_name("nestjs.method.name"),
             nestjs_decorator_verb: query.capture_index_for_name("nestjs.decorator.verb"),
             nestjs_decorator_path: query.capture_index_for_name("nestjs.decorator.path"),
+            blind_eval: query.capture_index_for_name("blind.eval"),
+            blind_function_ctor: query.capture_index_for_name("blind.function_ctor"),
+            blind_dynamic_import: query.capture_index_for_name("blind.dynamic_import"),
+            blind_dynamic_require: query.capture_index_for_name("blind.dynamic_require"),
         };
 
         // Pre-resolve capture-name → NodeKind from the spec table so the
@@ -157,6 +214,7 @@ impl LanguageProvider for TypeScriptProvider {
         // (HTTP_METHOD, raw_path_with_quotes_stripped_by_capture, decorator_span)
         type NestJsDecoratorRoute = (String, String, (u32, u32, u32, u32));
         let mut pending_nestjs_decorator_routes: Vec<NestJsDecoratorRoute> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
 
         let idx = &self.indices;
 
@@ -253,6 +311,42 @@ impl LanguageProvider for TypeScriptProvider {
                     nestjs_decorator_verb_node = Some(cap.node);
                 } else if cap_idx == idx.nestjs_decorator_path {
                     nestjs_decorator_path_node = Some(cap.node);
+                } else if cap_idx == idx.blind_eval {
+                    let (kind, hint) = BLIND_SPEC[0];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if cap_idx == idx.blind_function_ctor {
+                    let (kind, hint) = BLIND_SPEC[1];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if cap_idx == idx.blind_dynamic_import {
+                    if !first_arg_is_literal_string(&cap.node) {
+                        let (kind, hint) = BLIND_SPEC[2];
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
+                    }
+                } else if cap_idx == idx.blind_dynamic_require {
+                    if !first_arg_is_literal_string(&cap.node) {
+                        let (kind, hint) = BLIND_SPEC[3];
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
+                    }
                 } else if cap_idx == idx.function
                     || cap_idx == idx.class
                     || cap_idx == idx.method
@@ -563,7 +657,7 @@ impl LanguageProvider for TypeScriptProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields,
             event_topics,
             tx_scopes: None,

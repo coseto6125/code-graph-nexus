@@ -8,11 +8,58 @@ use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
+use ecp_core::analyzer::types::{
+    BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute,
+};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Query, QueryCursor};
+use tree_sitter::{Node, Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index lookup
+/// in `parse_file` so the dispatch reads as a flat table.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "js-eval",
+        "eval(arg) — runtime JS execution; argument expression is not statically determinable as a callee",
+    ),
+    (
+        "js-function-ctor",
+        "Function(arg) / new Function(arg) — runtime function compilation; body source is not statically determinable",
+    ),
+    (
+        "js-dynamic-import",
+        "import(<expr>) with non-literal specifier — dynamic module loading; target module depends on runtime value",
+    ),
+    (
+        "js-dynamic-require",
+        "require(<expr>) with non-literal specifier — dynamic CommonJS load; target module depends on runtime value",
+    ),
+];
+
+/// True iff the first positional argument of `call_node` is a string
+/// literal (`"foo"`, `'foo'`, or a template string with no interpolation).
+/// Used to skip BlindSpot emission for `import("./foo")` / `require("fs")`
+/// — those resolve via the Imports edge and are not blind.
+fn first_arg_is_literal_string(call_node: &Node) -> bool {
+    let Some(args) = call_node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let Some(first) = args.named_child(0) else {
+        return false;
+    };
+    match first.kind() {
+        "string" => true,
+        "template_string" => {
+            let mut cursor = first.walk();
+            let has_interp = first
+                .children(&mut cursor)
+                .any(|c| c.kind() == "template_substitution");
+            !has_interp
+        }
+        _ => false,
+    }
+}
 
 thread_local! {
     static PARSER: std::cell::RefCell<tree_sitter::Parser> = std::cell::RefCell::new({
@@ -117,11 +164,17 @@ impl LanguageProvider for JavaScriptProvider {
         let idx_express_handler = self.query.capture_index_for_name("express.route.handler");
         let idx_hapi_handler = self.query.capture_index_for_name("hapi.route.handler");
 
+        let idx_blind_eval = self.query.capture_index_for_name("blind.eval");
+        let idx_blind_function_ctor = self.query.capture_index_for_name("blind.function_ctor");
+        let idx_blind_dynamic_import = self.query.capture_index_for_name("blind.dynamic_import");
+        let idx_blind_dynamic_require = self.query.capture_index_for_name("blind.dynamic_require");
+
         // Pending framework-handler captures: (handler_name, capture_span).
         // Enclosing function is resolved after all nodes are collected so the
         // `enclosing_function_name` span search sees the full node set.
         let mut pending_express_handlers: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
         let mut pending_hapi_handlers: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -221,6 +274,42 @@ impl LanguageProvider for JavaScriptProvider {
                     {
                         pending_hapi_handlers
                             .push((handler_name.to_string(), node_span(&cap.node)));
+                    }
+                } else if Some(cap_idx) == idx_blind_eval {
+                    let (kind, hint) = BLIND_SPEC[0];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if Some(cap_idx) == idx_blind_function_ctor {
+                    let (kind, hint) = BLIND_SPEC[1];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if Some(cap_idx) == idx_blind_dynamic_import {
+                    if !first_arg_is_literal_string(&cap.node) {
+                        let (kind, hint) = BLIND_SPEC[2];
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
+                    }
+                } else if Some(cap_idx) == idx_blind_dynamic_require {
+                    if !first_arg_is_literal_string(&cap.node) {
+                        let (kind, hint) = BLIND_SPEC[3];
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
                     }
                 } else if Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
@@ -558,7 +647,7 @@ impl LanguageProvider for JavaScriptProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics,
             tx_scopes: None,

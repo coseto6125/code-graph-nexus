@@ -476,3 +476,30 @@
                   key: (property_identifier) @_qk (#eq? @_qk "QueueUrl")
                   value: (string
                     (string_fragment) @sqs.topic))))))))))
+
+;; ---- BlindSpot patterns (FU-001 P1) ----
+;; eval(...) — runtime JS code execution. Body is always opaque; emit
+;; regardless of literal-vs-variable argument.
+((call_expression
+   function: (identifier) @_ev) @blind.eval
+  (#eq? @_ev "eval"))
+
+;; new Function(...) — runtime function compilation from a source string.
+((new_expression
+   constructor: (identifier) @_fc) @blind.function_ctor
+  (#eq? @_fc "Function"))
+
+;; Function(...) called without `new` — JS semantics identical to `new`.
+((call_expression
+   function: (identifier) @_fc) @blind.function_ctor
+  (#eq? @_fc "Function"))
+
+;; import(<expr>) — dynamic module loading. Parser filters out the case
+;; where the first argument is a string literal (resolves via Imports edge).
+((call_expression
+   function: (import)) @blind.dynamic_import)
+
+;; require(<expr>) — CommonJS dynamic load. Same literal-arg filter applies.
+((call_expression
+   function: (identifier) @_rq) @blind.dynamic_require
+  (#eq? @_rq "require"))
