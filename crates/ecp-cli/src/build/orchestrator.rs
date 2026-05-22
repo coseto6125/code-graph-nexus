@@ -98,6 +98,8 @@ pub(crate) fn build_inside_locked(
 ) -> io::Result<BuildResult> {
     let mut lock_guard = Some(lock_guard);
     let result = (|| {
+        let prof = std::env::var("ECP_PROF").is_ok();
+        let t_src_root = std::time::Instant::now();
         let src_root = if worktree_clean_and_head_matches(worktree, sha_hex)? {
             worktree.to_path_buf()
         } else {
@@ -106,6 +108,12 @@ pub(crate) fn build_inside_locked(
             git_archive_to(worktree, sha_hex, &src)?;
             src
         };
+        if prof {
+            eprintln!(
+                "prof orchestrator.src_root: {:.3}s",
+                t_src_root.elapsed().as_secs_f32()
+            );
+        }
 
         // Analyzer pipeline. `repo_root` doubles as the persistent parse_cache
         // root — cache entries live in `<repo_root>/parse_cache/<fp>/` and
@@ -117,10 +125,17 @@ pub(crate) fn build_inside_locked(
             Some(repo_root),
         )?;
 
+        let t_refs = std::time::Instant::now();
         let refs_at_build = collect_refs(worktree, sha_hex)?;
         let source_type = source_type_from_refs(&refs_at_build);
         let source_id = source_id_from_refs(&refs_at_build);
         let parent = parent_sha(worktree, sha_hex).ok();
+        if prof {
+            eprintln!(
+                "prof orchestrator.refs+parent: {:.3}s",
+                t_refs.elapsed().as_secs_f32()
+            );
+        }
 
         let meta = CommitBuildMeta {
             version: 1,
@@ -136,21 +151,49 @@ pub(crate) fn build_inside_locked(
             refs_seen_since: vec![],
             builder_fingerprint: Some(BUILDER_FINGERPRINT.to_string()),
         };
+        let t_meta = std::time::Instant::now();
         CommitBuildMeta::write_atomic(&building.join("meta.json"), &meta)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.meta_write: {:.3}s",
+                t_meta.elapsed().as_secs_f32()
+            );
+        }
 
         // fsync + atomic publish. If an L2 for the same SHA already exists,
         // publish to a generation dir instead of touching the old reader-visible
         // directory. CommitIndex resolves same-SHA generations to the newest one.
+        let t_sync = std::time::Instant::now();
         sync_all_files(building)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.sync_all_files: {:.3}s",
+                t_sync.elapsed().as_secs_f32()
+            );
+        }
         // Windows refuses to rename a directory that contains any open file
         // handles (os error 5). Drop the lock fd now — the rename is the
         // publication event, so the lock is no longer needed after this point.
         drop(lock_guard.take());
+        let t_rename = std::time::Instant::now();
         let publish_dir = publish_dir_for(commit_dir);
         ecp_core::registry::rename_with_retry(building, &publish_dir)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.rename: {:.3}s",
+                t_rename.elapsed().as_secs_f32()
+            );
+        }
         let _ = ecp_core::registry::retire_dir_async(&publish_dir.join("_src"));
 
+        let t_repo_meta = std::time::Instant::now();
         update_repo_meta(repo_root, worktree, sha_hex)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.update_repo_meta: {:.3}s",
+                t_repo_meta.elapsed().as_secs_f32()
+            );
+        }
 
         // Write the HEAD-SHA fingerprint next to the freshly published graph.bin
         // so subsequent read commands can short-circuit `auto_ensure::ensure_index`

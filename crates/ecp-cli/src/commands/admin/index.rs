@@ -285,21 +285,30 @@ pub fn run_analyzer_for_paths(
     }
     let t_step4 = std::time::Instant::now();
     // ── Step 4: Build global graph ────────────────────────────────────────
+    let t_cfg = std::time::Instant::now();
     let aliases = crate::config_parser::parse_configs(src_root);
+    let cfg_elapsed = t_cfg.elapsed();
+    let t_ingest = std::time::Instant::now();
     let mut builder = GraphBuilder::new()
         .with_path_aliases(aliases)
         .with_repo_root(src_root.to_path_buf());
     for graph in local_graphs {
         builder.add_graph(graph);
     }
+    let ingest_elapsed = t_ingest.elapsed();
+    let t_build = std::time::Instant::now();
     let global_graph = builder.build();
+    let build_elapsed = t_build.elapsed();
     let node_count = global_graph.nodes.len();
 
     if prof {
         eprintln!(
-            "prof step4.build_global_graph: {:.2}s ({} nodes)",
+            "prof step4.build_global_graph: {:.2}s ({} nodes) [parse_configs={:.3}s ingest={:.3}s build={:.3}s]",
             t_step4.elapsed().as_secs_f32(),
-            node_count
+            node_count,
+            cfg_elapsed.as_secs_f32(),
+            ingest_elapsed.as_secs_f32(),
+            build_elapsed.as_secs_f32(),
         );
     }
     let t_step5 = std::time::Instant::now();
