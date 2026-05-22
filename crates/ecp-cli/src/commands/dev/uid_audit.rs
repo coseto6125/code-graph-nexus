@@ -352,13 +352,63 @@ mod tests {
         assert_eq!(got.3, "main");
     }
 
+    /// Exhaustive coverage: every match arm in `lang_from_path` must have at
+    /// least one extension exercised here. Drift surfaces immediately if a
+    /// new ext is added (or an existing one renamed) without test sync.
     #[test]
-    fn lang_from_path_known_extensions() {
-        assert_eq!(lang_from_path("src/x.py"), "Python");
-        assert_eq!(lang_from_path("src/x.rs"), "Rust");
-        assert_eq!(lang_from_path("src/x.go"), "Go");
-        assert_eq!(lang_from_path("src/x.h"), "C++");
-        assert_eq!(lang_from_path("src/x.c"), "C");
-        assert_eq!(lang_from_path("noext"), "?");
+    fn lang_from_path_covers_every_arm() {
+        let cases: &[(&str, &str)] = &[
+            // TypeScript
+            ("src/x.ts", "TypeScript"),
+            ("src/x.tsx", "TypeScript"),
+            // JavaScript
+            ("src/x.js", "JavaScript"),
+            ("src/x.jsx", "JavaScript"),
+            ("src/x.mjs", "JavaScript"),
+            ("src/x.cjs", "JavaScript"),
+            // Python / Java / Kotlin
+            ("src/x.py", "Python"),
+            ("src/x.java", "Java"),
+            ("src/x.kt", "Kotlin"),
+            ("src/x.kts", "Kotlin"),
+            // C# / Go / Rust
+            ("src/x.cs", "CSharp"),
+            ("src/x.go", "Go"),
+            ("src/x.rs", "Rust"),
+            // PHP / Ruby / Swift
+            ("src/x.php", "PHP"),
+            ("src/x.rb", "Ruby"),
+            ("src/x.swift", "Swift"),
+            // C family (each `.h*` / `.c*` variant)
+            ("src/x.c", "C"),
+            ("src/x.h", "C++"),
+            ("src/x.cc", "C++"),
+            ("src/x.cpp", "C++"),
+            ("src/x.cxx", "C++"),
+            ("src/x.hpp", "C++"),
+            ("src/x.hxx", "C++"),
+            ("src/x.hh", "C++"),
+            // Dart / Shell / Lua / Vue / Svelte / YAML
+            ("src/x.dart", "Dart"),
+            ("scripts/x.sh", "Bash"),
+            ("scripts/x.bash", "Bash"),
+            ("scripts/x.lua", "Lua"),
+            ("scripts/x.luau", "Lua"),
+            ("ui/X.vue", "Vue"),
+            ("ui/X.svelte", "Svelte"),
+            ("ci/x.yml", "YAML"),
+            ("ci/x.yaml", "YAML"),
+            // Unknown extension + no extension
+            ("README.md", "?"),
+            ("Makefile", "?"),
+            ("noext", "?"),
+        ];
+        for (path, want) in cases {
+            assert_eq!(
+                lang_from_path(path),
+                *want,
+                "lang_from_path mismatch for {path:?}"
+            );
+        }
     }
 }
