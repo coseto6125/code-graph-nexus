@@ -66,7 +66,7 @@ enum Commands {
     Cypher(commands::cypher::CypherArgs),
     /// Registry + repo health (indexed repos, freshness, frameworks, blind spots).
     /// `blind_spots` lists only LLM-actionable opacity (dynamic-import / reflection / eval);
-    /// parser-metric buckets (uid-collision / overload / ifdef-redef) live under `ecp dev uid_audit`.
+    /// parser-metric buckets (uid-collision / overload / ifdef-redef) live under `ecp dev uid-audit`.
     /// External-client (HTTP/DB/Redis/queue) usage detail: see `ecp tool-map`.
     #[command(alias = "coverage")]
     Summary(commands::summary::SummaryArgs),
@@ -84,6 +84,14 @@ enum Commands {
     Admin {
         #[command(subcommand)]
         command: Option<commands::admin::AdminCommands>,
+    },
+
+    /// Internal parser-developer audits (uid-collision clusters,
+    /// resolver-oracle diffs). Hidden — NOT an LLM-facing surface.
+    #[command(hide = true)]
+    Dev {
+        #[command(subcommand)]
+        command: commands::dev::DevCommands,
     },
 
     /// Internal: process reference-transaction events (called by git hook)
@@ -178,6 +186,7 @@ fn main() {
         Commands::Summary(args) => {
             run_no_graph!(commands::summary::run(args.clone(), &cli.graph))
         }
+        Commands::Dev { command } => run_no_graph!(commands::dev::run(command.clone())),
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
         Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
@@ -205,6 +214,7 @@ fn main() {
         | Commands::Contracts(_)
         | Commands::Diff(_)
         | Commands::Admin { .. }
+        | Commands::Dev { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
         | Commands::Hook(_)
@@ -249,6 +259,7 @@ fn main() {
         | Commands::Contracts(_)
         | Commands::Diff(_)
         | Commands::Admin { .. }
+        | Commands::Dev { .. }
         | Commands::HookHandle(_)
         | Commands::HookWatcher(_)
         | Commands::Hook(_)

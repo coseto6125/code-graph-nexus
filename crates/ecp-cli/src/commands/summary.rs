@@ -11,7 +11,7 @@
 //! `blind_spots` here lists only Type 1 (LLM-signal) buckets: source-code
 //! opacity sites such as dynamic-import / reflection / eval / exec. Type 2
 //! parser-metric buckets (uid-collision / method-overload / ifdef-redef) are
-//! exposed via the hidden `ecp dev uid_audit` instead — keeping this surface
+//! exposed via the hidden `ecp dev uid-audit` instead — keeping this surface
 //! focused on what an LLM consumer can act on.
 //!
 //! External-client (HTTP/DB/Redis/queue) usage detail is intentionally NOT
@@ -376,14 +376,14 @@ fn fetch_blind_spots(graph: Option<&ArchivedZeroCopyGraph>, status: Option<&'sta
 /// Type 2 (parser-metric) blind-spot kinds — uid hash-collision aggregates,
 /// not LLM-actionable opacity. Excluded from `ecp summary.blind_spots` so the
 /// surface stays focused on source-code opacity an LLM can reason about.
-/// Inspect these via `ecp dev uid_audit` instead.
+/// Inspect these via `ecp dev uid-audit` instead.
 fn is_dev_metric_kind(kind: &str) -> bool {
     matches!(kind, "uid-collision" | "method-overload" | "ifdef-redef")
 }
 
 /// Group `graph.blind_spots` by their `kind` tag (e.g. `dynamic-import`,
 /// `reflection`), excluding Type 2 parser-metric buckets — those are for
-/// parser maintainers, not LLM consumers, and live under `ecp dev uid_audit`.
+/// parser maintainers, not LLM consumers, and live under `ecp dev uid-audit`.
 /// Keys borrow zero-copy from `graph.string_pool`; the `BTreeMap` makes the
 /// output deterministic for snapshot-style assertions.
 fn count_blind_spots(graph: &ArchivedZeroCopyGraph) -> Value {
@@ -455,7 +455,7 @@ mod tests {
     /// `summary.blind_spots` is the LLM-facing surface; Type 2 parser-metric
     /// kinds (uid-collision / method-overload / ifdef-redef) must be excluded
     /// so the surface stays focused on source-code opacity an LLM can act on.
-    /// Inspecting Type 2 buckets is `ecp dev uid_audit`'s job.
+    /// Inspecting Type 2 buckets is `ecp dev uid-audit`'s job.
     #[test]
     fn count_blind_spots_excludes_dev_metric_kinds() {
         let mut pool = StringPool::new();

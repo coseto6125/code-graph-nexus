@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod contracts;
 pub mod cypher;
+pub mod dev;
 pub mod diff;
 pub mod find;
 pub mod find_event_mirrors;
