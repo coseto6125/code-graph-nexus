@@ -7,77 +7,99 @@
 ## 1. Context
 
 The multi-layer warm-query PR (#333, `perf/ecp-multilayer-opt`) cut warm
-queries from ~50ms → ~27ms on ecp self-scan. Cold reindex on the same
-corpus (10k files, 13.6k nodes) finishes in 0.61-0.92s — already inside
-the project's `<5s / 25k files` budget.
+queries from ~50ms → ~27ms on ecp self-scan. This roadmap targets the
+cold reindex pipeline (`ecp admin index --repo <path> --force`).
 
-ECP_PROF on a fresh cache reveals the time distribution:
+**Benchmark target:** `.sample_repo` (14-lang polyglot, 16814 files,
+262,194 nodes, 49 MB graph.bin). The eywa hook records a 2.7s baseline
+(no embeddings) and 449ms warm reindex — this branch's instrumented
+baseline matches: **3.13s on a fresh cache**.
 
-| Phase | Duration | Share |
+ECP_PROF on a fresh L2 build:
+
+| Phase | Time | Share |
 |---|---|---|
-| step1 scan files (1389) | 0.01s | 1% |
-| step2 init_providers | 0.13s | 14% |
-| step3 parse | 0.01s | 1% |
-| **step4 build_global_graph** | **0.65s** | **71%** |
-| step5 write graph.bin | 0.01s | 1% |
-| step6 tantivy index | 0.08s | 9% |
+| step1 scan files (16814) | 0.02s | 0.6% |
+| step2 init_providers | 0.14s | 4.5% |
+| **step3a parse_only** | **1.60s** | **51%** |
+| step3b cache_puts (13912) | 0.34s | 11% |
+| **step4 build_global_graph** | **0.62s** | **20%** |
+| step5 write graph.bin (49 MB) | 0.05s | 1.6% |
+| step6 tantivy index | 0.32s | 10% |
+| orchestrator publish | 0.04s | 1% |
+| **TOTAL** | **3.13s** | 100% |
 
-Step 4 internal sub-totals (`total_build: 0.049s`) account for only 50ms
-of the 650ms wall time. The unaccounted **~0.6s lives in the serial
-`for graph in local_graphs { builder.add_graph(graph) }` ingest loop**
-at `admin/index.rs:285` — string-pool intern + RawNode→Node materialization
-runs single-threaded.
+Step 4 sub-breakdown (`total_build: 0.516s`):
 
-This roadmap targets that ingest gap plus two low-risk supporting fixes
-identified by the Explore-agent audit.
+| Sub-pass | Time |
+|---|---|
+| pass1_register | 0.119s |
+| **pass3_community (Leiden)** | **0.190s** |
+| pass2_imports_resolve | 0.036s |
+| class_membership | 0.052s |
+| function_meta | 0.024s |
+| imports_edges | 0.022s |
+| pass15_routes / pass16_fetch_shape / pass17_entry_points / pass18 / blind_spots / csr_assembly | 0.073s combined |
 
-## 2. Locked design decisions
+## 2. Pivot from original scope
 
-- **Branched off `perf/ecp-multilayer-opt`, not `main`.** Cold-ingest work
-  touches `builder.rs` heavily and PR #333 already extended it (name_index,
-  kind_offsets). Branching off the latest perf branch avoids reverse-cherrypick
-  pain. After #333 merges, this branch rebases to `main` before final
-  push.
-- **Three items shipped, four deferred.** Scope is intentionally narrow:
-  - **C1** (par_iter add_graph) — biggest single win, requires careful
-    builder API rework
-  - **C3** (Arc path_aliases) — small per-worker alloc, trivial fix
-  - **C7** (file-node loop batch) — single serial pass, Cow-friendly
-  - Deferred: **C2** (heritage O(N_file²)) — bounded inside 30ms Pass 2;
-    **C4** (post-process serial island) — sub-2ms on current corpus;
-    **C5** (CSR sort 2x) — sub-10ms at current edge count.
-- **No schema bump.** All changes are internal to the build pipeline.
-  `graph.bin` layout is unchanged; v10 caches keep working.
+The first draft of this roadmap targeted `add_graph` (par_iter), path_aliases
+clone, and the file-node loop. **Real profile invalidates all three**:
 
-## 3. Status table
+- `add_graph` is `Vec::push` — 0.001s for all 1389 files.
+- `parse_configs` is 0.040s on the full sample_repo.
+- File-node loop lives inside `build` (0.575s) but is a small fraction.
+
+A first commit (`ad54073b instrument(build): …`) landed phase-split prof
+prints behind `ECP_PROF=1` so future investigation works against ground
+truth instead of guesses.
+
+## 3. Locked design decisions
+
+- **Branched off `perf/ecp-multilayer-opt`**, not `main`. Cold-ingest
+  touches `admin/index.rs` + `orchestrator.rs` which both share files with
+  PR #333's commits. Rebase to main once #333 merges.
+- **Target the deferrable phases first**, not the inherently-serial work.
+  - `cache_puts` (0.34s) and `tantivy` (0.32s) can both run AFTER
+    `graph.bin` is durable on disk and the orchestrator's `BuildResult`
+    is returned to the caller. They don't block correctness of any query.
+  - These two alone account for **21% of cold reindex wall time**.
+- **No schema bump.** All changes are inside the build pipeline.
+- **Detached threads, not async runtime.** The build orchestrator is
+  sync code with no Tokio context. `std::thread::spawn` matches the
+  existing `write_head_sha_sidecar_with_sha` pattern.
+
+## 4. Status table
 
 | # | Fix | Severity | Status | Commit | Evidence |
 |---|---|---|---|---|---|
-| C1 | par_iter add_graph + thread-local merge | 🔴 -300ms | — | — | `admin/index.rs:285` serial loop |
-| C3 | Arc path_aliases (no clone per worker) | 🔴 14k clones | — | — | `builder.rs:1148` per-worker clone |
-| C7 | File-node loop batch alloc | 🟡 F allocs | — | — | `builder.rs:1517` per-file String alloc |
+| **CI-INST** | ECP_PROF phase timings | tooling | shipped | ad54073b | orchestrator + step4 phase splits |
+| CI-A | Defer cache_puts to background | 🔴 -11% | — | — | `admin/index.rs:251-264` blocks for 0.34s |
+| CI-B | Defer tantivy index to background | 🔴 -10% | — | — | `admin/index.rs:323-331` blocks for 0.32s |
+| CI-C | parse_only investigation | 🟡 51% | research | — | `admin/index.rs:235` — already rayon, what else? |
+| CI-D | pass3 community Leiden | 🟡 6% | research | — | `builder.rs:1304` 0.19s; rayon? optional? |
 
-## 4. Deferred (with rationale)
+## 5. Deferred (with rationale)
 
-- **C2** `enclosing_class_heritage` O(N_file²) at `builder.rs:1712` —
-  Pass 2 wall is 30ms total; even an O(N²) fix saves &lt;30ms on the
-  current corpus. Worth fixing when a single Java/Kotlin file with
-  200+ nodes appears.
-- **C4** post-process serial island (class_membership + overrides +
-  schema_field_mirrors + event_topic_mirrors + file-node loop) —
-  individual passes run at 1-2ms each on ecp self. Parallelization
-  cost (mutex-protected edge vecs / thread-local reduce) likely
-  exceeds savings at this scale.
-- **C5** CSR sort 2x + 2 perm vecs (`builder.rs:1595`) — 8MB extra
-  alloc at 1M edges, but ecp self has ~30k edges so well under 1MB.
-- **C6** `make_pipeline` no cache — already shipped in PR #333 (P6).
+- **Original C1 par_iter add_graph** — `add_graph` is 0.001s. Not worth.
+- **Original C3 Arc path_aliases** — `parse_configs` 0.040s; cloning a
+  small struct per-worker is bounded.
+- **Original C7 file-node loop batch** — lives inside `build` 0.575s
+  with multiple other passes; isolating is hard, gain is sub-ms.
+- **Original C2 enclosing_class_heritage O(N_file²)** — Pass 2 wall is
+  0.036s total. Fix when a single 200+ node file appears.
+- **Original C4 post-process serial island** — class_membership 0.052s,
+  overrides + schema_field_mirrors + event_topic_mirrors all sub-10ms.
+  Parallel coordination cost likely exceeds savings.
+- **Original C5 CSR sort 2x** — csr_assembly is 0.011s. Sub-PR concern.
 
-## 5. Acceptance
+## 6. Acceptance
 
-- All 3 commits land in one PR; commits name the item ID.
+- CI-A + CI-B ship in two commits; CI-C / CI-D land as separate commits
+  if research yields actionable findings, else stay logged as future work.
 - `cargo test --workspace --tests` green.
 - `cargo clippy --workspace --tests` clean.
-- Cold reindex benchmark on ecp self-scan:
-  - Target: step4 (build_global_graph) wall time drops by ≥30%
-  - Total cold reindex ≤ 0.5s on the 13.6k-node corpus
+- Cold reindex benchmark on `.sample_repo`:
+  - Target: total wall time ≤ 2.5s (from 3.13s) — ~20% reduction
+  - User-visible "ready to query" time ≤ 2.5s (graph.bin durable)
 - A "Things to highlight" section gets added at end-of-PR.
