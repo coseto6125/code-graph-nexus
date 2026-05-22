@@ -26,6 +26,23 @@ struct KtorVerbIndices {
     patch: Option<u32>,
 }
 
+/// CI-L #2: capture indices the hot loop needs for metadata + root-span
+/// anchors. Resolved once in `KotlinProvider::new()`; the per-file
+/// `parse_file` borrows `&self.indices` and reads fields directly instead
+/// of doing ~10 `query.capture_index_for_name` lookups per call.
+struct KotlinCaptureIndices {
+    export: Option<u32>,
+    heritage: Option<u32>,
+    type_: Option<u32>,
+    alias: Option<u32>,
+    import_source: Option<u32>,
+    decorator: Option<u32>,
+    override_marker: Option<u32>,
+    class: Option<u32>,
+    function: Option<u32>,
+    enum_entry: Option<u32>,
+}
+
 thread_local! {
     static PARSER: std::cell::RefCell<tree_sitter::Parser> = std::cell::RefCell::new({
         let mut parser = tree_sitter::Parser::new();
@@ -47,6 +64,8 @@ pub struct KotlinProvider {
     /// to the previous hard-coded if-chain, but the source of truth
     /// lives in `spec.rs` const tables.
     capture_kind_by_idx: Vec<Option<NodeKind>>,
+    /// CI-L #2: metadata + root-span anchor capture indices, resolved once.
+    indices: KotlinCaptureIndices,
 }
 
 /// True when `func` is a Kotlin `fun` declared directly inside a class body
@@ -132,6 +151,19 @@ impl KotlinProvider {
             .map(|name| KotlinSpec::CAPTURE_KIND.get(name).copied())
             .collect();
 
+        let indices = KotlinCaptureIndices {
+            export: query.capture_index_for_name("export"),
+            heritage: query.capture_index_for_name("heritage"),
+            type_: query.capture_index_for_name("type"),
+            alias: query.capture_index_for_name("alias"),
+            import_source: query.capture_index_for_name("import.source"),
+            decorator: query.capture_index_for_name("decorator"),
+            override_marker: query.capture_index_for_name("override_marker"),
+            class: query.capture_index_for_name("class"),
+            function: query.capture_index_for_name("function"),
+            enum_entry: query.capture_index_for_name("enum_entry"),
+        };
+
         Ok(Self {
             query,
             ktor,
@@ -140,6 +172,7 @@ impl KotlinProvider {
             idx_property,
             idx_variable,
             capture_kind_by_idx,
+            indices,
         })
     }
 }
@@ -163,24 +196,19 @@ impl LanguageProvider for KotlinProvider {
             rustc_hash::FxHashMap::default();
         let mut imports = Vec::new();
 
-        // Metadata-only capture indices — these don't carry a NodeKind
-        // (handled in capture_kind_by_idx); they attach attributes to
-        // the in-flight symbol. Kept as local indices for cheap compare.
-        let idx_export = self.query.capture_index_for_name("export");
-        let idx_heritage = self.query.capture_index_for_name("heritage");
-        let idx_type = self.query.capture_index_for_name("type");
-        let idx_alias = self.query.capture_index_for_name("alias");
-        let idx_import_source = self.query.capture_index_for_name("import.source");
-        let idx_decorator = self.query.capture_index_for_name("decorator");
-        let idx_override_marker = self.query.capture_index_for_name("override_marker");
-
-        // Root-span anchors (the @class / @function / @property / @variable
-        // captures, not the .name variants). Their NodeKind is set via
-        // capture_kind_by_idx for the .name captures; here we just track
-        // the outer node so span/dedup keys point to the full declaration.
-        let idx_class = self.query.capture_index_for_name("class");
-        let idx_function = self.query.capture_index_for_name("function");
-        let idx_enum_entry = self.query.capture_index_for_name("enum_entry");
+        // CI-L #2: capture indices pre-resolved in `new()`; this hot loop
+        // borrows the cached struct instead of resolving ~10 strings per call.
+        let idx = &self.indices;
+        let idx_export = idx.export;
+        let idx_heritage = idx.heritage;
+        let idx_type = idx.type_;
+        let idx_alias = idx.alias;
+        let idx_import_source = idx.import_source;
+        let idx_decorator = idx.decorator;
+        let idx_override_marker = idx.override_marker;
+        let idx_class = idx.class;
+        let idx_function = idx.function;
+        let idx_enum_entry = idx.enum_entry;
 
         // Pending Ktor route refs: (verb, path_string, capture_span).
         // Emitted only if the file imports `io.ktor.*` — gate applied after the loop.

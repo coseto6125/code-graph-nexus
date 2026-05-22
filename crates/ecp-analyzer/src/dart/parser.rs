@@ -57,6 +57,30 @@ pub struct DartProvider {
     /// `DartSpec::CAPTURE_KIND` at provider construction. The hot loop
     /// looks up by integer index — no per-capture string compare.
     capture_kind_by_idx: Vec<Option<NodeKind>>,
+    /// CI-L #2: capture indices resolved once. Same pattern as PHP / Kotlin.
+    indices: DartCaptureIndices,
+}
+
+struct DartCaptureIndices {
+    heritage: Option<u32>,
+    type_: Option<u32>,
+    import_source: Option<u32>,
+    import_alias: Option<u32>,
+    decorator: Option<u32>,
+    class: Option<u32>,
+    function: Option<u32>,
+    method: Option<u32>,
+    constructor: Option<u32>,
+    typedef: Option<u32>,
+    interface: Option<u32>,
+    trait_: Option<u32>,
+    property: Option<u32>,
+    import: Option<u32>,
+    enum_: Option<u32>,
+    annotation: Option<u32>,
+    var: Option<u32>,
+    var_name: Option<u32>,
+    var_type: Option<u32>,
 }
 
 impl DartProvider {
@@ -69,9 +93,31 @@ impl DartProvider {
             .iter()
             .map(|name| DartSpec::CAPTURE_KIND.get(name).copied())
             .collect();
+        let indices = DartCaptureIndices {
+            heritage: query.capture_index_for_name("heritage"),
+            type_: query.capture_index_for_name("type"),
+            import_source: query.capture_index_for_name("import.source"),
+            import_alias: query.capture_index_for_name("import.alias"),
+            decorator: query.capture_index_for_name("decorator"),
+            class: query.capture_index_for_name("class"),
+            function: query.capture_index_for_name("function"),
+            method: query.capture_index_for_name("method"),
+            constructor: query.capture_index_for_name("constructor"),
+            typedef: query.capture_index_for_name("typedef"),
+            interface: query.capture_index_for_name("interface"),
+            trait_: query.capture_index_for_name("trait"),
+            property: query.capture_index_for_name("property"),
+            import: query.capture_index_for_name("import"),
+            enum_: query.capture_index_for_name("enum"),
+            annotation: query.capture_index_for_name("annotation"),
+            var: query.capture_index_for_name("var"),
+            var_name: query.capture_index_for_name("var.name"),
+            var_type: query.capture_index_for_name("var.type"),
+        };
         Ok(Self {
             query,
             capture_kind_by_idx,
+            indices,
         })
     }
 }
@@ -92,27 +138,27 @@ impl LanguageProvider for DartProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_heritage = self.query.capture_index_for_name("heritage");
-        let idx_type = self.query.capture_index_for_name("type");
-        let idx_import_source = self.query.capture_index_for_name("import.source");
-        let idx_import_alias = self.query.capture_index_for_name("import.alias");
-        let idx_decorator = self.query.capture_index_for_name("decorator");
-
-        let idx_class = self.query.capture_index_for_name("class");
-        let idx_function = self.query.capture_index_for_name("function");
-        let idx_method = self.query.capture_index_for_name("method");
-        let idx_constructor = self.query.capture_index_for_name("constructor");
-        let idx_typedef = self.query.capture_index_for_name("typedef");
-        let idx_interface = self.query.capture_index_for_name("interface");
-        let idx_trait = self.query.capture_index_for_name("trait");
-        let idx_property = self.query.capture_index_for_name("property");
-        let idx_import = self.query.capture_index_for_name("import");
-        let idx_enum = self.query.capture_index_for_name("enum");
-        let idx_annotation = self.query.capture_index_for_name("annotation");
-
-        let idx_var = self.query.capture_index_for_name("var");
-        let idx_var_name = self.query.capture_index_for_name("var.name");
-        let idx_var_type = self.query.capture_index_for_name("var.type");
+        // CI-L #2: capture indices pre-resolved in `new()`.
+        let idx = &self.indices;
+        let idx_heritage = idx.heritage;
+        let idx_type = idx.type_;
+        let idx_import_source = idx.import_source;
+        let idx_import_alias = idx.import_alias;
+        let idx_decorator = idx.decorator;
+        let idx_class = idx.class;
+        let idx_function = idx.function;
+        let idx_method = idx.method;
+        let idx_constructor = idx.constructor;
+        let idx_typedef = idx.typedef;
+        let idx_interface = idx.interface;
+        let idx_trait = idx.trait_;
+        let idx_property = idx.property;
+        let idx_import = idx.import;
+        let idx_enum = idx.enum_;
+        let idx_annotation = idx.annotation;
+        let idx_var = idx.var;
+        let idx_var_name = idx.var_name;
+        let idx_var_type = idx.var_type;
 
         while let Some(m) = matches.next() {
             let mut name_node = None;

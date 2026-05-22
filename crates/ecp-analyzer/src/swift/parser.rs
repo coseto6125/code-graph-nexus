@@ -63,6 +63,28 @@ pub struct SwiftProvider {
     /// `SwiftSpec::CAPTURE_KIND` at provider construction. The hot loop
     /// looks up by integer index — no per-capture string compare.
     capture_kind_by_idx: Vec<Option<NodeKind>>,
+    /// CI-L #2: capture indices resolved once. Same pattern as PHP / Kotlin.
+    indices: SwiftCaptureIndices,
+}
+
+struct SwiftCaptureIndices {
+    import_name: Option<u32>,
+    import_source: Option<u32>,
+    function: Option<u32>,
+    class: Option<u32>,
+    method: Option<u32>,
+    interface: Option<u32>,
+    typealias: Option<u32>,
+    enum_case: Option<u32>,
+    enum_case_name: Option<u32>,
+    trait_: Option<u32>,
+    export: Option<u32>,
+    decorator: Option<u32>,
+    heritage: Option<u32>,
+    type_: Option<u32>,
+    property: Option<u32>,
+    property_name_pat: Option<u32>,
+    constructor: Option<u32>,
 }
 
 impl SwiftProvider {
@@ -75,9 +97,29 @@ impl SwiftProvider {
             .iter()
             .map(|name| SwiftSpec::CAPTURE_KIND.get(name).copied())
             .collect();
+        let indices = SwiftCaptureIndices {
+            import_name: query.capture_index_for_name("import.name"),
+            import_source: query.capture_index_for_name("import.source"),
+            function: query.capture_index_for_name("function"),
+            class: query.capture_index_for_name("class"),
+            method: query.capture_index_for_name("method"),
+            interface: query.capture_index_for_name("interface"),
+            typealias: query.capture_index_for_name("typealias"),
+            enum_case: query.capture_index_for_name("enum_case"),
+            enum_case_name: query.capture_index_for_name("enum_case.name"),
+            trait_: query.capture_index_for_name("trait"),
+            export: query.capture_index_for_name("export"),
+            decorator: query.capture_index_for_name("decorator"),
+            heritage: query.capture_index_for_name("heritage"),
+            type_: query.capture_index_for_name("type"),
+            property: query.capture_index_for_name("property"),
+            property_name_pat: query.capture_index_for_name("property.name.pat"),
+            constructor: query.capture_index_for_name("constructor"),
+        };
         Ok(Self {
             query,
             capture_kind_by_idx,
+            indices,
         })
     }
 }
@@ -98,26 +140,25 @@ impl LanguageProvider for SwiftProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
 
-        let idx_import_name = self.query.capture_index_for_name("import.name");
-        let idx_import_source = self.query.capture_index_for_name("import.source");
-
-        let idx_function = self.query.capture_index_for_name("function");
-        let idx_class = self.query.capture_index_for_name("class");
-        let idx_method = self.query.capture_index_for_name("method");
-        let idx_interface = self.query.capture_index_for_name("interface");
-        let idx_typealias = self.query.capture_index_for_name("typealias");
-        let idx_enum_case = self.query.capture_index_for_name("enum_case");
-        let idx_enum_case_name = self.query.capture_index_for_name("enum_case.name");
-        let idx_trait = self.query.capture_index_for_name("trait");
-
-        let idx_export = self.query.capture_index_for_name("export");
-        let idx_decorator = self.query.capture_index_for_name("decorator");
-        let idx_heritage = self.query.capture_index_for_name("heritage");
-        let idx_type = self.query.capture_index_for_name("type");
-
-        let idx_property = self.query.capture_index_for_name("property");
-        let idx_property_name_pat = self.query.capture_index_for_name("property.name.pat");
-        let idx_constructor = self.query.capture_index_for_name("constructor");
+        // CI-L #2: capture indices pre-resolved in `new()`.
+        let idx = &self.indices;
+        let idx_import_name = idx.import_name;
+        let idx_import_source = idx.import_source;
+        let idx_function = idx.function;
+        let idx_class = idx.class;
+        let idx_method = idx.method;
+        let idx_interface = idx.interface;
+        let idx_typealias = idx.typealias;
+        let idx_enum_case = idx.enum_case;
+        let idx_enum_case_name = idx.enum_case_name;
+        let idx_trait = idx.trait_;
+        let idx_export = idx.export;
+        let idx_decorator = idx.decorator;
+        let idx_heritage = idx.heritage;
+        let idx_type = idx.type_;
+        let idx_property = idx.property;
+        let idx_property_name_pat = idx.property_name_pat;
+        let idx_constructor = idx.constructor;
 
         // Per (root, name-byte-offset) dedup. tree-sitter-swift fires the
         // same property_declaration match ~3-4× per declared name when the
