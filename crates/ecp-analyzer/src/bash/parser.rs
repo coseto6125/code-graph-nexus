@@ -5,6 +5,7 @@ use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
 use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
+use rustc_hash::FxHashSet;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
@@ -56,6 +57,11 @@ impl LanguageProvider for BashProvider {
 
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
+        // Shell variables can be re-assigned many times (X=1; if ..; X=2; fi).
+        // Only the first declaration is meaningful as a Const node; subsequent
+        // re-assignments would produce duplicate UIDs (kind+path+name triple is
+        // identical). Track seen names and skip duplicates.
+        let mut seen_const_names: FxHashSet<String> = FxHashSet::default();
 
         let idx_function = self.query.capture_index_for_name("function");
         let idx_const = self.query.capture_index_for_name("const");
@@ -97,6 +103,14 @@ impl LanguageProvider for BashProvider {
                     } else {
                         raw_str
                     };
+
+                    // Skip re-assignments: only the first occurrence of a Const name
+                    // is emitted. Re-assignments (inside if/while/for/function) share
+                    // the same (kind, path, name) triple and would cause uid collisions.
+                    if k == NodeKind::Const && !seen_const_names.insert(name_str.to_owned()) {
+                        continue;
+                    }
+
                     let start = root.start_position();
                     let end = root.end_position();
 
