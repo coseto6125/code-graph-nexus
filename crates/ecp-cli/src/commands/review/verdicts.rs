@@ -12,7 +12,7 @@
 //! ("looks like X", "probably broken"). If we cannot point at a graph
 //! edge / node / hash, the verdict is not emitted.
 
-use crate::commands::diff::routes::RoutesDiff;
+use crate::commands::diff::routes::{RouteConsumer, RoutesDiff};
 use crate::commands::diff::symbols::{
     BlindSpotRef, CallerRef, CrossFileCaller, SymbolRef, SymbolsDiff,
 };
@@ -265,18 +265,27 @@ fn verdicts_from_symbols(s: &SymbolsDiff) -> Vec<Verdict> {
 fn verdicts_from_routes(r: &RoutesDiff) -> Vec<Verdict> {
     let mut out: Vec<Verdict> = Vec::new();
     for added in &r.added {
+        // New route + consumers landing together is an intentional pairing,
+        // not a break. Severity stays Info; surface consumers for context.
+        let cross = consumers_as_callers(&added.consumers);
         out.push(Verdict {
             kind: VerdictKind::RouteContractChanged,
             severity: Severity::Info,
             path: added.handler_file.clone(),
             line: Some(added.handler_line),
             symbol: Some(format!("{} {}", added.method, added.path)),
-            detail: format!("route added: {} {}", added.method, added.path),
+            detail: format!(
+                "route added: {} {}{}",
+                added.method,
+                added.path,
+                consumer_suffix(added.consumers.len()),
+            ),
             intra_callers: None,
-            cross_callers: None,
+            cross_callers: (!cross.is_empty()).then_some(cross),
         });
     }
     for removed in &r.removed {
+        let cross = consumers_as_callers(&removed.consumers);
         out.push(Verdict {
             kind: VerdictKind::RouteContractChanged,
             severity: Severity::Risk,
@@ -284,29 +293,66 @@ fn verdicts_from_routes(r: &RoutesDiff) -> Vec<Verdict> {
             line: Some(removed.handler_line),
             symbol: Some(format!("{} {}", removed.method, removed.path)),
             detail: format!(
-                "route removed: {} {} — verify all consumers migrated",
-                removed.method, removed.path
+                "route removed: {} {} — verify all consumers migrated{}",
+                removed.method,
+                removed.path,
+                consumer_suffix(removed.consumers.len()),
             ),
             intra_callers: None,
-            cross_callers: None,
+            cross_callers: (!cross.is_empty()).then_some(cross),
         });
     }
     for chg in &r.modified {
+        // Consumers come from the current snapshot — they're what may break.
+        let cross = consumers_as_callers(&chg.after.consumers);
+        // Modification with known cross-language consumers is the silent-
+        // break vector this verdict exists to catch: escalate Warn → Risk.
+        let severity = if cross.is_empty() {
+            Severity::Warn
+        } else {
+            Severity::Risk
+        };
         out.push(Verdict {
             kind: VerdictKind::RouteContractChanged,
-            severity: Severity::Warn,
+            severity,
             path: chg.after.handler_file.clone(),
             line: Some(chg.after.handler_line),
             symbol: Some(format!("{} {}", chg.after.method, chg.after.path)),
             detail: format!(
-                "route modified: {} {} (handler relocated)",
-                chg.after.method, chg.after.path
+                "route modified: {} {} (handler relocated){}",
+                chg.after.method,
+                chg.after.path,
+                consumer_suffix(chg.after.consumers.len()),
             ),
             intra_callers: None,
-            cross_callers: None,
+            cross_callers: (!cross.is_empty()).then_some(cross),
         });
     }
     out
+}
+
+fn consumers_as_callers(consumers: &[RouteConsumer]) -> Vec<VerdictCaller> {
+    consumers
+        .iter()
+        .map(|c| VerdictCaller {
+            path: c.path.clone(),
+            name: String::new(),
+            kind: "Consumer".into(),
+            line: 0,
+            confidence: Some(c.confidence),
+        })
+        .collect()
+}
+
+fn consumer_suffix(n: usize) -> String {
+    if n == 0 {
+        String::new()
+    } else {
+        format!(
+            " ({n} cross-lang consumer{})",
+            if n == 1 { "" } else { "s" }
+        )
+    }
 }
 
 fn symbol_verdict(
@@ -488,6 +534,83 @@ mod tests {
         assert!(!is_public_surface("Variable"));
         assert!(!is_public_surface("Property"));
         assert!(!is_public_surface("Const"));
+    }
+
+    #[test]
+    fn route_modified_with_consumers_escalates_to_risk() {
+        use crate::commands::diff::routes::{RouteChange, RouteEntry, RoutesDiff};
+        let before = RouteEntry {
+            method: "POST".into(),
+            path: "/api/orders".into(),
+            handler_file: "server/orders.ts".into(),
+            handler_line: 10,
+            consumers: vec![],
+        };
+        let after = RouteEntry {
+            method: "POST".into(),
+            path: "/api/orders".into(),
+            handler_file: "server/orders.ts".into(),
+            handler_line: 42, // handler relocated
+            consumers: vec![RouteConsumer {
+                path: "web/src/api/orders.ts".into(),
+                confidence: 0.9,
+            }],
+        };
+        let r = RoutesDiff {
+            modified: vec![RouteChange { before, after }],
+            ..Default::default()
+        };
+        let v = verdicts_from_routes(&r);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].kind, VerdictKind::RouteContractChanged);
+        assert_eq!(v[0].severity, Severity::Risk);
+        let cross = v[0].cross_callers.as_ref().expect("cross_callers attached");
+        assert_eq!(cross.len(), 1);
+        assert_eq!(cross[0].path, "web/src/api/orders.ts");
+        assert_eq!(cross[0].confidence, Some(0.9));
+    }
+
+    #[test]
+    fn route_modified_without_consumers_stays_warn() {
+        use crate::commands::diff::routes::{RouteChange, RouteEntry, RoutesDiff};
+        let mk = |line| RouteEntry {
+            method: "GET".into(),
+            path: "/api/health".into(),
+            handler_file: "server/health.ts".into(),
+            handler_line: line,
+            consumers: vec![],
+        };
+        let r = RoutesDiff {
+            modified: vec![RouteChange {
+                before: mk(5),
+                after: mk(7),
+            }],
+            ..Default::default()
+        };
+        let v = verdicts_from_routes(&r);
+        assert_eq!(v[0].severity, Severity::Warn);
+        assert!(v[0].cross_callers.is_none());
+    }
+
+    #[test]
+    fn route_added_with_consumers_stays_info() {
+        use crate::commands::diff::routes::{RouteEntry, RoutesDiff};
+        let r = RoutesDiff {
+            added: vec![RouteEntry {
+                method: "GET".into(),
+                path: "/api/users".into(),
+                handler_file: "server/users.ts".into(),
+                handler_line: 1,
+                consumers: vec![RouteConsumer {
+                    path: "web/users.ts".into(),
+                    confidence: 0.9,
+                }],
+            }],
+            ..Default::default()
+        };
+        let v = verdicts_from_routes(&r);
+        assert_eq!(v[0].severity, Severity::Info);
+        assert!(v[0].cross_callers.is_some());
     }
 
     #[test]
