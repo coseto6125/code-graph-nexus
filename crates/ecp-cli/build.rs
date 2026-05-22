@@ -7,23 +7,33 @@
 //!     can detect when the graph was built by a different binary revision.
 
 fn main() {
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/refs/heads");
+    println!("cargo:rerun-if-changed=build.rs");
 
-    let sha = std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unknown".to_string());
+    // Resolve the actual git common directory. In a worktree (e.g.
+    // `.claude/worktrees/<topic>/`) `.git` at the worktree root is a text
+    // file pointing into the main repo's `.git/worktrees/<topic>/`, NOT
+    // a directory — so a hard-coded `../../.git/HEAD` path is missing,
+    // and Cargo treats missing rerun-if-changed paths as "always rerun",
+    // making this build script execute on every incremental build.
+    if let Some(common_dir) = git_output(&["rev-parse", "--git-common-dir"]) {
+        println!("cargo:rerun-if-changed={common_dir}/HEAD");
+        println!("cargo:rerun-if-changed={common_dir}/refs/heads");
+    }
 
+    let sha =
+        git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=ECP_GIT_SHA={sha}");
+}
+
+fn git_output(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
