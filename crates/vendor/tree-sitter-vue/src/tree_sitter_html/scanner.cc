@@ -109,6 +109,7 @@ struct Scanner {
             lexer->mark_end(lexer);
             return true;
           }
+          [[fallthrough]];
         default:
           dashes = 0;
       }
@@ -128,7 +129,7 @@ struct Scanner {
 
     unsigned delimiter_index = 0;
     while (lexer->lookahead) {
-      if (towupper(lexer->lookahead) == end_delimiter[delimiter_index]) {
+      if (towupper(lexer->lookahead) == (wint_t)end_delimiter[delimiter_index]) {
         delimiter_index++;
         if (delimiter_index == end_delimiter.size()) break;
         lexer->advance(lexer, false);

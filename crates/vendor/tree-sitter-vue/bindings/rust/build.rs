@@ -18,7 +18,7 @@ fn main() {
     // scanner.cc is the external scanner (handles embedded blocks)
     let scanner_path = src_dir.join("scanner.cc");
     let mut cpp_config = cc::Build::new();
-    cpp_config.include(src_dir).cpp(true);
+    cpp_config.include(src_dir).cpp(true).std("c++17");
     cpp_config
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wno-unused-but-set-variable");

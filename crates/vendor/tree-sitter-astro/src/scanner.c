@@ -143,6 +143,7 @@ static bool scan_comment(TSLexer *lexer) {
                     lexer->mark_end(lexer);
                     return true;
                 }
+                /* fallthrough */
             default:
                 dashes = 0;
         }
@@ -649,7 +650,7 @@ static bool scan(Scanner *scanner, TSLexer *lexer, const bool *valid_symbols) {
                     scanner->tags.size > 0 &&
                     array_back(&scanner->tags)->type == INTERPOLATION) {
                 lexer->advance(lexer, false);
-                array_pop(&scanner->tags);
+                (void)array_pop(&scanner->tags);
                 lexer->result_symbol = HTML_INTERPOLATION_END;
                 return true;
             }
