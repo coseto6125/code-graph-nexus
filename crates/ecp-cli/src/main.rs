@@ -19,6 +19,7 @@ mod commit_lookup;
 mod config_parser;
 mod engine;
 mod git;
+mod git_cache;
 mod git_state;
 mod graph_path;
 mod hint;

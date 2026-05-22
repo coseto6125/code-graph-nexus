@@ -352,17 +352,8 @@ fn ensure_session_meta(session_dir: &Path, worktree: &Path) -> io::Result<()> {
 }
 
 fn git_head_sha(worktree: &Path) -> io::Result<String> {
-    let out = crate::git::safe_exec::git()
-        .args(["rev-parse", "HEAD"])
-        .current_dir(worktree)
-        .output()?;
-    if !out.status.success() {
-        return Err(io::Error::other("git rev-parse HEAD failed"));
-    }
-    Ok(std::str::from_utf8(&out.stdout)
-        .map_err(io::Error::other)?
-        .trim()
-        .to_string())
+    crate::git_cache::head_sha(worktree)
+        .ok_or_else(|| io::Error::other("git rev-parse HEAD failed"))
 }
 
 /// ecp-owned cache dirs that callers can't be expected to list in their

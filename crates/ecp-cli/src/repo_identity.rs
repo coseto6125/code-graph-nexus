@@ -1,4 +1,4 @@
-use crate::git::safe_exec;
+use crate::git_cache;
 use ecp_core::registry::sanitize_segment;
 use std::io;
 use std::path::Path;
@@ -11,7 +11,7 @@ use xxhash_rust::xxh3::xxh3_64;
 /// so this naturally collapses `git worktree add` siblings onto a single
 /// `<repo>/` namespace — solving v1's per-worktree duplication.
 pub fn repo_dir_name_for_cwd(cwd: &Path) -> io::Result<String> {
-    let common_dir = git_common_dir(cwd)?;
+    let common_dir = git_cache::common_dir(cwd)?;
     let canonical = std::fs::canonicalize(&common_dir)?;
 
     // basename derivation: parent of `.git` is the repo root; if common_dir
@@ -29,25 +29,6 @@ pub fn repo_dir_name_for_cwd(cwd: &Path) -> io::Result<String> {
         .unwrap_or_else(|_| "repo".to_string());
     let h = short_hash_hex8(canonical.to_string_lossy().as_bytes());
     Ok(format!("{safe}__{h}"))
-}
-
-fn git_common_dir(cwd: &Path) -> io::Result<std::path::PathBuf> {
-    let out = safe_exec::git()
-        .args(["rev-parse", "--git-common-dir"])
-        .current_dir(cwd)
-        .output()?;
-    if !out.status.success() {
-        return Err(io::Error::other("not a git repository"));
-    }
-    let path_str = std::str::from_utf8(&out.stdout)
-        .map_err(io::Error::other)?
-        .trim();
-    let p = std::path::PathBuf::from(path_str);
-    if p.is_absolute() {
-        Ok(p)
-    } else {
-        Ok(cwd.join(p))
-    }
 }
 
 /// First 8 hex chars of `xxh3_64(bytes)` — short, filesystem-safe digest.
