@@ -365,8 +365,8 @@ static bool tag_can_contain(Tag *self, const Tag *other) {
             return child != DT && child != DD;
 
         case P:
-            for (int i = 0; i < sizeof(TAG_TYPES_NOT_ALLOWED_IN_PARAGRAPHS) /
-                                    sizeof(TagType);
+            for (size_t i = 0;
+                 i < sizeof(TAG_TYPES_NOT_ALLOWED_IN_PARAGRAPHS) / sizeof(TagType);
                  i++) {
                 if (child == TAG_TYPES_NOT_ALLOWED_IN_PARAGRAPHS[i]) {
                     return false;

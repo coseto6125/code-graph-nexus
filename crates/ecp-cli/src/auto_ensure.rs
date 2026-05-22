@@ -379,14 +379,18 @@ fn any_source_newer_than(
     let graph_canonical = fs::canonicalize(graph_path).ok();
     let sidecar_canonical = fs::canonicalize(head_sha_sidecar_path(graph_path)).ok();
 
+    let filter_root = root.to_path_buf();
     for entry in WalkBuilder::new(root)
         .hidden(false)
         .git_ignore(true)
         .add_custom_ignore_filename(crate::ECP_IGNORE_FILE)
         .require_git(false)
-        .filter_entry(|e| {
+        .filter_entry(move |e| {
             let name = e.file_name().to_string_lossy();
-            !SKIP_DIRS.contains(&name.as_ref())
+            if SKIP_DIRS.contains(&name.as_ref()) {
+                return false;
+            }
+            !crate::walker_filter::is_skippable_worktree_descendant(e.path(), &filter_root)
         })
         .build()
         .filter_map(Result::ok)
@@ -422,14 +426,18 @@ fn collect_dirty_files(
     let graph_canonical = fs::canonicalize(graph_path).ok();
     let mut out = Vec::new();
 
+    let filter_root = root.to_path_buf();
     for entry in WalkBuilder::new(root)
         .hidden(false)
         .git_ignore(true)
         .add_custom_ignore_filename(crate::ECP_IGNORE_FILE)
         .require_git(false)
-        .filter_entry(|e| {
+        .filter_entry(move |e| {
             let name = e.file_name().to_string_lossy();
-            !SKIP_DIRS.contains(&name.as_ref())
+            if SKIP_DIRS.contains(&name.as_ref()) {
+                return false;
+            }
+            !crate::walker_filter::is_skippable_worktree_descendant(e.path(), &filter_root)
         })
         .build()
         .filter_map(Result::ok)

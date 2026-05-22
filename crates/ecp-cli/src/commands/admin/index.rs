@@ -84,6 +84,13 @@ pub fn run_analyzer_for_paths(
     walk_builder
         .hidden(false)
         .add_custom_ignore_filename(crate::ECP_IGNORE_FILE);
+    // Prune LLM-agent worktree containers + nested git worktrees so the
+    // graph doesn't double-count symbols from sibling source copies.
+    // Override via `ECP_INCLUDE_WORKTREES=1` (see `walker_filter` docs).
+    let filter_root = src_root_ref.to_path_buf();
+    walk_builder.filter_entry(move |entry| {
+        !crate::walker_filter::is_skippable_worktree_descendant(entry.path(), &filter_root)
+    });
     walk_builder.build_parallel().run(|| {
         let tx = file_tx.clone();
         Box::new(move |result| {
