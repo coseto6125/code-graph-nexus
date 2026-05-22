@@ -1,6 +1,8 @@
 # Feature: `brew install ecp` (Homebrew tap)
 
-**Status:** Deferred — depends on the project going public.
+**Status:** ✅ **Completed 2026-05-22** — superseded by PR #330. Tap repo live at <https://github.com/coseto6125/homebrew-tap>; formula auto-pushed by `release.yml` `homebrew-tap` job on every `v*` tag via GitHub App token; `post-release-brew-install-smoke` job verifies `brew install` end-to-end. Archived for historical reference; spec below is no longer authoritative.
+
+**Original status (pre-completion):** Deferred — depends on the project going public.
 **Owner:** Unassigned.
 **Trigger to pick up:** First public Release, or when user demand for macOS-native install path materializes.
 
