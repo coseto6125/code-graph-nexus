@@ -11,13 +11,16 @@
 //!   unresolved call. All symbols in the file fall through to full reanalyze.
 //! - **(b) Shadow-candidate set changed** — a sibling file was added/removed
 //!   that shadows an existing JS/TS import. All symbols fall through.
-//! - **(c) SchemaFieldIndex bucket membership changed** — a peer SchemaField
-//!   appearing in a sibling file's bucket re-triggers `MirrorsField` emission
-//!   even when THIS file's body hashes didn't move.
-//!   **Guard (c) requires cross-file knowledge of all `schema_fields` in the
-//!   repo; there is no incremental API to compute it cheaply. Deferred to
-//!   T7-7's parity gate.** Until T7-7 ships, any file whose `schema_fields`
-//!   is `Some(_)` forces a full reanalyze as a conservative fallback.
+//! - **(c) SchemaField name-set changed** — a `SchemaField` was added, removed,
+//!   or renamed in the file. Because `schema_field_mirrors` buckets by
+//!   `(name.to_lowercase(), SchemaType)`, a stable name-set means
+//!   `MirrorsField` emission for this file is unaffected by partial-resolve.
+//!   Type-only changes are rare in practice; the file's resolver pass
+//!   re-runs anyway when symbol bodies move, so a type rename inside an
+//!   unchanged body name is caught via guard (a) (import set) or per-symbol
+//!   hash diff.
+//!   Pre-v10: any file with non-empty `schema_fields` forced FullReanalyze
+//!   (conservative fallback). Post-v10: compare new vs old name set per file.
 
 use ecp_core::analyzer::types::{LocalGraph, RawImport};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -79,9 +82,17 @@ pub struct SymbolHashDiff {
 /// `reanalyze_files` — they get guard (b) automatically because the
 /// shadowing relationship itself changed. Pass an empty slice to treat all
 /// `new_graphs` files as explicitly changed (disables guard (b)).
+///
+/// `old_schema_field_names` is a per-file map of `SchemaField` names from
+/// the old graph (use `schema_field_names_per_file` to build from an
+/// `ArchivedZeroCopyGraph`). When the new file's schema_field name-set
+/// matches the old, guard (c) clears. Pass an empty map to retain the
+/// pre-v10 conservative fallback (any non-empty schema_fields →
+/// FullReanalyze).
 pub fn symbol_hash_diff(
     old_symbol_hashes: &FxHashMap<u64, u64>,
     old_import_sets: &FxHashMap<String, Vec<(String, String)>>,
+    old_schema_field_names: &FxHashMap<String, FxHashSet<String>>,
     new_graphs: &[LocalGraph],
     originally_changed: &[PathBuf],
 ) -> SymbolHashDiff {
@@ -109,16 +120,29 @@ pub fn symbol_hash_diff(
             raw_path.into_owned()
         };
 
-        // Guard (c) conservative fallback: any file with schema_fields defers to T7-7.
-        if lg.schema_fields.as_ref().is_some_and(|f| !f.is_empty()) {
-            resolve_count += lg.nodes.len();
-            decisions.insert(
-                path_str,
-                FileDiffDecision::FullReanalyze {
-                    reason: SkipGuard::SchemaFieldPresent,
-                },
-            );
-            continue;
+        // Guard (c): compare new vs old SchemaField name-set per file.
+        // Conservative fallback kicks in only when `old_schema_field_names`
+        // has no entry for the file — caller didn't supply it (legacy path).
+        if let Some(sf) = lg.schema_fields.as_ref() {
+            if !sf.is_empty() {
+                let new_names: FxHashSet<String> = sf.iter().map(|f| f.name.to_string()).collect();
+                let names_changed = match old_schema_field_names.get(&path_str) {
+                    Some(old) => &new_names != old,
+                    // No entry from caller → fall back to v9 conservative behaviour.
+                    None => true,
+                };
+                if names_changed {
+                    resolve_count += lg.nodes.len();
+                    decisions.insert(
+                        path_str,
+                        FileDiffDecision::FullReanalyze {
+                            reason: SkipGuard::SchemaFieldPresent,
+                        },
+                    );
+                    continue;
+                }
+                // Names stable → guard (c) clears; fall through to guard (a)/(b).
+            }
         }
 
         // Guard (b): file was shadow-included (not originally changed) →
@@ -197,6 +221,33 @@ pub fn build_old_hash_map(nodes: &[ecp_core::graph::Node]) -> FxHashMap<u64, u64
         .filter(|n| n.content_hash != 0)
         .map(|n| (n.uid, n.content_hash))
         .collect()
+}
+
+/// Build the old SchemaField name-set per file from an archived graph for
+/// use as the `old_schema_field_names` argument to `symbol_hash_diff`.
+/// Uses the v10 `nodes_by_kind(SchemaField)` CSR — O(SchemaField count),
+/// not O(N). Falls back to a linear scan on legacy v9 graphs.
+pub fn schema_field_names_per_file(
+    graph: &ecp_core::graph::ArchivedZeroCopyGraph,
+) -> FxHashMap<String, FxHashSet<String>> {
+    let mut out: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
+    for idx in graph.nodes_by_kind(ecp_core::graph::NodeKind::SchemaField) {
+        let n = &graph.nodes[idx as usize];
+        let fi = n.file_idx.to_native() as usize;
+        if fi >= graph.files.len() {
+            continue;
+        }
+        let raw_path = graph.files[fi].path.resolve(&graph.string_pool);
+        let path_str = if raw_path.contains('\\') {
+            raw_path.replace('\\', "/")
+        } else {
+            raw_path.to_owned()
+        };
+        out.entry(path_str)
+            .or_default()
+            .insert(n.name.resolve(&graph.string_pool).to_string());
+    }
+    out
 }
 
 /// Build the old import-set map from a slice of `LocalGraph`s (the parse
@@ -302,7 +353,13 @@ mod tests {
         let mut old_hashes = FxHashMap::default();
         old_hashes.insert(uid, 0xABCD_1234u64);
 
-        let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+        let result = symbol_hash_diff(
+            &old_hashes,
+            &FxHashMap::default(),
+            &FxHashMap::default(),
+            &[graph],
+            &[],
+        );
         assert_eq!(
             result.skipped_count, 1,
             "unchanged symbol should be skipped"
@@ -311,6 +368,104 @@ mod tests {
         let dec = result.decisions.get("src/a.py").unwrap();
         assert!(
             matches!(dec, FileDiffDecision::PartialResolve { changed_uids } if changed_uids.is_empty())
+        );
+    }
+
+    #[test]
+    fn test_guard_c_clears_when_schema_field_names_unchanged() {
+        use ecp_core::analyzer::types::{FrameworkId, RawSchemaField, SchemaType};
+
+        let node = rn("User", NodeKind::Class, 0xDEAD_BEEF);
+        let mut graph = lg("src/models.py", vec![node.clone()], vec![]);
+        let uid = node_uid_for(&graph, &graph.nodes[0]);
+
+        // New file has two schema fields: name + email.
+        graph.schema_fields = Some(
+            vec![
+                RawSchemaField {
+                    name: "name".into(),
+                    type_class: SchemaType::String,
+                    owner_class: "User".into(),
+                    framework: FrameworkId::Pydantic,
+                    span: (1, 0, 1, 4),
+                },
+                RawSchemaField {
+                    name: "email".into(),
+                    type_class: SchemaType::String,
+                    owner_class: "User".into(),
+                    framework: FrameworkId::Pydantic,
+                    span: (2, 0, 2, 5),
+                },
+            ]
+            .into_boxed_slice(),
+        );
+
+        let mut old_hashes = FxHashMap::default();
+        old_hashes.insert(uid, 0xDEAD_BEEFu64);
+
+        // Old graph's schema field name-set matches new exactly.
+        let mut old_schema_names = FxHashMap::default();
+        let mut names_for_file = FxHashSet::default();
+        names_for_file.insert("name".to_string());
+        names_for_file.insert("email".to_string());
+        old_schema_names.insert("src/models.py".to_string(), names_for_file);
+
+        let result = symbol_hash_diff(
+            &old_hashes,
+            &FxHashMap::default(),
+            &old_schema_names,
+            &[graph],
+            &[],
+        );
+
+        let dec = result.decisions.get("src/models.py").unwrap();
+        assert!(
+            matches!(dec, FileDiffDecision::PartialResolve { .. }),
+            "guard (c) should clear when schema field names are unchanged; got {dec:?}"
+        );
+    }
+
+    #[test]
+    fn test_guard_c_fires_when_schema_field_added() {
+        use ecp_core::analyzer::types::{FrameworkId, RawSchemaField, SchemaType};
+
+        let node = rn("User", NodeKind::Class, 0xCAFE_BABE);
+        let mut graph = lg("src/models.py", vec![node.clone()], vec![]);
+
+        // New file has a field that wasn't in the old.
+        graph.schema_fields = Some(
+            vec![RawSchemaField {
+                name: "email_verified".into(),
+                type_class: SchemaType::Bool,
+                owner_class: "User".into(),
+                framework: FrameworkId::Pydantic,
+                span: (3, 0, 3, 14),
+            }]
+            .into_boxed_slice(),
+        );
+
+        let mut old_schema_names = FxHashMap::default();
+        let mut names_for_file = FxHashSet::default();
+        names_for_file.insert("email".to_string());
+        old_schema_names.insert("src/models.py".to_string(), names_for_file);
+
+        let result = symbol_hash_diff(
+            &FxHashMap::default(),
+            &FxHashMap::default(),
+            &old_schema_names,
+            &[graph],
+            &[],
+        );
+
+        let dec = result.decisions.get("src/models.py").unwrap();
+        assert!(
+            matches!(
+                dec,
+                FileDiffDecision::FullReanalyze {
+                    reason: SkipGuard::SchemaFieldPresent
+                }
+            ),
+            "guard (c) should fire when schema field name-set changed; got {dec:?}"
         );
     }
 
@@ -333,7 +488,13 @@ mod tests {
             old_hashes.insert(uid, hash);
         }
 
-        let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+        let result = symbol_hash_diff(
+            &old_hashes,
+            &FxHashMap::default(),
+            &FxHashMap::default(),
+            &[graph],
+            &[],
+        );
         assert_eq!(result.skipped_count, 4, "fn1/fn2/fn4/fn5 should be skipped");
         assert_eq!(result.resolve_count, 1, "only fn3 needs resolve");
         let dec = result.decisions.get("src/b.py").unwrap();
@@ -363,7 +524,13 @@ mod tests {
             old_hashes.insert(uid, node.content_hash);
         }
 
-        let result = symbol_hash_diff(&old_hashes, &old_import_map, &[graph], &[]);
+        let result = symbol_hash_diff(
+            &old_hashes,
+            &old_import_map,
+            &FxHashMap::default(),
+            &[graph],
+            &[],
+        );
         // Guard (a) fires → full reanalyze despite unchanged body hashes.
         assert_eq!(result.skipped_count, 0);
         assert_eq!(result.resolve_count, 5);
@@ -401,6 +568,7 @@ mod tests {
         let result = symbol_hash_diff(
             &old_hashes,
             &FxHashMap::default(),
+            &FxHashMap::default(),
             &[js_graph, ts_graph],
             &originally_changed,
         );
@@ -435,7 +603,13 @@ mod tests {
         let mut old_hashes = FxHashMap::default();
         old_hashes.insert(uid, 0xBEEFu64); // hash matches — would normally skip
 
-        let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+        let result = symbol_hash_diff(
+            &old_hashes,
+            &FxHashMap::default(),
+            &FxHashMap::default(),
+            &[graph],
+            &[],
+        );
         // Guard (c) conservative fallback fires.
         assert_eq!(result.skipped_count, 0);
         let dec = result.decisions.get("models/user.py").unwrap();
@@ -470,7 +644,7 @@ mod tests {
         // Reuse the same path
         g.file_path = PathBuf::from("src/stable.ts");
 
-        let result = symbol_hash_diff(&old_hashes, &old_imports, &[g], &[]);
+        let result = symbol_hash_diff(&old_hashes, &old_imports, &FxHashMap::default(), &[g], &[]);
         assert_eq!(result.skipped_count, 1);
         assert_eq!(result.resolve_count, 0);
         let dec = result.decisions.get("src/stable.ts").unwrap();

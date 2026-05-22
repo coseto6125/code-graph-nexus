@@ -180,6 +180,8 @@ fn synthetic_graph_two_nodes(rel_type: RelType, reason_str: &str) -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     rkyv::to_bytes::<Error>(&graph)
         .expect("serialize synthetic graph")

@@ -67,6 +67,8 @@ fn setup_fixture() -> BatchFixture {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let graph_path = home.path().join("graph.bin");
     std::fs::write(&graph_path, rkyv::to_bytes::<Error>(&graph).unwrap()).unwrap();

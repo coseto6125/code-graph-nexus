@@ -1679,6 +1679,28 @@ impl GraphBuilder {
             .collect();
         name_index.sort_unstable_by_key(|e| e.name_hash);
 
+        // Build the v10 kind_offsets CSR. O(N) bucket-count + O(N) scatter.
+        // For each kind k, kind_node_idx[kind_offsets[k]..kind_offsets[k+1]]
+        // is the contiguous slice of node indices with that kind.
+        // Consumers (routes, find-event-mirrors, find-tx-patterns,
+        // find-schema-bindings) drop from O(N) to O(matches).
+        let kind_count = ecp_core::graph::NodeKind::VARIANT_COUNT;
+        let mut kind_offsets: Vec<u32> = vec![0u32; kind_count + 1];
+        for n in &nodes {
+            kind_offsets[n.kind.as_index() + 1] += 1;
+        }
+        // Prefix-sum into start positions.
+        for i in 1..kind_offsets.len() {
+            kind_offsets[i] += kind_offsets[i - 1];
+        }
+        let mut kind_node_idx: Vec<u32> = vec![0u32; nodes.len()];
+        let mut cursors: Vec<u32> = kind_offsets[..kind_count].to_vec();
+        for (idx, n) in nodes.iter().enumerate() {
+            let k = n.kind.as_index();
+            kind_node_idx[cursors[k] as usize] = idx as u32;
+            cursors[k] += 1;
+        }
+
         ZeroCopyGraph {
             magic: ecp_core::graph::GRAPH_MAGIC,
             version: ecp_core::graph::GRAPH_FORMAT_VERSION,
@@ -1698,6 +1720,8 @@ impl GraphBuilder {
             route_shapes: route_shapes_out,
             call_metas,
             function_metas,
+            kind_offsets,
+            kind_node_idx,
         }
     }
 }

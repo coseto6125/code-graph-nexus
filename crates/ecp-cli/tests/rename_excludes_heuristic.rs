@@ -200,6 +200,8 @@ fn mirrors_field_graph(
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     })
 }
 
@@ -246,6 +248,8 @@ fn zero_mirrors_graph(symbol: &str, file: &str) -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     })
 }
 

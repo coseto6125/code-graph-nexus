@@ -93,7 +93,13 @@ fn test_mtime_touch_skips_resolver() {
     let graph = lg("src/service.py", vec![node.clone()], vec![]);
     let old_hashes = old_hashes_all_match(&graph);
 
-    let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+    let result = symbol_hash_diff(
+        &old_hashes,
+        &FxHashMap::default(),
+        &FxHashMap::default(),
+        &[graph],
+        &[],
+    );
 
     // No new imports → guard (a) not triggered; old_import_map absent →
     // treat as "first time seen with empty import set" → guard (a) fires
@@ -130,7 +136,13 @@ fn test_one_of_five_edit_only_resolves_one() {
         old_hashes.insert(uid, old_hash);
     }
 
-    let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+    let result = symbol_hash_diff(
+        &old_hashes,
+        &FxHashMap::default(),
+        &FxHashMap::default(),
+        &[graph],
+        &[],
+    );
     assert_eq!(
         result.skipped_count, 4,
         "fn1/fn2/fn4/fn5 should skip: skipped={}",
@@ -168,7 +180,13 @@ fn test_skip_guarded_when_import_set_changes() {
     // Old body hashes match exactly — without guard (a) we'd skip all 5.
     let old_hashes = old_hashes_all_match(&graph);
 
-    let result = symbol_hash_diff(&old_hashes, &old_import_map, &[graph], &[]);
+    let result = symbol_hash_diff(
+        &old_hashes,
+        &old_import_map,
+        &FxHashMap::default(),
+        &[graph],
+        &[],
+    );
     assert_eq!(
         result.resolve_count, 5,
         "import-set change must force all 5 symbols to re-resolve: resolve_count={}",
@@ -211,6 +229,7 @@ fn test_skip_guarded_when_shadow_candidates_change() {
 
     let result = symbol_hash_diff(
         &old_hashes,
+        &FxHashMap::default(),
         &FxHashMap::default(),
         &[js_graph, ts_graph],
         &originally_changed,
@@ -256,7 +275,13 @@ fn test_skip_guarded_when_schemafield_bucket_changes() {
     let mut old_hashes: FxHashMap<u64, u64> = FxHashMap::default();
     old_hashes.insert(node_uid(&graph, &user_node), 0xCAFE_BABEu64);
 
-    let result = symbol_hash_diff(&old_hashes, &FxHashMap::default(), &[graph], &[]);
+    let result = symbol_hash_diff(
+        &old_hashes,
+        &FxHashMap::default(),
+        &FxHashMap::default(),
+        &[graph],
+        &[],
+    );
     assert_eq!(result.skipped_count, 0);
     let dec = result
         .decisions
@@ -289,7 +314,13 @@ fn test_skip_does_not_drop_existing_edges() {
     )]);
     let old_hashes = old_hashes_all_match(&graph);
 
-    let result = symbol_hash_diff(&old_hashes, &old_import_map, &[graph], &[]);
+    let result = symbol_hash_diff(
+        &old_hashes,
+        &old_import_map,
+        &FxHashMap::default(),
+        &[graph],
+        &[],
+    );
 
     // Skip count = 1; resolve count = 0.
     assert_eq!(result.skipped_count, 1);

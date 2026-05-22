@@ -162,6 +162,8 @@ fn build_graph(
         route_shapes,
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     rkyv::to_bytes::<Error>(&g).unwrap().to_vec()

@@ -38,6 +38,8 @@ fn build_empty_graph() -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     rkyv::to_bytes::<Error>(&g).unwrap().to_vec()
 }
@@ -100,6 +102,8 @@ fn build_graph_with_calls_edge() -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     rkyv::to_bytes::<Error>(&g).unwrap().to_vec()
 }

@@ -1437,6 +1437,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1529,6 +1531,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1609,6 +1613,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -1930,6 +1936,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -2046,6 +2054,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -2402,6 +2412,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec()
     }
@@ -2526,6 +2538,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         };
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&g).unwrap().to_vec();
         let archived =

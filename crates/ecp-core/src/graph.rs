@@ -18,7 +18,7 @@ pub const GRAPH_MAGIC: [u8; 8] = *b"ECP-RS\0\0";
 ///     1-cycle `FxHashMap` lookup; eliminates string-pool dereference on hot paths.
 /// v8: `Node.content_hash: u64` added — per-symbol xxh3_64 of raw source bytes
 ///     for T7-4/5/6 incremental skip (equal hash ↔ body unchanged).
-pub const GRAPH_FORMAT_VERSION: u32 = 9;
+pub const GRAPH_FORMAT_VERSION: u32 = 10;
 
 impl std::str::FromStr for NodeKind {
     type Err = ();
@@ -250,6 +250,20 @@ impl NodeKind {
     /// previously had no path at all — `Module` here closes that gap.
     pub const fn is_qualifier(self) -> bool {
         self.is_type() || matches!(self, Self::Namespace | Self::Module)
+    }
+
+    /// Number of `NodeKind` variants. Used to size the v10 `kind_offsets`
+    /// CSR array (`length = VARIANT_COUNT + 1`). Append-only schema rule
+    /// means this only ever grows; matching the variant total at the bottom
+    /// of the enum keeps the CI green when a new kind lands.
+    pub const VARIANT_COUNT: usize = 27;
+
+    /// Discriminant as a usize, suitable for indexing into the v10
+    /// `kind_offsets` array. Matches the `#[repr(u8)]` order so the
+    /// CSR index `kind_offsets[k.as_index()..k.as_index()+1]` is the
+    /// half-open range of node indices for kind `k`.
+    pub const fn as_index(self) -> usize {
+        self as u8 as usize
     }
 
     /// Static variant name. Used by `ecp_core::uid::compute` as the first
@@ -674,6 +688,17 @@ pub struct ZeroCopyGraph {
     /// Per-Function/Method/Constructor metadata. Sparse, sorted by `node_idx`.
     /// Empty when no per-language flag extraction has run yet (Task #11).
     pub function_metas: Vec<FunctionMeta>,
+
+    // ── Schema v10 additions ─────────────────────────────────────────
+    /// CSR index over `NodeKind`. Length `NodeKind::VARIANT_COUNT + 1`.
+    /// For kind `k`, the node indices with that kind live at
+    /// `kind_node_idx[kind_offsets[k.as_index()] .. kind_offsets[k.as_index() + 1]]`.
+    /// Empty Vec is the "v9 graph upgraded in place" placeholder — the
+    /// helper falls back to a linear scan when this is empty.
+    pub kind_offsets: Vec<u32>,
+    /// Flat node-index array sorted by kind, partitioned by `kind_offsets`.
+    /// Same node may NOT appear twice (each node has exactly one kind).
+    pub kind_node_idx: Vec<u32>,
 }
 
 impl ZeroCopyGraph {
@@ -693,6 +718,31 @@ impl ZeroCopyGraph {
 }
 
 impl ArchivedZeroCopyGraph {
+    /// Iterate node indices with the given kind via the v10 kind_offsets
+    /// CSR. O(result_count). Falls back to a linear scan when kind_offsets
+    /// is empty (legacy v9-shaped graph upgraded in place).
+    pub fn nodes_by_kind(&self, kind: NodeKind) -> Box<dyn Iterator<Item = u32> + '_> {
+        let kidx = kind.as_index();
+        if self.kind_offsets.len() <= kidx + 1 {
+            // No CSR — fall back to linear scan. Materialises as a Vec so the
+            // returned trait object's lifetime is independent of any borrowed
+            // iterator state.
+            let target = kind as u8;
+            return Box::new(self.nodes.iter().enumerate().filter_map(move |(i, n)| {
+                // ArchivedNodeKind has the same repr(u8) layout as NodeKind.
+                let nk: u8 = unsafe { *(&n.kind as *const _ as *const u8) };
+                if nk == target {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            }));
+        }
+        let start = self.kind_offsets[kidx].to_native() as usize;
+        let end = self.kind_offsets[kidx + 1].to_native() as usize;
+        Box::new(self.kind_node_idx[start..end].iter().map(|i| i.to_native()))
+    }
+
     /// Look up all node indices with the given name via the v9 name_index.
     /// O(log N + hash_collisions). Returns an iterator that filters
     /// collisions by re-resolving each candidate's name from the string pool.
@@ -750,6 +800,8 @@ impl Default for ZeroCopyGraph {
             route_shapes: Vec::new(),
             call_metas: Vec::new(),
             function_metas: Vec::new(),
+            kind_offsets: Vec::new(),
+            kind_node_idx: Vec::new(),
         }
     }
 }
@@ -800,6 +852,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         }
     }
 

@@ -46,6 +46,8 @@ fn test_mmap_graph_access() {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     // Use rkyv::to_bytes for rkyv 0.8.x

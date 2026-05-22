@@ -120,6 +120,8 @@ fn make_config_graph() -> ZeroCopyGraph {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     }
 }
 
