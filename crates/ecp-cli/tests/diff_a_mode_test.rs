@@ -54,27 +54,40 @@ fn index_repo(repo_path: &std::path::Path) -> std::path::PathBuf {
     find_graph_bin(repo_path)
 }
 
-/// Walk .ecp directory to find graph.bin (may be nested in branch/worktree subdirs).
+/// Walk .ecp directory and return the graph.bin with the newest mtime.
+/// `admin index` writes per-commit/per-content caches into nested subdirs
+/// (`.ecp/<key>/graph.bin`); returning the first match would pick up a
+/// stale cache from an earlier index call. readdir ordering is not
+/// guaranteed across platforms — Linux CI orders differently from
+/// dev-host macOS, which is why selecting by mtime is load-bearing.
 fn find_graph_bin(repo_path: &std::path::Path) -> std::path::PathBuf {
-    fn walk(dir: &std::path::Path, depth: usize) -> Option<std::path::PathBuf> {
+    fn walk(dir: &std::path::Path, depth: usize, out: &mut Vec<std::path::PathBuf>) {
         if depth == 0 {
-            return None;
+            return;
         }
-        let rd = std::fs::read_dir(dir).ok()?;
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in rd.filter_map(|e| e.ok()) {
             let p = entry.path();
             if p.file_name().map(|n| n == "graph.bin").unwrap_or(false) {
-                return Some(p);
-            }
-            if p.is_dir() {
-                if let Some(found) = walk(&p, depth - 1) {
-                    return Some(found);
-                }
+                out.push(p);
+            } else if p.is_dir() {
+                walk(&p, depth - 1, out);
             }
         }
-        None
     }
-    walk(&repo_path.join(".ecp"), 5).expect("graph.bin not found after admin index")
+    let mut found = Vec::new();
+    walk(&repo_path.join(".ecp"), 5, &mut found);
+    assert!(
+        !found.is_empty(),
+        "no graph.bin under {}/.ecp after admin index",
+        repo_path.display()
+    );
+    found.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    found
+        .pop()
+        .expect("at least one graph.bin (asserted above)")
 }
 
 #[test]
