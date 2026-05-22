@@ -26,7 +26,7 @@ use ecp_core::EcpError;
 use memmap2::Mmap;
 use serde_json::Value;
 use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::path::PathBuf;
 
@@ -56,10 +56,12 @@ pub struct UidAuditArgs {
     #[arg(long)]
     pub lang: Option<String>,
 
-    /// Output format. Default `text` (table). `json` and `toon` available
-    /// for downstream tooling.
-    #[arg(long)]
-    pub format: Option<String>,
+    /// Output format. Default `text` (table) — dev tools optimise for
+    /// interactive operator reading, NOT for LLM consumption (this surface
+    /// is hidden from agents by design; see `ecp dev --help`). `json` and
+    /// `toon` available for downstream tooling.
+    #[arg(long, default_value = "text")]
+    pub format: String,
 }
 
 pub fn run(args: UidAuditArgs, cli_graph: &std::path::Path) -> Result<(), EcpError> {
@@ -79,7 +81,7 @@ pub fn run(args: UidAuditArgs, cli_graph: &std::path::Path) -> Result<(), EcpErr
     // nature is loud whether the caller is piping JSON or reading text.
     print_warning_header();
 
-    let format = OutputFormat::parse(args.format.as_deref());
+    let format = OutputFormat::parse(Some(args.format.as_str()));
     match format {
         OutputFormat::Text => print_text_body(&report, &graph_path),
         _ => emit(
@@ -240,19 +242,43 @@ fn build_report(graph: &ArchivedZeroCopyGraph, args: &UidAuditArgs) -> Report {
     }
 
     let distinct = clusters.len();
-    let mut rows: Vec<ClusterRow> = clusters.into_iter().collect();
-    rows.sort_by_key(|r| Reverse(r.1 .0));
 
-    let top: Vec<Cluster> = rows
-        .iter()
-        .take(args.top)
+    // Top-K via a bounded min-heap rather than full sort. `BinaryHeap` is a
+    // max-heap; wrapping the count in `Reverse` makes the smallest-counted
+    // cluster sit at the root, so when the heap grows past `args.top` we pop
+    // the smallest. Result: O(N log K) instead of `sort_by_key`'s O(N log N).
+    // At current corpus scale (largest sample ~450 records) the difference
+    // is sub-millisecond, but the algorithm matches the data shape so we
+    // don't pay an N-log-N tax just to keep the top 40.
+    let top_rows: Vec<ClusterRow> = if args.top == 0 {
+        Vec::new()
+    } else {
+        let mut heap: BinaryHeap<Reverse<(u32, ClusterRow)>> =
+            BinaryHeap::with_capacity(args.top + 1);
+        for row in clusters {
+            let count = row.1 .0;
+            heap.push(Reverse((count, row)));
+            if heap.len() > args.top {
+                heap.pop();
+            }
+        }
+        // Heap traversal order is unspecified beyond root-is-min; sort the
+        // K extracted rows descending so the displayed table reads largest-
+        // first. K ≤ args.top, so this O(K log K) is bounded by the flag.
+        let mut rows: Vec<ClusterRow> = heap.into_iter().map(|r| r.0 .1).collect();
+        rows.sort_unstable_by_key(|r| Reverse(r.1 .0));
+        rows
+    };
+
+    let top: Vec<Cluster> = top_rows
+        .into_iter()
         .map(|((lang, kind, owner, name), (count, sample))| Cluster {
-            count: *count,
-            lang: lang.clone(),
-            second_kind: kind.clone(),
-            owner_class: owner.clone(),
-            name: name.clone(),
-            sample_path: sample.clone(),
+            count,
+            lang,
+            second_kind: kind,
+            owner_class: owner,
+            name,
+            sample_path: sample,
         })
         .collect();
 
