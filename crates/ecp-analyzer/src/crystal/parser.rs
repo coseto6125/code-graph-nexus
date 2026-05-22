@@ -20,6 +20,18 @@ thread_local! {
 pub struct CrystalProvider {
     query: Query,
     capture_kind_by_idx: Vec<Option<NodeKind>>,
+    /// CI-L #2: capture indices resolved once at provider construction.
+    /// Same pattern as PhpProvider / KotlinProvider / etc.
+    indices: CrystalCaptureIndices,
+}
+
+struct CrystalCaptureIndices {
+    class: Option<u32>,
+    method: Option<u32>,
+    const_: Option<u32>,
+    typedef: Option<u32>,
+    heritage: Option<u32>,
+    import_source: Option<u32>,
 }
 
 impl CrystalProvider {
@@ -32,9 +44,18 @@ impl CrystalProvider {
             .iter()
             .map(|name| CrystalSpec::CAPTURE_KIND.get(name).copied())
             .collect();
+        let indices = CrystalCaptureIndices {
+            class: query.capture_index_for_name("class"),
+            method: query.capture_index_for_name("method"),
+            const_: query.capture_index_for_name("const"),
+            typedef: query.capture_index_for_name("typedef"),
+            heritage: query.capture_index_for_name("heritage"),
+            import_source: query.capture_index_for_name("import.source"),
+        };
         Ok(Self {
             query,
             capture_kind_by_idx,
+            indices,
         })
     }
 }
@@ -56,14 +77,15 @@ impl LanguageProvider for CrystalProvider {
         let mut imports: Vec<RawImport> = Vec::new();
         let routes: Vec<RawRoute> = Vec::new();
 
-        // Root-span anchors (kind dispatch is via spec table)
-        let idx_class = self.query.capture_index_for_name("class");
-        let idx_method = self.query.capture_index_for_name("method");
-        let idx_const = self.query.capture_index_for_name("const");
-        let idx_typedef = self.query.capture_index_for_name("typedef");
-        // Metadata captures
-        let idx_heritage = self.query.capture_index_for_name("heritage");
-        let idx_import_source = self.query.capture_index_for_name("import.source");
+        // CI-L #2: capture indices pre-resolved once in `new()`; this hot
+        // loop just borrows them.
+        let idx = &self.indices;
+        let idx_class = idx.class;
+        let idx_method = idx.method;
+        let idx_const = idx.const_;
+        let idx_typedef = idx.typedef;
+        let idx_heritage = idx.heritage;
+        let idx_import_source = idx.import_source;
 
         while let Some(m) = matches.next() {
             let mut name_node = None;

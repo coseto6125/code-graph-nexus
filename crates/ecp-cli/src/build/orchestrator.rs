@@ -25,6 +25,30 @@ pub struct BuildResult {
     pub commit_dir: PathBuf,
     pub sha_hex: String,
     pub source_type: SourceType,
+    /// Background tantivy writer (CI-B). `None` for fast-path attaches or
+    /// when no L2 was built fresh. CLI `admin index` calls
+    /// [`BuildResult::join_background`] before returning to the shell so
+    /// the subprocess does not exit while tantivy is still writing temp
+    /// segments under the publish dir — that race was the source of the
+    /// `tantivy/.tmpXXX: No such file or directory` test failures on
+    /// Linux + macOS (CI-M). Long-lived callers (MCP, `auto_ensure`) can
+    /// drop the handle to keep the fire-and-forget behaviour.
+    pub tantivy_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl BuildResult {
+    /// Join the deferred tantivy writer if one was spawned. Idempotent
+    /// (handle is taken out of the result). Errors from the background
+    /// thread are logged at `warn`; tantivy failures do not bubble up
+    /// because `ecp find` already falls back to substring scan when the
+    /// index is missing.
+    pub fn join_background(&mut self) {
+        if let Some(h) = self.tantivy_handle.take() {
+            if let Err(panic) = h.join() {
+                tracing::warn!("tantivy background thread panicked: {panic:?}");
+            }
+        }
+    }
 }
 
 pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildResult> {
@@ -98,6 +122,8 @@ pub(crate) fn build_inside_locked(
 ) -> io::Result<BuildResult> {
     let mut lock_guard = Some(lock_guard);
     let result = (|| {
+        let prof = std::env::var("ECP_PROF").is_ok();
+        let t_src_root = std::time::Instant::now();
         let src_root = if worktree_clean_and_head_matches(worktree, sha_hex)? {
             worktree.to_path_buf()
         } else {
@@ -106,21 +132,38 @@ pub(crate) fn build_inside_locked(
             git_archive_to(worktree, sha_hex, &src)?;
             src
         };
+        if prof {
+            eprintln!(
+                "prof orchestrator.src_root: {:.3}s",
+                t_src_root.elapsed().as_secs_f32()
+            );
+        }
 
         // Analyzer pipeline. `repo_root` doubles as the persistent parse_cache
         // root — cache entries live in `<repo_root>/parse_cache/<fp>/` and
         // survive across L2 commit_dirs as long as the file content (and binary
         // build) is unchanged.
-        let node_count = crate::commands::admin::index::run_analyzer_for_paths(
+        //
+        // CI-B: receives `(node_count, global_graph)`; tantivy is built on a
+        // background thread AFTER the rename below so the writer targets the
+        // final publish_dir, not the soon-to-be-renamed `building/`.
+        let (node_count, global_graph) = crate::commands::admin::index::run_analyzer_for_paths(
             &src_root,
             building,
             Some(repo_root),
         )?;
 
+        let t_refs = std::time::Instant::now();
         let refs_at_build = collect_refs(worktree, sha_hex)?;
         let source_type = source_type_from_refs(&refs_at_build);
         let source_id = source_id_from_refs(&refs_at_build);
         let parent = parent_sha(worktree, sha_hex).ok();
+        if prof {
+            eprintln!(
+                "prof orchestrator.refs+parent: {:.3}s",
+                t_refs.elapsed().as_secs_f32()
+            );
+        }
 
         let meta = CommitBuildMeta {
             version: 1,
@@ -136,21 +179,74 @@ pub(crate) fn build_inside_locked(
             refs_seen_since: vec![],
             builder_fingerprint: Some(BUILDER_FINGERPRINT.to_string()),
         };
+        let t_meta = std::time::Instant::now();
         CommitBuildMeta::write_atomic(&building.join("meta.json"), &meta)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.meta_write: {:.3}s",
+                t_meta.elapsed().as_secs_f32()
+            );
+        }
 
         // fsync + atomic publish. If an L2 for the same SHA already exists,
         // publish to a generation dir instead of touching the old reader-visible
         // directory. CommitIndex resolves same-SHA generations to the newest one.
+        let t_sync = std::time::Instant::now();
         sync_all_files(building)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.sync_all_files: {:.3}s",
+                t_sync.elapsed().as_secs_f32()
+            );
+        }
         // Windows refuses to rename a directory that contains any open file
         // handles (os error 5). Drop the lock fd now — the rename is the
         // publication event, so the lock is no longer needed after this point.
         drop(lock_guard.take());
+        let t_rename = std::time::Instant::now();
         let publish_dir = publish_dir_for(commit_dir);
         ecp_core::registry::rename_with_retry(building, &publish_dir)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.rename: {:.3}s",
+                t_rename.elapsed().as_secs_f32()
+            );
+        }
         let _ = ecp_core::registry::retire_dir_async(&publish_dir.join("_src"));
 
+        // CI-B: tantivy index build, deferred to background thread NOW that
+        // publish_dir is the final location. `ecp find` falls back to
+        // substring scan when tantivy is missing (see find.rs), so a slow
+        // bm25 query immediately after build is the worst-case degradation.
+        // global_graph moves into the thread; the main path needs only the
+        // node_count (already extracted).
+        //
+        // CI-M: handle is returned in `BuildResult.tantivy_handle` so the
+        // CLI `admin index` path joins before exit. Without joining, a
+        // subprocess invocation (e.g. a test driving `ecp admin index` then
+        // dropping its TempDir) would race with the still-writing tantivy
+        // thread → `tantivy/.tmpXXX: No such file or directory`. Long-lived
+        // callers (MCP, auto_ensure) can drop the handle to keep
+        // fire-and-forget semantics.
+        let tantivy_dir = publish_dir.clone();
+        let tantivy_handle = std::thread::spawn(move || {
+            if let Err(e) = crate::search::TantivyEngine::build_index(&tantivy_dir, &global_graph) {
+                tracing::warn!(
+                    "Full-text index build failed for {:?}: {}; exact-name queries still work",
+                    tantivy_dir,
+                    e
+                );
+            }
+        });
+
+        let t_repo_meta = std::time::Instant::now();
         update_repo_meta(repo_root, worktree, sha_hex)?;
+        if prof {
+            eprintln!(
+                "prof orchestrator.update_repo_meta: {:.3}s",
+                t_repo_meta.elapsed().as_secs_f32()
+            );
+        }
 
         // Write the HEAD-SHA fingerprint next to the freshly published graph.bin
         // so subsequent read commands can short-circuit `auto_ensure::ensure_index`
@@ -166,6 +262,7 @@ pub(crate) fn build_inside_locked(
             commit_dir: publish_dir,
             sha_hex: sha_hex.to_string(),
             source_type,
+            tantivy_handle: Some(tantivy_handle),
         })
     })();
 
@@ -208,6 +305,7 @@ pub(crate) fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildRe
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: meta.sha,
         source_type: meta.source_type,
+        tantivy_handle: None,
     })
 }
 
@@ -480,13 +578,26 @@ fn git_remote_url(worktree: &Path) -> io::Result<String> {
 }
 
 fn dir_size(dir: &Path) -> io::Result<u64> {
+    // CI-M-followup: tolerant per-entry metadata fetch. The background
+    // tantivy writer (CI-B) actively churns `.tmpXXX` segment files inside
+    // `publish_dir/tantivy/` — walkdir enumerates them, then a fraction of
+    // a millisecond later tantivy renames/deletes the segment for compaction.
+    // `metadata()?` on the now-gone path bubbles up an `io::Error` whose
+    // walkdir Display format is `IO error for operation on PATH: kind`,
+    // which previously surfaced as a `build_l2 failed` subprocess error in
+    // Linux + macOS CI (Windows happened to win the race). `total_size_bytes`
+    // is an advisory stats field — undercounting by a few transient temp
+    // files is acceptable; treating those misses as a fatal build error is
+    // not.
     let mut total = 0;
     for e in walkdir::WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
     {
         if e.file_type().is_file() {
-            total += e.metadata()?.len();
+            if let Ok(m) = e.metadata() {
+                total += m.len();
+            }
         }
     }
     Ok(total)
@@ -519,6 +630,7 @@ pub(crate) fn wait_for_completion(building: &Path, commit_dir: &Path) -> io::Res
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: meta.sha,
         source_type: meta.source_type,
+        tantivy_handle: None,
     })
 }
 

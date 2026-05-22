@@ -61,12 +61,16 @@ pub struct IndexArgs {
 /// best-effort: misses / corruption fall back to a fresh parse. Bypassed
 /// when env `ECP_NO_CACHE=1` is set — matches `--no-cache` flag semantics.
 ///
-/// Returns the number of nodes written to `graph.bin`.
+/// Returns `(node_count, global_graph)`. The orchestrator owns the graph
+/// after this call so it can dispatch the tantivy build to a background
+/// thread AFTER renaming `building` → `publish_dir`, which avoids the
+/// stale-path race where tantivy writes to a directory that's already been
+/// renamed out from under it.
 pub fn run_analyzer_for_paths(
     src_root: &std::path::Path,
     out_dir: &std::path::Path,
     parse_cache_root: Option<&std::path::Path>,
-) -> std::io::Result<usize> {
+) -> std::io::Result<(usize, ecp_core::graph::ZeroCopyGraph)> {
     let prof = std::env::var("ECP_PROF").is_ok();
     let t_step1 = std::time::Instant::now();
     // ── Step 1: Scan files (parallel walker) ──────────────────────────────
@@ -251,27 +255,54 @@ pub fn run_analyzer_for_paths(
     let t_cache_put = std::time::Instant::now();
     // Write back only fresh parses. Cache hits return the same blob we'd
     // re-serialize on put — the existence stat skips that round-trip for
-    // the (~99% on typical commits) hit fraction. Parallelize via
-    // `par_iter` (rayon picks `num_cpus` workers — no hardcoded thread
-    // count). Each `put` is now fsync-free (see `parse_cache::put` doc),
-    // so the workers don't serialize on disk-sync syscalls.
+    // the (~99% on typical commits) hit fraction.
+    //
+    // CI-A: serialize on the foreground (needs &LocalGraph; can't outlive
+    // local_graphs into add_graph), but dispatch the disk writes to a
+    // detached background thread. Step 4's build_global_graph (~0.6s on
+    // .sample_repo) runs in parallel with these writes; the build_l2 wall
+    // drops by ~0.3s on a fresh cache.
+    //
+    // Each `put` is fsync-free (see `parse_cache::put` doc) so a worker
+    // crash or process kill mid-write is recoverable — the corrupt-entry
+    // guard in `get()` deletes and reparses on next miss.
     let put_count = if let Some(cache) = cache_ref {
         use rayon::prelude::*;
-        local_graphs
+        let to_write: Vec<(std::path::PathBuf, Vec<u8>)> = local_graphs
             .par_iter()
             .filter(|g| !cache.path_for(&g.content_hash).exists())
-            .map(|g| {
-                if let Err(e) = cache.put(g) {
-                    tracing::warn!("parse_cache: put failed for {:?}: {}", g.file_path, e);
+            .filter_map(|g| match rkyv::to_bytes::<rkyv::rancor::Error>(g) {
+                Ok(bytes) => Some((cache.path_for(&g.content_hash), bytes.into_vec())),
+                Err(e) => {
+                    tracing::warn!("parse_cache: serialize failed for {:?}: {}", g.file_path, e);
+                    None
                 }
             })
-            .count()
+            .collect();
+        let count = to_write.len();
+        if !to_write.is_empty() {
+            // Sequential disk write on a dedicated thread (NOT a rayon
+            // par_iter) so the foreground's pass2_imports_resolve doesn't
+            // fight the global rayon pool for CPU. Each
+            // atomic_write_bytes_no_fsync goes to pagecache — kernel-buffered,
+            // no fsync, so a single thread keeps up. Without this guard, the
+            // initial CI-A draft saw pass2 jump from 36ms to 225ms (6×) due
+            // to rayon contention.
+            std::thread::spawn(move || {
+                for (path, bytes) in to_write {
+                    if let Err(e) = ecp_core::registry::atomic_write_bytes_no_fsync(&path, &bytes) {
+                        tracing::warn!("parse_cache: bg write failed for {:?}: {}", path, e);
+                    }
+                }
+            });
+        }
+        count
     } else {
         0
     };
     if prof {
         eprintln!(
-            "prof step3b.cache_puts: {:.2}s ({} puts)",
+            "prof step3b.cache_puts_dispatch: {:.2}s ({} puts queued)",
             t_cache_put.elapsed().as_secs_f32(),
             put_count
         );
@@ -285,21 +316,30 @@ pub fn run_analyzer_for_paths(
     }
     let t_step4 = std::time::Instant::now();
     // ── Step 4: Build global graph ────────────────────────────────────────
+    let t_cfg = std::time::Instant::now();
     let aliases = crate::config_parser::parse_configs(src_root);
+    let cfg_elapsed = t_cfg.elapsed();
+    let t_ingest = std::time::Instant::now();
     let mut builder = GraphBuilder::new()
         .with_path_aliases(aliases)
         .with_repo_root(src_root.to_path_buf());
     for graph in local_graphs {
         builder.add_graph(graph);
     }
+    let ingest_elapsed = t_ingest.elapsed();
+    let t_build = std::time::Instant::now();
     let global_graph = builder.build();
+    let build_elapsed = t_build.elapsed();
     let node_count = global_graph.nodes.len();
 
     if prof {
         eprintln!(
-            "prof step4.build_global_graph: {:.2}s ({} nodes)",
+            "prof step4.build_global_graph: {:.2}s ({} nodes) [parse_configs={:.3}s ingest={:.3}s build={:.3}s]",
             t_step4.elapsed().as_secs_f32(),
-            node_count
+            node_count,
+            cfg_elapsed.as_secs_f32(),
+            ingest_elapsed.as_secs_f32(),
+            build_elapsed.as_secs_f32(),
         );
     }
     let t_step5 = std::time::Instant::now();
@@ -318,23 +358,10 @@ pub fn run_analyzer_for_paths(
             bytes.len()
         );
     }
-    let t_step6 = std::time::Instant::now();
-    // ── Step 6: Build tantivy full-text index (best-effort) ───────────────
-    if let Err(e) = crate::search::TantivyEngine::build_index(out_dir, &global_graph) {
-        tracing::warn!(
-            "Full-text index build failed for {:?}: {}; exact-name queries still work",
-            out_dir,
-            e
-        );
-    }
-
-    if prof {
-        eprintln!(
-            "prof step6.tantivy: {:.2}s",
-            t_step6.elapsed().as_secs_f32()
-        );
-    }
-    Ok(node_count)
+    // Step 6 (tantivy) has moved to the orchestrator, run AFTER the
+    // building → publish_dir rename so the background thread writes to the
+    // final reader-visible location. See `orchestrator::build_inside_locked`.
+    Ok((node_count, global_graph))
 }
 
 pub fn run(args: IndexArgs) -> Result<(), String> {
@@ -377,7 +404,7 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
             Ok(())
         }
         (false, None) => {
-            let r = crate::build::orchestrator::build_l2(&worktree, None)
+            let mut r = crate::build::orchestrator::build_l2(&worktree, None)
                 .map_err(|e| format!("build_l2 failed: {e}"))?;
             if !args.quiet {
                 eprintln!(
@@ -387,10 +414,17 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
                     start.elapsed().as_secs_f32(),
                 );
             }
+            // CI-M: wait for the background tantivy writer before returning
+            // to the shell. The user-visible "l2.built" line was already
+            // printed with the foreground wall-clock so the CI-B perf win
+            // remains observable; this join only prevents the subprocess
+            // from exiting while tantivy still has open temp segments under
+            // the publish dir (which raced with TempDir cleanup in tests).
+            r.join_background();
             Ok(())
         }
         (true, _) => {
-            let r = crate::build::force::force_rebuild_l2(&worktree, &sha)
+            let mut r = crate::build::force::force_rebuild_l2(&worktree, &sha)
                 .map_err(|e| format!("force rebuild failed: {e}"))?;
             if !args.quiet {
                 eprintln!(
@@ -403,6 +437,7 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
                     r.invalidate_report.stale_skipped,
                 );
             }
+            r.join_background();
             Ok(())
         }
     }

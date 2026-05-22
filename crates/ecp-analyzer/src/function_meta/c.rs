@@ -31,12 +31,26 @@ pub fn extract(
     nodes: &[RawNode],
     file_category: FileCategory,
 ) -> Vec<RawFunctionMeta> {
-    extract_with(root, source, nodes, file_category, C_FN_KINDS, extract_one)
+    // Hoist `text.lines().collect()` once per file (previously per function
+    // in the #pragma scan below). Same pattern as Go — see
+    // `function_meta::go::extract` for rationale.
+    let text = std::str::from_utf8(source).unwrap_or("");
+    let lines: Vec<&str> = text.lines().collect();
+    let lines_ref = &lines;
+    extract_with(
+        root,
+        source,
+        nodes,
+        file_category,
+        C_FN_KINDS,
+        |fn_node, src, raw, fc| extract_one(fn_node, src, lines_ref, raw, fc),
+    )
 }
 
 fn extract_one(
     fn_node: &Node<'_>,
     source: &[u8],
+    lines: &[&str],
     _raw: &RawNode,
     file_category: FileCategory,
 ) -> Option<RawFunctionMeta> {
@@ -92,7 +106,7 @@ fn extract_one(
 
     // Decorators: scan preceding siblings for `__attribute__((...))` and attribute_specifier nodes.
     // Also scan raw source for `#pragma` lines immediately above the function start line.
-    let decorators = collect_c_decorators(fn_node, source);
+    let decorators = collect_c_decorators(fn_node, source, lines);
 
     Some(RawFunctionMeta {
         span: ts_span(fn_node),
@@ -107,7 +121,10 @@ fn extract_one(
 /// Checks:
 /// 1. Sibling `attribute_specifier` / `__attribute__` nodes preceding this function.
 /// 2. `#pragma` lines in source immediately above the function start row.
-fn collect_c_decorators(fn_node: &Node<'_>, source: &[u8]) -> Vec<String> {
+///
+/// `lines` is hoisted by the file-level `extract` so the `#pragma` scan
+/// reuses one split across all functions in the file.
+fn collect_c_decorators(fn_node: &Node<'_>, source: &[u8], lines: &[&str]) -> Vec<String> {
     let mut result: Vec<String> = Vec::new();
 
     // 1. Check for `__attribute__((...))` in sibling nodes immediately preceding fn.
@@ -160,10 +177,9 @@ fn collect_c_decorators(fn_node: &Node<'_>, source: &[u8]) -> Vec<String> {
     }
 
     // 3. `#pragma` lines immediately above function start row.
+    // `lines` hoisted by caller (see `extract` doc).
     let fn_start_row = fn_node.start_position().row;
     if fn_start_row > 0 {
-        let text = std::str::from_utf8(source).unwrap_or("");
-        let lines: Vec<&str> = text.lines().collect();
         let mut row = fn_start_row;
         let mut pragma_buf: Vec<String> = Vec::new();
         loop {

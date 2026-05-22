@@ -57,6 +57,27 @@ thread_local! {
         parser
     });
 }
+struct CSharpCaptureIndices {
+    import_name: Option<u32>,
+    import_source: Option<u32>,
+    import_alias: Option<u32>,
+    export: Option<u32>,
+    heritage: Option<u32>,
+    type_: Option<u32>,
+    decorator: Option<u32>,
+    override_marker: Option<u32>,
+    function: Option<u32>,
+    class: Option<u32>,
+    method: Option<u32>,
+    interface: Option<u32>,
+    property: Option<u32>,
+    variable: Option<u32>,
+    constructor: Option<u32>,
+    namespace: Option<u32>,
+    enum_: Option<u32>,
+    struct_: Option<u32>,
+}
+
 pub struct CSharpProvider {
     query: Query,
     /// Capture index → NodeKind mapping, pre-resolved from
@@ -65,6 +86,9 @@ pub struct CSharpProvider {
     /// to the previous hard-coded if-chain, but the source of truth
     /// lives in `spec.rs` const tables.
     capture_kind_by_idx: Vec<Option<NodeKind>>,
+    /// All capture indices resolved once at provider construction.
+    /// Cuts ~18 `query.capture_index_for_name()` calls per parse_file.
+    indices: CSharpCaptureIndices,
 }
 
 impl CSharpProvider {
@@ -84,9 +108,31 @@ impl CSharpProvider {
             .map(|name| CSharpSpec::CAPTURE_KIND.get(name).copied())
             .collect();
 
+        let indices = CSharpCaptureIndices {
+            import_name: query.capture_index_for_name("import.name"),
+            import_source: query.capture_index_for_name("import.source"),
+            import_alias: query.capture_index_for_name("import.alias"),
+            export: query.capture_index_for_name("export"),
+            heritage: query.capture_index_for_name("heritage"),
+            type_: query.capture_index_for_name("type"),
+            decorator: query.capture_index_for_name("decorator"),
+            override_marker: query.capture_index_for_name("override_marker"),
+            function: query.capture_index_for_name("function"),
+            class: query.capture_index_for_name("class"),
+            method: query.capture_index_for_name("method"),
+            interface: query.capture_index_for_name("interface"),
+            property: query.capture_index_for_name("property"),
+            variable: query.capture_index_for_name("variable"),
+            constructor: query.capture_index_for_name("constructor"),
+            namespace: query.capture_index_for_name("namespace"),
+            enum_: query.capture_index_for_name("enum"),
+            struct_: query.capture_index_for_name("struct"),
+        };
+
         Ok(Self {
             query,
             capture_kind_by_idx,
+            indices,
         })
     }
 }
@@ -110,26 +156,27 @@ impl LanguageProvider for CSharpProvider {
             rustc_hash::FxHashMap::default();
         let mut imports = Vec::new();
 
-        let idx_import_name = self.query.capture_index_for_name("import.name");
-        let idx_import_source = self.query.capture_index_for_name("import.source");
-        let idx_import_alias = self.query.capture_index_for_name("import.alias");
+        let idx = &self.indices;
+        let idx_import_name = idx.import_name;
+        let idx_import_source = idx.import_source;
+        let idx_import_alias = idx.import_alias;
 
-        let idx_export = self.query.capture_index_for_name("export");
-        let idx_heritage = self.query.capture_index_for_name("heritage");
-        let idx_type = self.query.capture_index_for_name("type");
-        let idx_decorator = self.query.capture_index_for_name("decorator");
-        let idx_override_marker = self.query.capture_index_for_name("override_marker");
+        let idx_export = idx.export;
+        let idx_heritage = idx.heritage;
+        let idx_type = idx.type_;
+        let idx_decorator = idx.decorator;
+        let idx_override_marker = idx.override_marker;
 
-        let idx_function = self.query.capture_index_for_name("function");
-        let idx_class = self.query.capture_index_for_name("class");
-        let idx_method = self.query.capture_index_for_name("method");
-        let idx_interface = self.query.capture_index_for_name("interface");
-        let idx_property = self.query.capture_index_for_name("property");
-        let idx_variable = self.query.capture_index_for_name("variable");
-        let idx_constructor = self.query.capture_index_for_name("constructor");
-        let idx_namespace = self.query.capture_index_for_name("namespace");
-        let idx_enum = self.query.capture_index_for_name("enum");
-        let idx_struct = self.query.capture_index_for_name("struct");
+        let idx_function = idx.function;
+        let idx_class = idx.class;
+        let idx_method = idx.method;
+        let idx_interface = idx.interface;
+        let idx_property = idx.property;
+        let idx_variable = idx.variable;
+        let idx_constructor = idx.constructor;
+        let idx_namespace = idx.namespace;
+        let idx_enum = idx.enum_;
+        let idx_struct = idx.struct_;
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
