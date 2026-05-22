@@ -119,7 +119,11 @@ pub(crate) fn build_inside_locked(
         // root — cache entries live in `<repo_root>/parse_cache/<fp>/` and
         // survive across L2 commit_dirs as long as the file content (and binary
         // build) is unchanged.
-        let node_count = crate::commands::admin::index::run_analyzer_for_paths(
+        //
+        // CI-B: receives `(node_count, global_graph)`; tantivy is built on a
+        // background thread AFTER the rename below so the writer targets the
+        // final publish_dir, not the soon-to-be-renamed `building/`.
+        let (node_count, global_graph) = crate::commands::admin::index::run_analyzer_for_paths(
             &src_root,
             building,
             Some(repo_root),
@@ -185,6 +189,23 @@ pub(crate) fn build_inside_locked(
             );
         }
         let _ = ecp_core::registry::retire_dir_async(&publish_dir.join("_src"));
+
+        // CI-B: tantivy index build, deferred to background thread NOW that
+        // publish_dir is the final location. `ecp find` falls back to
+        // substring scan when tantivy is missing (see find.rs), so a slow
+        // bm25 query immediately after build is the worst-case degradation.
+        // global_graph moves into the thread; the main path needs only the
+        // node_count (already extracted).
+        let tantivy_dir = publish_dir.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = crate::search::TantivyEngine::build_index(&tantivy_dir, &global_graph) {
+                tracing::warn!(
+                    "Full-text index build failed for {:?}: {}; exact-name queries still work",
+                    tantivy_dir,
+                    e
+                );
+            }
+        });
 
         let t_repo_meta = std::time::Instant::now();
         update_repo_meta(repo_root, worktree, sha_hex)?;

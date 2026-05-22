@@ -61,12 +61,16 @@ pub struct IndexArgs {
 /// best-effort: misses / corruption fall back to a fresh parse. Bypassed
 /// when env `ECP_NO_CACHE=1` is set — matches `--no-cache` flag semantics.
 ///
-/// Returns the number of nodes written to `graph.bin`.
+/// Returns `(node_count, global_graph)`. The orchestrator owns the graph
+/// after this call so it can dispatch the tantivy build to a background
+/// thread AFTER renaming `building` → `publish_dir`, which avoids the
+/// stale-path race where tantivy writes to a directory that's already been
+/// renamed out from under it.
 pub fn run_analyzer_for_paths(
     src_root: &std::path::Path,
     out_dir: &std::path::Path,
     parse_cache_root: Option<&std::path::Path>,
-) -> std::io::Result<usize> {
+) -> std::io::Result<(usize, ecp_core::graph::ZeroCopyGraph)> {
     let prof = std::env::var("ECP_PROF").is_ok();
     let t_step1 = std::time::Instant::now();
     // ── Step 1: Scan files (parallel walker) ──────────────────────────────
@@ -354,23 +358,10 @@ pub fn run_analyzer_for_paths(
             bytes.len()
         );
     }
-    let t_step6 = std::time::Instant::now();
-    // ── Step 6: Build tantivy full-text index (best-effort) ───────────────
-    if let Err(e) = crate::search::TantivyEngine::build_index(out_dir, &global_graph) {
-        tracing::warn!(
-            "Full-text index build failed for {:?}: {}; exact-name queries still work",
-            out_dir,
-            e
-        );
-    }
-
-    if prof {
-        eprintln!(
-            "prof step6.tantivy: {:.2}s",
-            t_step6.elapsed().as_secs_f32()
-        );
-    }
-    Ok(node_count)
+    // Step 6 (tantivy) has moved to the orchestrator, run AFTER the
+    // building → publish_dir rename so the background thread writes to the
+    // final reader-visible location. See `orchestrator::build_inside_locked`.
+    Ok((node_count, global_graph))
 }
 
 pub fn run(args: IndexArgs) -> Result<(), String> {
