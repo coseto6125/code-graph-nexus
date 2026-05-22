@@ -373,24 +373,19 @@ fn fetch_blind_spots(graph: Option<&ArchivedZeroCopyGraph>, status: Option<&'sta
     }
 }
 
-/// Type 2 (parser-metric) blind-spot kinds — uid hash-collision aggregates,
-/// not LLM-actionable opacity. Excluded from `ecp summary.blind_spots` so the
-/// surface stays focused on source-code opacity an LLM can reason about.
-/// Inspect these via `ecp dev uid-audit` instead.
-fn is_dev_metric_kind(kind: &str) -> bool {
-    matches!(kind, "uid-collision" | "method-overload" | "ifdef-redef")
-}
-
 /// Group `graph.blind_spots` by their `kind` tag (e.g. `dynamic-import`,
 /// `reflection`), excluding Type 2 parser-metric buckets — those are for
 /// parser maintainers, not LLM consumers, and live under `ecp dev uid-audit`.
+/// The filter set is owned by [`ecp_core::graph::is_dev_metric_bs_kind`] so
+/// `ecp dev uid-audit` and any future Type-2-aware consumer agree on which
+/// kinds are dev-metric without re-typing the literals here.
 /// Keys borrow zero-copy from `graph.string_pool`; the `BTreeMap` makes the
 /// output deterministic for snapshot-style assertions.
 fn count_blind_spots(graph: &ArchivedZeroCopyGraph) -> Value {
     let mut by_kind: BTreeMap<&str, u32> = BTreeMap::new();
     for bs in graph.blind_spots.iter() {
         let kind = bs.kind.resolve(&graph.string_pool);
-        if is_dev_metric_kind(kind) {
+        if ecp_core::graph::is_dev_metric_bs_kind(kind) {
             continue;
         }
         *by_kind.entry(kind).or_insert(0) += 1;

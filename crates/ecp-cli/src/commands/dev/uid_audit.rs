@@ -16,10 +16,11 @@
 //! parsed from the BlindSpot's `hint` field (format
 //! `"{bs_kind}: first={k}:{p}:{o}:{n} second={k}:{p}:{o}:{n}"`).
 
-use crate::commit_lookup::find_latest_by_mtime;
+use crate::commands::group::impact::latest_graph_path_for;
 use crate::output::{emit, OutputFormat};
 use clap::Args;
-use ecp_core::graph::ArchivedZeroCopyGraph;
+use ecp_analyzer::resolution::index::Language;
+use ecp_core::graph::{ArchivedZeroCopyGraph, BS_KIND_UID_COLLISION};
 use ecp_core::registry::{resolve_home_ecp, Registry};
 use ecp_core::EcpError;
 use memmap2::Mmap;
@@ -123,44 +124,12 @@ fn resolve_graph_path(
     let r = resolved
         .first()
         .ok_or_else(|| EcpError::InvalidArgument("no repo resolved from selector".into()))?;
-    let commits_dir = home_ecp.join(&r.dir_name).join("commits");
-    find_latest_by_mtime(&commits_dir)
-        .map(|d| d.join("graph.bin"))
-        .ok_or_else(|| {
-            EcpError::InvalidArgument(format!(
-                "no graph.bin under {} — run `ecp admin index` first",
-                commits_dir.display()
-            ))
-        })
-}
-
-/// Map a file extension to its display language. Mirrors the dispatch in
-/// `crates/ecp-analyzer/src/pipeline.rs` so cluster labels stay consistent
-/// with the rest of ecp.
-fn lang_from_path(p: &str) -> &'static str {
-    let ext = p.rsplit('.').next().unwrap_or("");
-    match ext {
-        "ts" | "tsx" => "TypeScript",
-        "js" | "jsx" | "mjs" | "cjs" => "JavaScript",
-        "py" => "Python",
-        "java" => "Java",
-        "kt" | "kts" => "Kotlin",
-        "cs" => "CSharp",
-        "go" => "Go",
-        "rs" => "Rust",
-        "php" => "PHP",
-        "rb" => "Ruby",
-        "swift" => "Swift",
-        "c" => "C",
-        "h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh" => "C++",
-        "dart" => "Dart",
-        "sh" | "bash" => "Bash",
-        "lua" | "luau" => "Lua",
-        "vue" => "Vue",
-        "svelte" => "Svelte",
-        "yml" | "yaml" => "YAML",
-        _ => "?",
-    }
+    latest_graph_path_for(r, &home_ecp).ok_or_else(|| {
+        EcpError::InvalidArgument(format!(
+            "no graph.bin under {} — run `ecp admin index` first",
+            home_ecp.join(&r.dir_name).join("commits").display()
+        ))
+    })
 }
 
 /// Parse `BlindSpotRecord.hint` of shape
@@ -230,7 +199,7 @@ fn build_report(graph: &ArchivedZeroCopyGraph, args: &UidAuditArgs) -> Report {
 
     for bs in graph.blind_spots.iter() {
         let kind = bs.kind.resolve(&graph.string_pool);
-        if kind != "uid-collision" {
+        if kind != BS_KIND_UID_COLLISION {
             continue;
         }
         total_uid_collision += 1;
@@ -247,7 +216,11 @@ fn build_report(graph: &ArchivedZeroCopyGraph, args: &UidAuditArgs) -> Report {
                 continue;
             }
         }
-        let lang = lang_from_path(second_path);
+        // Single canonical extension → display-name dispatch (per
+        // [[feedback-lang-classification-by-ext-only]] and
+        // [[feedback-dispatch-grep-all-sites]]) — avoids the dispatch-drift
+        // risk of carrying a private copy of the 30+ extension table here.
+        let lang = Language::from_path(second_path).as_str();
         if let Some(want_lang) = args.lang.as_deref() {
             if !lang.eq_ignore_ascii_case(want_lang) {
                 continue;
@@ -327,8 +300,19 @@ fn print_text_body(report: &Report, graph_path: &std::path::Path) {
         } else {
             c.owner_class.as_str()
         };
+        // Truncate to the last ~47 chars, but never split a UTF-8 sequence —
+        // file paths may contain CJK / emoji (e.g. `プロジェクト/src/x.rs`),
+        // and a raw byte-offset slice (`&s[s.len() - 47..]`) panics with
+        // "byte index N is not a char boundary" mid-multibyte.
         let sample_short = if c.sample_path.len() > 50 {
-            format!("...{}", &c.sample_path[c.sample_path.len() - 47..])
+            let start = c
+                .sample_path
+                .char_indices()
+                .rev()
+                .nth(46)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            format!("...{}", &c.sample_path[start..])
         } else {
             c.sample_path.clone()
         };
@@ -399,63 +383,37 @@ mod tests {
         assert_eq!(name, "inner");
     }
 
-    /// Exhaustive coverage: every match arm in `lang_from_path` must have at
-    /// least one extension exercised here. Drift surfaces immediately if a
-    /// new ext is added (or an existing one renamed) without test sync.
+    /// Sanity: language label comes from the canonical
+    /// `ecp_analyzer::resolution::Language::from_path` (single source of
+    /// truth, per [[feedback-dispatch-grep-all-sites]]). Spot-check a few
+    /// representative paths; exhaustive extension coverage lives in
+    /// `ecp_analyzer`'s own test suite, not duplicated here.
     #[test]
-    fn lang_from_path_covers_every_arm() {
-        let cases: &[(&str, &str)] = &[
-            // TypeScript
-            ("src/x.ts", "TypeScript"),
-            ("src/x.tsx", "TypeScript"),
-            // JavaScript
-            ("src/x.js", "JavaScript"),
-            ("src/x.jsx", "JavaScript"),
-            ("src/x.mjs", "JavaScript"),
-            ("src/x.cjs", "JavaScript"),
-            // Python / Java / Kotlin
-            ("src/x.py", "Python"),
-            ("src/x.java", "Java"),
-            ("src/x.kt", "Kotlin"),
-            ("src/x.kts", "Kotlin"),
-            // C# / Go / Rust
-            ("src/x.cs", "CSharp"),
-            ("src/x.go", "Go"),
-            ("src/x.rs", "Rust"),
-            // PHP / Ruby / Swift
-            ("src/x.php", "PHP"),
-            ("src/x.rb", "Ruby"),
-            ("src/x.swift", "Swift"),
-            // C family (each `.h*` / `.c*` variant)
-            ("src/x.c", "C"),
-            ("src/x.h", "C++"),
-            ("src/x.cc", "C++"),
-            ("src/x.cpp", "C++"),
-            ("src/x.cxx", "C++"),
-            ("src/x.hpp", "C++"),
-            ("src/x.hxx", "C++"),
-            ("src/x.hh", "C++"),
-            // Dart / Shell / Lua / Vue / Svelte / YAML
-            ("src/x.dart", "Dart"),
-            ("scripts/x.sh", "Bash"),
-            ("scripts/x.bash", "Bash"),
-            ("scripts/x.lua", "Lua"),
-            ("scripts/x.luau", "Lua"),
-            ("ui/X.vue", "Vue"),
-            ("ui/X.svelte", "Svelte"),
-            ("ci/x.yml", "YAML"),
-            ("ci/x.yaml", "YAML"),
-            // Unknown extension + no extension
-            ("README.md", "?"),
-            ("Makefile", "?"),
-            ("noext", "?"),
-        ];
-        for (path, want) in cases {
-            assert_eq!(
-                lang_from_path(path),
-                *want,
-                "lang_from_path mismatch for {path:?}"
-            );
-        }
+    fn lang_label_uses_canonical_dispatch() {
+        assert_eq!(Language::from_path("src/x.py").as_str(), "Python");
+        assert_eq!(Language::from_path("src/x.rs").as_str(), "Rust");
+        // `.h` routes to C++ per project convention (see Language::from_path
+        // doc comment); regression-pinned to catch silent dispatch drift.
+        assert_eq!(Language::from_path("src/x.h").as_str(), "C++");
+        assert_eq!(Language::from_path("README.md").as_str(), "Markdown");
+        assert_eq!(Language::from_path("noext").as_str(), "Unknown");
+    }
+
+    /// Regression for the `print_text_body` truncation: a `sample_path`
+    /// whose tail crosses a UTF-8 multibyte boundary must NOT panic. The
+    /// raw byte-offset form `&s[s.len() - 47..]` panicked with "byte index
+    /// is not a char boundary" on paths containing CJK / emoji. The
+    /// `char_indices().rev().nth(46)` form is what's in the code now.
+    #[test]
+    fn sample_path_truncation_safe_on_multibyte() {
+        // CJK file path > 50 bytes (each CJK char is 3 UTF-8 bytes; this is
+        // ~60 bytes and ~20 chars).
+        let p = "プロジェクト/サブディレクトリ/モジュール/main.rs".to_string();
+        assert!(p.len() > 50);
+        // Replicate the truncation logic from `print_text_body`.
+        let start = p.char_indices().rev().nth(46).map(|(i, _)| i).unwrap_or(0);
+        // Must not panic; result must be a valid &str slice (the assertion
+        // below would panic if `start` fell inside a multibyte sequence).
+        let _trimmed = &p[start..];
     }
 }
