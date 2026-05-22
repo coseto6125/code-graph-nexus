@@ -214,15 +214,17 @@ final class NetworkReachabilityTestCase: BaseTestCase {
 }
 
 #[test]
-fn class_via_extension_unchanged() {
+fn class_via_extension_does_not_emit_type_node() {
     // `extension Foo { ... }` parses to class_declaration in tree-sitter-swift
-    // and is handled by the primary capture. Verify the ERROR fallback didn't
-    // accidentally widen the class set here.
+    // but must NOT emit a duplicate Class/Struct/Enum node — that is the root
+    // cause of ~700 Swift uid collisions (PR fix: swift extension dedup).
+    // Extensions are additive; only the original type declaration emits the
+    // type-level node. Members inside the extension body still emit individually.
     let src = "extension String {\n    var doubled: String { self + self }\n}\n";
     let g = parse(src);
     let cs = classes(&g);
     assert!(
-        cs.contains(&"String"),
-        "extension target should still emit: {cs:?}"
+        !cs.contains(&"String"),
+        "extension-only file must not emit a spurious Class:String node: {cs:?}"
     );
 }
