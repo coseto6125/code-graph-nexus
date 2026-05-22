@@ -24,9 +24,15 @@ use ecp_core::registry::{resolve_home_ecp, Registry};
 use ecp_core::EcpError;
 use memmap2::Mmap;
 use serde_json::Value;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
+
+/// `((lang, second_kind, owner_class, name), (count, sample_path))`.
+/// Cluster key is the four-tuple; value carries cluster size and a sample
+/// concrete path so the operator can jump to one occurrence.
+type ClusterRow = ((String, String, String, String), (u32, String));
 
 #[derive(Args, Debug, Clone)]
 pub struct UidAuditArgs {
@@ -72,9 +78,13 @@ pub fn run(args: UidAuditArgs) -> Result<(), EcpError> {
 
     let report = build_report(graph, &args);
 
+    // Warning header to stderr — fires regardless of format so the dev-only
+    // nature is loud whether the caller is piping JSON or reading text.
+    print_warning_header();
+
     let format = OutputFormat::parse(args.format.as_deref());
     match format {
-        OutputFormat::Text => print_text(&report, &graph_path),
+        OutputFormat::Text => print_text_body(&report, &graph_path),
         _ => emit(
             &serde_json::to_value(&report).unwrap_or(Value::Null),
             format,
@@ -226,9 +236,8 @@ fn build_report(graph: &ArchivedZeroCopyGraph, args: &UidAuditArgs) -> Report {
     }
 
     let distinct = clusters.len();
-    let mut rows: Vec<((String, String, String, String), (u32, String))> =
-        clusters.into_iter().collect();
-    rows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    let mut rows: Vec<ClusterRow> = clusters.into_iter().collect();
+    rows.sort_by_key(|r| Reverse(r.1 .0));
 
     let top: Vec<Cluster> = rows
         .iter()
@@ -259,15 +268,18 @@ fn build_report(graph: &ArchivedZeroCopyGraph, args: &UidAuditArgs) -> Report {
     }
 }
 
-fn print_text(report: &Report, graph_path: &std::path::Path) {
-    // Warning header: keep the dev-only nature loud — this output is NOT
-    // for LLM agents (the kinds shown here are parser hash-collision
-    // aggregates, not source opacity).
+/// Warning banner — keeps the dev-only nature loud. Emitted to stderr so
+/// it shows up in interactive use without polluting piped JSON / TOON
+/// stdout. The same banner fires for every format.
+fn print_warning_header() {
     eprintln!("┌─ ecp dev uid-audit ─────────────────────────────────────────┐");
     eprintln!("│ DEV-ONLY · NOT an LLM signal · for ecp parser maintainers   │");
     eprintln!("│ For source-code opacity / LLM-actionable blind spots, run:  │");
     eprintln!("│   ecp summary --repo .                                      │");
     eprintln!("└─────────────────────────────────────────────────────────────┘");
+}
+
+fn print_text_body(report: &Report, graph_path: &std::path::Path) {
     println!("graph                        : {}", graph_path.display());
     println!("total uid-collision records  : {}", report.total);
     println!(
@@ -276,10 +288,7 @@ fn print_text(report: &Report, graph_path: &std::path::Path) {
     );
     println!("hint parse failures          : {}", report.hint_unparsed);
     println!();
-    println!(
-        "{:>5} {:<12} {:<14} {:<28} {:<28} {}",
-        "count", "lang", "kind", "owner_class", "name", "sample_path"
-    );
+    println!("count lang         kind           owner_class                  name                         sample_path");
     println!("{}", "-".repeat(120));
     for c in &report.top {
         let owner_disp = if c.owner_class.is_empty() {
