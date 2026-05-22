@@ -399,8 +399,15 @@ impl LanguageProvider for SwiftProvider {
 
             if let (Some(n), Some(k), Some(root)) = (name_node, kind, root_span_node) {
                 // Disambiguate class_declaration into Class/Struct/Enum via leading keyword.
+                // `extension TypeName { ... }` shares the same class_declaration CST node in
+                // tree-sitter-swift. Extensions are additive continuations of an existing type —
+                // emitting a duplicate Class/Struct/Enum node for them is the root cause of
+                // ~700 uid collisions in the Swift cluster. Skip the type-level emit; members
+                // declared inside the extension body still emit individually via the
+                // function_declaration / property_declaration / init_declaration paths.
                 let k = if k == NodeKind::Class {
                     match swift_decl_keyword(root) {
+                        "extension" => continue,
                         "struct" => NodeKind::Struct,
                         "enum" => NodeKind::Enum,
                         _ => NodeKind::Class,
@@ -500,9 +507,9 @@ impl LanguageProvider for SwiftProvider {
     }
 }
 
-/// Return the leading keyword of a `class_declaration` node ("class", "struct", or "enum").
-/// tree-sitter-swift uses `class_declaration` for all three; the first non-modifier
-/// child is the literal keyword token.
+/// Return the leading keyword of a `class_declaration` node: "class", "struct", "enum",
+/// "extension", or "actor". tree-sitter-swift uses `class_declaration` for all of these;
+/// the `declaration_kind` field is the first non-modifier keyword child.
 fn swift_decl_keyword(class_decl: tree_sitter::Node<'_>) -> &'static str {
     for i in 0..class_decl.child_count() {
         if let Some(c) = class_decl.child(i as u32) {
@@ -510,6 +517,8 @@ fn swift_decl_keyword(class_decl: tree_sitter::Node<'_>) -> &'static str {
                 "class" => return "class",
                 "struct" => return "struct",
                 "enum" => return "enum",
+                "extension" => return "extension",
+                "actor" => return "actor",
                 _ => {}
             }
         }
