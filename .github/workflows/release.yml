@@ -325,8 +325,14 @@ jobs:
 
   # ==================== Homebrew Tap ====================
   # Requires:
-  #   1. GitHub repo: coseto6125/homebrew-tap
-  #   2. Secret HOMEBREW_TAP_TOKEN with write access to that repo
+  #   1. GitHub repo: coseto6125/homebrew-tap (public)
+  #   2. GitHub App installed on both this repo and the tap repo, with
+  #      "Contents: Read and write" permission on the tap repo.
+  #   3. Variable HOMEBREW_TAP_APP_ID  (the App's numeric ID — not sensitive)
+  #   4. Secret  HOMEBREW_TAP_APP_PRIVATE_KEY (the .pem contents)
+  # Both not set ⇒ job skips with a notice. App tokens are minted per-run by
+  # `actions/create-github-app-token` and auto-expire in ~1h — no long-lived
+  # PAT to rotate.
   homebrew-tap:
     name: Update Homebrew tap
     needs: [github-release]
@@ -334,8 +340,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || inputs.dry_run != 'true')
     permissions:
       contents: read
-    env:
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -352,16 +356,31 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Generate Homebrew formula
-        id: formula
+      - name: Decide whether tap is configured
+        id: gate
         shell: bash
         run: |
-          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN is not set; skipping Homebrew tap update."
+          if [ -z "${{ vars.HOMEBREW_TAP_APP_ID }}" ]; then
+            echo "::notice::HOMEBREW_TAP_APP_ID variable is not set; skipping Homebrew tap update."
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mint GitHub App installation token (tap repo, ~1h lifetime)
+        if: steps.gate.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: coseto6125
+          repositories: homebrew-tap
+
+      - name: Generate Homebrew formula
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        run: |
           version="${GITHUB_REF_NAME#v}"
           arm_sha_file="dist/ecp-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz.sha256"
           x86_sha_file="dist/ecp-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz.sha256"
@@ -384,10 +403,12 @@ jobs:
             > generated/Formula/egent-code-plexus.rb
 
       - name: Push formula to tap
-        if: steps.formula.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         shell: bash
         run: |
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/coseto6125/homebrew-tap.git" tap
+          git clone "https://x-access-token:${GH_APP_TOKEN}@github.com/coseto6125/homebrew-tap.git" tap
           mkdir -p tap/Formula
           cp generated/Formula/egent-code-plexus.rb tap/Formula/egent-code-plexus.rb
 
@@ -403,6 +424,37 @@ jobs:
           git add Formula/egent-code-plexus.rb
           git commit -m "egent-code-plexus ${GITHUB_REF_NAME}"
           git push
+
+  # ==================== Post-Release brew install smoke ====================
+  # End-to-end install smoke for the brew path: tap the published formula
+  # and run `brew install` on a fresh macos-latest runner. Catches:
+  #   - Formula class-name / filename mismatch (Homebrew validates)
+  #   - Wrong sha256 / broken release-asset URL
+  #   - `bin.install "ecp"` missing the binary after tarball extract
+  # Skipped when tap is not configured (see `homebrew-tap` job above).
+  post-release-brew-install-smoke:
+    name: brew install smoke (macOS)
+    needs: [homebrew-tap]
+    runs-on: macos-latest
+    if: vars.HOMEBREW_TAP_APP_ID != '' && startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || inputs.dry_run != 'true')
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: brew tap + install + verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew tap coseto6125/tap
+          brew install egent-code-plexus
+          want="${GITHUB_REF_NAME#v}"
+          ecp --version | tee /dev/stderr | grep -qF "$want" \
+            || { echo "::error::ecp --version did not contain $want"; exit 1; }
 
   # ==================== Publish to crates.io ====================
   # 狀態：
