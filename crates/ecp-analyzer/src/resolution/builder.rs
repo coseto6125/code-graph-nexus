@@ -395,11 +395,14 @@ impl GraphBuilder {
 
         // Pass 1: Register all nodes into SymbolTable and StringPool
         let mut current_node_idx = 0;
-        // D1 collision set: uid_u64 → (kind_str, path, owner_class, name) of the first node
-        // with that hash. On collision, skip the duplicate and emit a BlindSpotRecord.
-        // FxHashMap: O(1) lookup per node on the hot path.
-        let mut uid_seen: FxHashMap<u64, (String, String, Option<String>, String)> =
-            FxHashMap::default();
+        // D1 collision set: uid_u64 → node_idx of the first occurrence. On a
+        // collision (rare path), the previous node's kind/path/owner/name
+        // are reconstructed from `nodes[prev_idx]` + `files` + `string_pool`
+        // for the BlindSpotRecord hint. Storing only the index keeps the
+        // hot path alloc-free (vs the prior 4-String tuple which allocated
+        // ~1M Strings across 245k nodes on .sample_repo).
+        let mut uid_seen: FxHashMap<u64, u32> =
+            FxHashMap::with_capacity_and_hasher(total_symbol_nodes, Default::default());
         // Collision BlindSpots are accumulated here and merged into all_blind_spots
         // after the main blind-spot pass (below). Using a separate vec avoids
         // borrowing string_pool twice in the node loop.
@@ -462,8 +465,7 @@ impl GraphBuilder {
                 // benign placeholder; it doesn't enter SymbolTable so it's unreachable
                 // from any query) to occupy the position, keeping nodes.len() ≡
                 // current_node_idx throughout Pass 1.
-                if let Some((prev_kind, prev_path, prev_owner, prev_name)) = uid_seen.get(&uid_u64)
-                {
+                if let Some(&prev_idx) = uid_seen.get(&uid_u64) {
                     // Reclassify the collision based on (kind, lang) — most
                     // collisions are not parser bugs but legitimate semantic
                     // ambiguities the indexer can't resolve without semantic
@@ -480,12 +482,24 @@ impl GraphBuilder {
                     //   - uid-collision   : everything else (real parser bug
                     //     or unhandled corpus pattern).
                     let bs_kind = classify_collision(raw_node.kind, &path_str);
+                    // Reconstruct prev info from the first occurrence's Node
+                    // (rare path; the alloc savings on every other node pay
+                    // for this lookup many times over).
+                    let prev_node: &ecp_core::graph::Node = &nodes[prev_idx as usize];
+                    let prev_kind = prev_node.kind.as_str();
+                    let prev_path = string_pool.resolve(&files[prev_node.file_idx as usize].path);
+                    let prev_name = string_pool.resolve(&prev_node.name);
+                    let prev_owner = if prev_node.owner_class.len > 0 {
+                        string_pool.resolve(&prev_node.owner_class)
+                    } else {
+                        ""
+                    };
                     let hint = format!(
                         "{}: first={}:{}:{}:{} second={}:{}:{}:{}",
                         bs_kind,
                         prev_kind,
                         prev_path,
-                        prev_owner.as_deref().unwrap_or(""),
+                        prev_owner,
                         prev_name,
                         raw_node.kind.as_str(),
                         path_str,
@@ -529,15 +543,9 @@ impl GraphBuilder {
                     current_node_idx += 1;
                     continue;
                 }
-                uid_seen.insert(
-                    uid_u64,
-                    (
-                        raw_node.kind.as_str().to_string(),
-                        path_str.to_string(),
-                        raw_node.owner_class.clone(),
-                        raw_node.name.clone(),
-                    ),
-                );
+                // Just the index — collision path will reconstruct details
+                // from nodes[prev_idx] + files + string_pool if needed.
+                uid_seen.insert(uid_u64, current_node_idx);
 
                 symbol_table.register_node_with_meta(
                     &path_str,
