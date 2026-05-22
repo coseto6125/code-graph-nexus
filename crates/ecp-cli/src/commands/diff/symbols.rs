@@ -17,6 +17,7 @@
 //! is accepted; the alternative (signature hash) requires per-language
 //! parser changes that don't ship with this PR.
 
+use crate::commands::graph_csr::iter_incoming_edges_filtered;
 use crate::engine::Engine;
 use ecp_core::graph::{ArchivedNodeKind, ArchivedRelType, NodeKind};
 use ecp_core::EcpError;
@@ -242,32 +243,6 @@ fn collect_snapshot(graph_path: &Path) -> Result<(Snapshot, Engine), EcpError> {
 
 // ── Caller lookup (current graph only) ────────────────────────────────────
 
-/// Find incoming Calls / References edges to `target_idx` via the CSR
-/// in-edge index. Returns (caller_node_idx, edge_idx) pairs.
-fn incoming_call_edges(
-    graph: &ecp_core::graph::ArchivedZeroCopyGraph,
-    target_idx: u32,
-) -> Vec<(u32, u32)> {
-    let off = graph.in_offsets.as_slice();
-    if (target_idx as usize) + 1 >= off.len() {
-        return Vec::new();
-    }
-    let start = off[target_idx as usize].to_native() as usize;
-    let end = off[(target_idx + 1) as usize].to_native() as usize;
-    let mut out = Vec::new();
-    for &edge_idx_archived in &graph.in_edge_idx[start..end] {
-        let edge_idx = edge_idx_archived.to_native();
-        let edge = &graph.edges[edge_idx as usize];
-        if matches!(
-            &edge.rel_type,
-            ArchivedRelType::Calls | ArchivedRelType::References
-        ) {
-            out.push((edge.source.to_native(), edge_idx));
-        }
-    }
-    out
-}
-
 fn collect_callers_for_changed(
     current_engine: &Engine,
     changed: &[SymbolChange],
@@ -287,7 +262,10 @@ fn collect_callers_for_changed(
         };
         let file_idx = target_node.file_idx.to_native();
 
-        let incoming = incoming_call_edges(graph, tidx);
+        let incoming: Vec<_> = iter_incoming_edges_filtered(graph, tidx, |r| {
+            matches!(r, ArchivedRelType::Calls | ArchivedRelType::References)
+        })
+        .collect();
         if incoming.is_empty() {
             continue;
         }
