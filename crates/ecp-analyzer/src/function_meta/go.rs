@@ -29,12 +29,27 @@ pub fn extract(
     nodes: &[RawNode],
     file_category: FileCategory,
 ) -> Vec<RawFunctionMeta> {
-    extract_with(root, source, nodes, file_category, GO_FN_KINDS, extract_one)
+    // Hoist `text.lines().collect()` once per file (previously per function:
+    // 20 fns × 500 lines × 1000 Go files = 10M iter + 20k Vec allocs in the
+    // cold-ingest hot path). Closure captures the slice; `collect_go_directives`
+    // becomes O(directive_count) instead of O(file_lines).
+    let text = std::str::from_utf8(source).unwrap_or("");
+    let lines: Vec<&str> = text.lines().collect();
+    let lines_ref = &lines;
+    extract_with(
+        root,
+        source,
+        nodes,
+        file_category,
+        GO_FN_KINDS,
+        |fn_node, src, raw, fc| extract_one(fn_node, src, lines_ref, raw, fc),
+    )
 }
 
 fn extract_one(
     fn_node: &Node<'_>,
     source: &[u8],
+    lines: &[&str],
     raw: &RawNode,
     file_category: FileCategory,
 ) -> Option<RawFunctionMeta> {
@@ -86,7 +101,7 @@ fn extract_one(
 
     // Decorators: `//go:noinline`, `//go:linkname`, `//go:build`, etc. — compiler directives
     // on the lines immediately before this function. We scan source lines.
-    let decorators = collect_go_directives(source, fn_node.start_position().row);
+    let decorators = collect_go_directives(lines, fn_node.start_position().row);
 
     Some(RawFunctionMeta {
         span: ts_span(fn_node),
@@ -99,14 +114,13 @@ fn extract_one(
 
 /// Collect `//go:...` compiler directives from lines immediately preceding `fn_start_row`.
 /// Walks backwards through source lines, stopping at the first non-directive, non-blank line.
-fn collect_go_directives(source: &[u8], fn_start_row: usize) -> Vec<String> {
+///
+/// `lines` is hoisted by the caller (`extract`) so a Go file with N functions
+/// pays O(file_lines) once instead of O(N × file_lines).
+fn collect_go_directives(lines: &[&str], fn_start_row: usize) -> Vec<String> {
     if fn_start_row == 0 {
         return vec![];
     }
-
-    // Split source into lines once.
-    let text = std::str::from_utf8(source).unwrap_or("");
-    let lines: Vec<&str> = text.lines().collect();
 
     let mut directives: Vec<String> = Vec::new();
     let mut row = fn_start_row;
