@@ -75,23 +75,38 @@ truth instead of guesses.
 |---|---|---|---|---|---|
 | **CI-INST** | ECP_PROF phase timings | tooling | shipped | ad54073b | orchestrator + step4 phase splits |
 | CI-A | Defer cache_puts to background | 🔴 -11% | shipped | 4b706e5e | dedicated thread (NOT rayon) avoids pass2 contention |
-| CI-B | Defer tantivy index to background | 🔴 -10% | shipped | (next) | dispatched in orchestrator AFTER rename — stale-path race resolved |
-| CI-C | parse_only investigation | 🟡 51% | **deferred** | — | already rayon; sub-improvements need provider-level work |
-| CI-D | pass3 community Leiden | 🟡 6% | **deferred** | — | algorithmic — graph community detection itself, not parallelism |
+| CI-B | Defer tantivy index to background | 🔴 -10% | shipped | b4bb98a6 | dispatched in orchestrator AFTER rename — stale-path race resolved |
+| CI-C | function_meta lines.collect hoist | 🟡 micro | shipped | f9216097 | Go + C — per-function → per-file; surfaces on Go-heavy + low-core |
+| CI-E | mmap source bytes per file | 🔴 -18% | shipped | (next) | step3a 1.95s → 1.45s — 5-run stable; skips fs::read user-space copy |
+| CI-D | pass3 community Leiden | 🟡 6% | **deferred** | — | algorithmic — see §8 for full analysis |
+| CI-F | parallel Leiden local_move | 🟡 6% | **deferred** | — | reanalyzed — same conclusion as CI-D; see §8 |
 
-**Final benchmark (.sample_repo, 16814 files, 262k nodes, 3-run median):**
+**Final benchmark (.sample_repo, 16814 files, 262k nodes):**
 
-| Run | Time | Δ |
+| Snapshot | Median wall | Notes |
 |---|---|---|
-| Baseline (main) | 3.13s | — |
-| After CI-A | 2.58s | -17.6% |
-| After CI-A + CI-B | **2.28s** | **-27.2%** |
+| Baseline (main, post #333) | 3.13s | 3-run |
+| After CI-A | 2.58s | 3-run |
+| After CI-A + CI-B | 2.28s | 3-run, disk-cache-hot lucky |
+| After CI-A + CI-B + CI-C | 2.95s | 5-run sorted; CI-C win in noise |
+| **After CI-A + CI-B + CI-C + CI-E** | **2.41s** | **5-run very stable (2.35-2.45)** |
 
 Tantivy index continues to be built in background after the user-visible
 "l2.built" line. A `ecp find --mode bm25` query issued within ~300ms of
 the rebuild will fall back to substring scan (already the documented
 no-tantivy path), then ranked BM25 kicks back in once the background
 finishes.
+
+step3a parse_only breakdown:
+
+| Snapshot | step3a |
+|---|---|
+| Baseline | ~1.60s |
+| After CI-E (mmap) | **~1.45s** (-9%) |
+
+Note: parse_only is 51% of total wall but already rayon-parallel with
+9.7× / 16-core efficiency. Further gains require provider-level deep
+work (see §8).
 
 ## 5. Deferred (with rationale)
 
@@ -160,3 +175,98 @@ finishes.
   algorithm's intermediate state has cross-iteration dependencies that
   resist embarrassingly-parallel decomposition without changing the
   community-assignment semantics.
+
+## 8. CI-F (parallel Leiden) — re-analysis and decision
+
+After CI-E shipped, an attempt to revisit parallel Leiden was made.
+The conclusion stands: **defer**. Reasoning below documents what was
+checked so future revisits don't waste cycles re-walking the same path.
+
+### 8.1 What `local_move` actually does
+
+`crates/ecp-core/src/algorithms/leiden.rs::local_move` is the classic
+Louvain sequential pattern:
+
+```text
+for each iteration:
+    shuffle node order
+    for each node i in order:
+        accumulate k_i,C over adj[i]     ← READ community[j] for j in adj[i]
+        sigma_tot[ci] -= ki              ← WRITE sigma_tot
+        find best community c*
+        community[i] = c*                ← WRITE community[i]
+        sigma_tot[c*] += ki              ← WRITE sigma_tot
+        reset sparse buffer
+```
+
+Each iteration's decision for node i depends on the latest `community[*]`
+and `sigma_tot[*]` written by previous iterations. This is true
+data-dependency, not coordination overhead.
+
+### 8.2 Parallel variants and their cost
+
+| Variant | Parallelism | Output equivalence | Effort |
+|---|---|---|---|
+| Sequential (current) | none | reference | — |
+| Batched parallel local_move | par_iter within batch, serial apply | **approximate** — node decisions see snapshot, not latest | ~150 LOC rewrite + sync primitives + tests |
+| Speculative parallel + retry | full par_iter | **approximate** — divergent vs sequential | ~250 LOC + CAS protocol |
+| SLM (synchronous local move) | full par_iter, batched commit | **approximate, well-studied** | ~200 LOC; requires partition strategy |
+| Graph-partition + local Leiden | par_iter across partitions, merge | **DIFFERENT** — no convergence to sequential output | ~300 LOC; partitioning is itself NP-hard |
+
+All `approximate` variants converge to similar **modularity** but produce
+**different community_id assignments**, which means **different Process
+node groupings**.
+
+### 8.3 Output blast radius (grep-verified)
+
+`community_id` consumers (production code only, tests excluded):
+
+- `crates/ecp-analyzer/src/resolution/builder.rs:1393` — Process trace
+  detection reads `community_id` to group functions
+- `crates/ecp-core/src/algorithms/process_trace.rs:142` — Trace
+  extraction reads `community_id`
+
+Agent-facing query path (cypher / find / inspect / impact / rename):
+**zero matches**. Verified by:
+```text
+$ grep -rn "community_id" crates/ecp-cli/src/commands/
+  coverage.rs:580: community_id: 0,        (test fixture only)
+  coverage.rs:590: community_id: 0,        (test fixture only)
+  …
+```
+
+So an agent issuing `MATCH (p:Process) …` would see different counts /
+member functions if Leiden output changes. They can't see the
+`community_id` field directly, but `NodeKind::Process` nodes ARE
+queryable.
+
+### 8.4 Why the math doesn't work
+
+- Wall-time gain: 0.19s out of 2.41s = **7.9%** at best (assumes perfect
+  parallelism, which the variants above don't achieve)
+- Realistic gain: 0.19s × 0.6 efficiency = **~0.11s saved** = ~5%
+- Cost:
+  - ~200 LOC algorithm rewrite + thread-safety review
+  - 14-lang Process parity baseline regeneration (multi-PR work via
+    `scripts/parity/`)
+  - Risk of test breakage in `process_trace.rs` tests + integration tests
+    that assert specific Process counts
+  - Future maintenance: every Leiden bugfix has to consider parallel state
+
+The 5% wall-time gain doesn't justify regenerating 14 language parity
+baselines + accepting output divergence from the reference Leiden paper.
+
+### 8.5 What WOULD make this worth doing
+
+Future revisit triggers (any one):
+
+- `pass3_community` grows to ≥ 1s on the canonical corpus (would happen
+  if .sample_repo doubled to ~30k files / 500k nodes)
+- A user-facing command becomes a hot consumer of `community_id`
+  (currently only Process detection uses it)
+- An external Leiden library lands in the Rust ecosystem with a
+  ready-made parallel implementation matching `petgraph`/equivalent
+  shapes
+
+None of these are true today. Marked **deferred with explicit revisit
+triggers** so future maintainers don't redo this analysis.
