@@ -22,6 +22,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue: GitHub builds a temporary `gh-readonly-queue/main/...` branch
+  # combining PRs + main, and runs CI on that combined state. Without this
+  # trigger, the queue would hang waiting for required-checks to report.
+  merge_group:
 
 permissions:
   contents: read
@@ -156,7 +160,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Windows moved to nightly (.github/workflows/ci-windows-nightly.yml):
+        # the windows-latest runner has a known partner-runner-images bash
+        # startup race (#169) that flakes ~5% of PR runs, and Rust CLI code
+        # here is platform-agnostic (uses `dirs` / `PathBuf` everywhere).
+        # Windows still validates on schedule + push-to-main + workflow_dispatch.
+        os: [ubuntu-latest, macos-latest]
     if: ${{ !(contains(github.event.pull_request.title, '[skip ci]') || contains(github.event.head_commit.message, '[skip ci]')) }}
     env:
       # 14 tree-sitter parsers × 30+ test binaries × debug-info defaulted to
