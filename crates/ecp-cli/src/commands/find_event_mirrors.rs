@@ -39,7 +39,7 @@
 use crate::engine::Engine;
 use crate::output::{emit, OutputFormat};
 use clap::Args;
-use ecp_core::graph::{ArchivedNodeKind, ArchivedRelType, ArchivedZeroCopyGraph};
+use ecp_core::graph::{ArchivedRelType, ArchivedZeroCopyGraph};
 use ecp_core::EcpError;
 use serde_json::{json, Value};
 
@@ -246,14 +246,14 @@ fn collect_mirrors(
     topic_glob: Option<&str>,
     lib_filter: Option<&str>,
 ) -> Vec<MirrorRow> {
-    // Walk all EventTopic nodes and collect outgoing EventTopicMirror edges.
+    // Iterate EventTopic nodes via the v10 kind_offsets CSR; O(EventTopics)
+    // instead of O(total_nodes). Detector commands on polyglot repos where
+    // EventTopic is a tiny fraction of total nodes see the biggest win.
     let mut rows: Vec<MirrorRow> = Vec::new();
 
-    for (et_pub_idx, node) in graph.nodes.iter().enumerate() {
-        if !matches!(node.kind, ArchivedNodeKind::EventTopic) {
-            continue;
-        }
-
+    for et_pub_idx_u32 in graph.nodes_by_kind(ecp_core::graph::NodeKind::EventTopic) {
+        let et_pub_idx = et_pub_idx_u32 as usize;
+        let node = &graph.nodes[et_pub_idx];
         let topic_name = node.name.resolve(&graph.string_pool);
 
         // Topic glob filter.

@@ -128,7 +128,7 @@ fn build_graph_bytes(spec: &GraphSpec) -> Vec<u8> {
         }
     }
 
-    let name_index: Vec<u32> = (0..n as u32).collect();
+    let name_index: Vec<ecp_core::graph::NameIndexEntry> = Vec::new();
 
     let graph = ZeroCopyGraph {
         magic: GRAPH_MAGIC,
@@ -149,6 +149,8 @@ fn build_graph_bytes(spec: &GraphSpec) -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     rkyv::to_bytes::<Error>(&graph)

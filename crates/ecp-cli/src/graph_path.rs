@@ -6,7 +6,7 @@
 //! cwd's git common-dir + HEAD SHA + CommitIndex scan.
 
 use crate::commit_lookup::CommitIndex;
-use crate::git::safe_exec;
+use crate::git_cache;
 use crate::repo_identity;
 use ecp_core::registry::resolve_home_ecp;
 use std::path::{Path, PathBuf};
@@ -25,26 +25,14 @@ fn resolve_v2(cwd: &Path) -> Option<PathBuf> {
     let repo_dir_name = repo_identity::repo_dir_name_for_cwd(cwd).ok()?;
     let commits = home_ecp.join(&repo_dir_name).join("commits");
 
-    let head_sha = head_sha_bytes(cwd)?;
-    let idx = CommitIndex::scan(&commits).ok()?;
+    let head_sha = git_cache::head_sha_bytes(cwd)?;
+    let idx = CommitIndex::scan_cached(&commits).ok()?;
     let dir = idx.find(&head_sha)?;
     Some(commits.join(dir).join("graph.bin"))
 }
 
+/// Process-cached `git rev-parse HEAD` parsed as 20 raw bytes. Kept as a
+/// re-export so existing callers (`pre_tool_use`, etc.) don't churn imports.
 pub(crate) fn head_sha_bytes(cwd: &Path) -> Option<[u8; 20]> {
-    let out = safe_exec::git()
-        .args(["rev-parse", "HEAD"])
-        .current_dir(cwd)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = std::str::from_utf8(&out.stdout).ok()?.trim();
-    if s.len() != 40 {
-        return None;
-    }
-    let mut sha = [0u8; 20];
-    hex::decode_to_slice(s, &mut sha).ok()?;
-    Some(sha)
+    git_cache::head_sha_bytes(cwd)
 }

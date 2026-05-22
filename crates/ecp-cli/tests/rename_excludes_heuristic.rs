@@ -179,7 +179,7 @@ fn mirrors_field_graph(
     let in_offsets = vec![0u32, 1, 1];
     let in_edge_idx = vec![0u32];
     let n = nodes.len();
-    let name_index: Vec<u32> = (0..n as u32).collect();
+    let name_index: Vec<ecp_core::graph::NameIndexEntry> = Vec::new();
 
     serialize_graph(&ZeroCopyGraph {
         magic: GRAPH_MAGIC,
@@ -200,6 +200,8 @@ fn mirrors_field_graph(
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     })
 }
 
@@ -238,7 +240,7 @@ fn zero_mirrors_graph(symbol: &str, file: &str) -> Vec<u8> {
         out_offsets: vec![0u32, 0],
         in_offsets: vec![0u32, 0],
         in_edge_idx: vec![],
-        name_index: vec![0u32],
+        name_index: Vec::new(),
         process_start: 1,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -246,6 +248,8 @@ fn zero_mirrors_graph(symbol: &str, file: &str) -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     })
 }
 

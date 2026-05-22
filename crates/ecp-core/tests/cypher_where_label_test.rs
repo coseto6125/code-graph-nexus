@@ -67,7 +67,7 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
         out_offsets: vec![0, 0, 0, 0],
         in_offsets: vec![0, 0, 0, 0],
         in_edge_idx: vec![],
-        name_index: vec![0, 1, 2],
+        name_index: Vec::new(),
         process_start: 3,
         traces_offsets: vec![],
         traces_data: vec![],
@@ -75,6 +75,8 @@ fn fixture_archived(bytes: &mut Vec<u8>) -> &ArchivedZeroCopyGraph {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     *bytes = rkyv::to_bytes::<Error>(&graph).unwrap().into_vec();

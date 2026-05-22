@@ -57,7 +57,7 @@ fn make_graph_with_names(names: &[&str]) -> ZeroCopyGraph {
         out_offsets: vec![0, 0],
         in_offsets: vec![0, 0],
         in_edge_idx: vec![],
-        name_index: vec![],
+        name_index: Vec::new(),
         process_start: 0,
         traces_offsets: vec![],
         traces_data: vec![],
@@ -65,6 +65,8 @@ fn make_graph_with_names(names: &[&str]) -> ZeroCopyGraph {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     }
 }
 

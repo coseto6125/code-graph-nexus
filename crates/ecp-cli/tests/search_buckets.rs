@@ -142,7 +142,7 @@ fn make_bucket_graph() -> ZeroCopyGraph {
         out_offsets: vec![0; (n + 1) as usize],
         in_offsets: vec![0; (n + 1) as usize],
         in_edge_idx: vec![],
-        name_index: (0..n).collect(),
+        name_index: Vec::new(),
         process_start: n,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -150,6 +150,8 @@ fn make_bucket_graph() -> ZeroCopyGraph {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     }
 }
 
@@ -340,7 +342,7 @@ fn empty_buckets_emit_empty_array_in_json() {
         out_offsets: vec![0; 2],
         in_offsets: vec![0; 2],
         in_edge_idx: vec![],
-        name_index: vec![0],
+        name_index: Vec::new(),
         process_start: n,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -348,6 +350,8 @@ fn empty_buckets_emit_empty_array_in_json() {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let tmp = TempDir::new().unwrap();
     let graph_path = tmp.path().join("graph.bin");
@@ -441,7 +445,7 @@ fn text_format_empty_bucket_shows_none() {
         out_offsets: vec![0; 2],
         in_offsets: vec![0; 2],
         in_edge_idx: vec![],
-        name_index: vec![0],
+        name_index: Vec::new(),
         process_start: n,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -449,6 +453,8 @@ fn text_format_empty_bucket_shows_none() {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let tmp = TempDir::new().unwrap();
     let graph_path = tmp.path().join("graph.bin");
@@ -515,7 +521,7 @@ fn each_bucket_independently_capped_at_top_k() {
         out_offsets: vec![0; (n + 1) as usize],
         in_offsets: vec![0; (n + 1) as usize],
         in_edge_idx: vec![],
-        name_index: (0..n).collect(),
+        name_index: Vec::new(),
         process_start: n,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -523,6 +529,8 @@ fn each_bucket_independently_capped_at_top_k() {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let tmp = TempDir::new().unwrap();
     let graph_path = tmp.path().join("graph.bin");

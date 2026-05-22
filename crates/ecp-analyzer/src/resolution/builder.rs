@@ -1657,6 +1657,50 @@ impl GraphBuilder {
         // happen in practice, but defensive), keep the first (most specific).
         call_metas.dedup_by_key(|m| m.edge_idx);
 
+        // Build the v9 name_index: sorted (xxh3_64(name), node_idx) pairs.
+        // O(N) hash + O(N log N) sort, run once at build end. Lookup callers
+        // (find / rename / inspect / cypher MATCH {name: ...}) drop from O(N)
+        // to O(log N + collision_count).
+        let mut name_index: Vec<ecp_core::graph::NameIndexEntry> = nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, n)| {
+                // Skip tombstone nodes (uid-collision survivors with empty name
+                // pushed by the uniqueness invariant); they have no useful name.
+                let name = string_pool.resolve(&n.name);
+                if name.is_empty() {
+                    return None;
+                }
+                Some(ecp_core::graph::NameIndexEntry {
+                    name_hash: ecp_core::uid::xxh3_64_bytes(name.as_bytes()),
+                    node_idx: idx as u32,
+                })
+            })
+            .collect();
+        name_index.sort_unstable_by_key(|e| e.name_hash);
+
+        // Build the v10 kind_offsets CSR. O(N) bucket-count + O(N) scatter.
+        // For each kind k, kind_node_idx[kind_offsets[k]..kind_offsets[k+1]]
+        // is the contiguous slice of node indices with that kind.
+        // Consumers (routes, find-event-mirrors, find-tx-patterns,
+        // find-schema-bindings) drop from O(N) to O(matches).
+        let kind_count = ecp_core::graph::NodeKind::VARIANT_COUNT;
+        let mut kind_offsets: Vec<u32> = vec![0u32; kind_count + 1];
+        for n in &nodes {
+            kind_offsets[n.kind.as_index() + 1] += 1;
+        }
+        // Prefix-sum into start positions.
+        for i in 1..kind_offsets.len() {
+            kind_offsets[i] += kind_offsets[i - 1];
+        }
+        let mut kind_node_idx: Vec<u32> = vec![0u32; nodes.len()];
+        let mut cursors: Vec<u32> = kind_offsets[..kind_count].to_vec();
+        for (idx, n) in nodes.iter().enumerate() {
+            let k = n.kind.as_index();
+            kind_node_idx[cursors[k] as usize] = idx as u32;
+            cursors[k] += 1;
+        }
+
         ZeroCopyGraph {
             magic: ecp_core::graph::GRAPH_MAGIC,
             version: ecp_core::graph::GRAPH_FORMAT_VERSION,
@@ -1667,7 +1711,7 @@ impl GraphBuilder {
             out_offsets,
             in_offsets,
             in_edge_idx,
-            name_index: Vec::new(), // To be implemented if name indexing is needed
+            name_index,
             process_start: process_start_idx,
             traces_offsets,
             traces_data,
@@ -1676,6 +1720,8 @@ impl GraphBuilder {
             route_shapes: route_shapes_out,
             call_metas,
             function_metas,
+            kind_offsets,
+            kind_node_idx,
         }
     }
 }

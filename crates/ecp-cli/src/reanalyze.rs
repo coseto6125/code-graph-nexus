@@ -22,9 +22,22 @@ use ecp_core::analyzer::types::LocalGraph;
 use rustc_hash::FxHashSet;
 use std::path::{Path, PathBuf};
 
+/// Process-wide cached pipeline. Every consumer (`reanalyze_files`,
+/// `overlay_writer`) goes through this accessor so the 20+ tree-sitter
+/// `Query` objects are constructed exactly once per process. Each
+/// `make_pipeline()` call costs ~100-300ms in grammar registrations.
+pub fn pipeline() -> &'static AnalyzerPipeline {
+    static PIPELINE: std::sync::OnceLock<AnalyzerPipeline> = std::sync::OnceLock::new();
+    PIPELINE.get_or_init(make_pipeline)
+}
+
 /// Build the production analyzer pipeline with every registered language
 /// provider. Shared between full `analyze` and partial `reanalyze` paths so
 /// they observe identical parse behaviour.
+///
+/// Most callers should use `pipeline()` instead — this constructor is
+/// retained for the `OnceLock::get_or_init` initializer and for tests that
+/// need an isolated pipeline.
 pub fn make_pipeline() -> AnalyzerPipeline {
     let mut pipeline = AnalyzerPipeline::new();
     pipeline.register_provider(Box::new(TypeScriptProvider::new().unwrap()));
@@ -100,10 +113,10 @@ pub fn reanalyze_files(repo: &Path, scope: &DiffScope, rel_paths: &[String]) -> 
     };
     let rel_paths = expanded.as_slice();
 
-    let pipeline = make_pipeline();
+    let pipeline = pipeline();
 
     match scope {
-        DiffScope::Staged => reanalyze_staged(repo, &pipeline, rel_paths),
+        DiffScope::Staged => reanalyze_staged(repo, pipeline, rel_paths),
         DiffScope::Unstaged | DiffScope::All | DiffScope::Compare(_) => {
             let pairs: Vec<(PathBuf, PathBuf)> = rel_paths
                 .iter()

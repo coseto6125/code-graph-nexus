@@ -18,7 +18,7 @@ pub const GRAPH_MAGIC: [u8; 8] = *b"ECP-RS\0\0";
 ///     1-cycle `FxHashMap` lookup; eliminates string-pool dereference on hot paths.
 /// v8: `Node.content_hash: u64` added — per-symbol xxh3_64 of raw source bytes
 ///     for T7-4/5/6 incremental skip (equal hash ↔ body unchanged).
-pub const GRAPH_FORMAT_VERSION: u32 = 8;
+pub const GRAPH_FORMAT_VERSION: u32 = 10;
 
 impl std::str::FromStr for NodeKind {
     type Err = ();
@@ -90,6 +90,45 @@ impl std::str::FromStr for RelType {
 impl RelType {
     pub const fn is_heuristic(self) -> bool {
         matches!(self, Self::MirrorsField | Self::EventTopicMirror)
+    }
+
+    /// Static variant name. Mirrors `NodeKind::as_str` so cypher's
+    /// `type(r)` scalar and `graph_query`'s rel-filter share one rendering.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Defines => "Defines",
+            Self::Imports => "Imports",
+            Self::Calls => "Calls",
+            Self::Extends => "Extends",
+            Self::Implements => "Implements",
+            Self::HasMethod => "HasMethod",
+            Self::HasProperty => "HasProperty",
+            Self::Accesses => "Accesses",
+            Self::HandlesRoute => "HandlesRoute",
+            Self::StepInProcess => "StepInProcess",
+            Self::References => "References",
+            Self::Fetches => "Fetches",
+            Self::MirrorsField => "MirrorsField",
+            Self::Publishes => "Publishes",
+            Self::Subscribes => "Subscribes",
+            Self::EventTopicMirror => "EventTopicMirror",
+            Self::OpensTxScope => "OpensTxScope",
+            Self::Overrides => "Overrides",
+        }
+    }
+}
+
+impl From<&ArchivedRelType> for RelType {
+    /// Zero-copy conversion — same pattern as `From<&ArchivedNodeKind> for
+    /// NodeKind` above. Both are `#[repr(u8)]` with identical discriminant
+    /// layout; reading via raw pointer avoids the 18-arm match that compounds
+    /// the SIGSEGV risk documented on the NodeKind impl.
+    ///
+    /// SAFETY: `ArchivedRelType` is rkyv's archive of a `#[repr(u8)]` enum
+    /// with the same discriminants as `RelType`. Bad discriminant byte only
+    /// arises from a malformed `graph.bin` that already failed `validate_header`.
+    fn from(a: &ArchivedRelType) -> Self {
+        unsafe { std::ptr::read(a as *const ArchivedRelType as *const RelType) }
     }
 }
 
@@ -211,6 +250,20 @@ impl NodeKind {
     /// previously had no path at all — `Module` here closes that gap.
     pub const fn is_qualifier(self) -> bool {
         self.is_type() || matches!(self, Self::Namespace | Self::Module)
+    }
+
+    /// Number of `NodeKind` variants. Used to size the v10 `kind_offsets`
+    /// CSR array (`length = VARIANT_COUNT + 1`). Append-only schema rule
+    /// means this only ever grows; matching the variant total at the bottom
+    /// of the enum keeps the CI green when a new kind lands.
+    pub const VARIANT_COUNT: usize = 27;
+
+    /// Discriminant as a usize, suitable for indexing into the v10
+    /// `kind_offsets` array. Matches the `#[repr(u8)]` order so the
+    /// CSR index `kind_offsets[k.as_index()..k.as_index()+1]` is the
+    /// half-open range of node indices for kind `k`.
+    pub const fn as_index(self) -> usize {
+        self as u8 as usize
     }
 
     /// Static variant name. Used by `ecp_core::uid::compute` as the first
@@ -360,6 +413,23 @@ pub struct Node {
     /// (routes, entry-points, delegate stubs) with no source span.
     /// Enables T7-4/5/6 incremental skip: equal hash ↔ body unchanged.
     pub content_hash: u64,
+}
+
+/// Sorted entry in `ZeroCopyGraph.name_index`: maps a `xxh3_64(name)` hash
+/// to the node index. The builder writes entries sorted by `name_hash`,
+/// enabling O(log N) binary-search lookup of "all nodes with this name".
+/// Hash collisions disambiguate by re-resolving the actual name from the
+/// string pool and string-comparing.
+///
+/// Practical impact: `ecp find <name>`, `ecp rename <old> <new>` (collision
+/// detection), `ecp inspect <name>`, and cypher `MATCH {name: "..."}`
+/// previously did O(N) linear scans through `graph.nodes`. With this index
+/// they become O(log N + collision_count).
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[rkyv(derive(Debug))]
+pub struct NameIndexEntry {
+    pub name_hash: u64,
+    pub node_idx: u32,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -584,7 +654,9 @@ pub struct ZeroCopyGraph {
     pub out_offsets: Vec<u32>,
     pub in_offsets: Vec<u32>,
     pub in_edge_idx: Vec<u32>,
-    pub name_index: Vec<u32>,
+    /// Sorted `(xxh3_64(name), node_idx)` pairs — see `NameIndexEntry`.
+    /// Replaces the v8 placeholder `Vec<u32>` that was never populated.
+    pub name_index: Vec<NameIndexEntry>,
 
     /// Boundary index: `nodes[process_start..]` are all `NodeKind::Process`.
     /// For node_idx >= process_start, `process_k = node_idx - process_start`
@@ -616,6 +688,17 @@ pub struct ZeroCopyGraph {
     /// Per-Function/Method/Constructor metadata. Sparse, sorted by `node_idx`.
     /// Empty when no per-language flag extraction has run yet (Task #11).
     pub function_metas: Vec<FunctionMeta>,
+
+    // ── Schema v10 additions ─────────────────────────────────────────
+    /// CSR index over `NodeKind`. Length `NodeKind::VARIANT_COUNT + 1`.
+    /// For kind `k`, the node indices with that kind live at
+    /// `kind_node_idx[kind_offsets[k.as_index()] .. kind_offsets[k.as_index() + 1]]`.
+    /// Empty Vec is the "v9 graph upgraded in place" placeholder — the
+    /// helper falls back to a linear scan when this is empty.
+    pub kind_offsets: Vec<u32>,
+    /// Flat node-index array sorted by kind, partitioned by `kind_offsets`.
+    /// Same node may NOT appear twice (each node has exactly one kind).
+    pub kind_node_idx: Vec<u32>,
 }
 
 impl ZeroCopyGraph {
@@ -631,6 +714,63 @@ impl ZeroCopyGraph {
             .binary_search_by_key(&node_idx, |m| m.node_idx)
             .ok()
             .map(|i| &self.function_metas[i])
+    }
+}
+
+impl ArchivedZeroCopyGraph {
+    /// Iterate node indices with the given kind via the v10 kind_offsets
+    /// CSR. O(result_count). Falls back to a linear scan when kind_offsets
+    /// is empty (legacy v9-shaped graph upgraded in place).
+    pub fn nodes_by_kind(&self, kind: NodeKind) -> Box<dyn Iterator<Item = u32> + '_> {
+        let kidx = kind.as_index();
+        if self.kind_offsets.len() <= kidx + 1 {
+            // No CSR — fall back to linear scan. Materialises as a Vec so the
+            // returned trait object's lifetime is independent of any borrowed
+            // iterator state.
+            let target = kind as u8;
+            return Box::new(self.nodes.iter().enumerate().filter_map(move |(i, n)| {
+                // ArchivedNodeKind has the same repr(u8) layout as NodeKind.
+                let nk: u8 = unsafe { *(&n.kind as *const _ as *const u8) };
+                if nk == target {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            }));
+        }
+        let start = self.kind_offsets[kidx].to_native() as usize;
+        let end = self.kind_offsets[kidx + 1].to_native() as usize;
+        Box::new(self.kind_node_idx[start..end].iter().map(|i| i.to_native()))
+    }
+
+    /// Look up all node indices with the given name via the v9 name_index.
+    /// O(log N + hash_collisions). Returns an iterator that filters
+    /// collisions by re-resolving each candidate's name from the string pool.
+    ///
+    /// Empty result is valid: name not present in the graph. Callers that
+    /// need to know if the symbol was indexed at all should also check
+    /// `name_index.is_empty()` to differentiate v8-built caches (empty
+    /// placeholder) from genuine "no match" — though v9-only graphs are the
+    /// only ones engine::load accepts.
+    pub fn nodes_by_name<'a>(&'a self, name: &'a str) -> impl Iterator<Item = u32> + 'a {
+        let target_hash = crate::uid::xxh3_64_bytes(name.as_bytes());
+        let entries = self.name_index.as_slice();
+        // Binary search for ANY entry with the target hash; then walk
+        // outward to collect all entries sharing that hash (sorted index).
+        let start = entries.partition_point(|e| e.name_hash.to_native() < target_hash);
+        entries
+            .iter()
+            .skip(start)
+            .take_while(move |e| e.name_hash.to_native() == target_hash)
+            .filter_map(move |e| {
+                let idx = e.node_idx.to_native();
+                let node = &self.nodes[idx as usize];
+                if node.name.resolve(&self.string_pool) == name {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
     }
 }
 
@@ -660,6 +800,8 @@ impl Default for ZeroCopyGraph {
             route_shapes: Vec::new(),
             call_metas: Vec::new(),
             function_metas: Vec::new(),
+            kind_offsets: Vec::new(),
+            kind_node_idx: Vec::new(),
         }
     }
 }
@@ -710,6 +852,8 @@ mod tests {
             route_shapes: vec![],
             call_metas: vec![],
             function_metas: vec![],
+            kind_offsets: vec![],
+            kind_node_idx: vec![],
         }
     }
 

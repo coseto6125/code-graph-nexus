@@ -159,7 +159,7 @@ fn synthetic_graph_two_nodes(rel_type: RelType, reason_str: &str) -> Vec<u8> {
     let out_offsets = vec![0u32, 1, 1];
     let in_offsets = vec![0u32, 0, 1];
     let in_edge_idx = vec![0u32];
-    let name_index: Vec<u32> = vec![0, 1];
+    let name_index: Vec<ecp_core::graph::NameIndexEntry> = Vec::new();
 
     let graph = ZeroCopyGraph {
         magic: GRAPH_MAGIC,
@@ -180,6 +180,8 @@ fn synthetic_graph_two_nodes(rel_type: RelType, reason_str: &str) -> Vec<u8> {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     rkyv::to_bytes::<Error>(&graph)
         .expect("serialize synthetic graph")

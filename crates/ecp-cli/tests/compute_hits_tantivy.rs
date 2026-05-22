@@ -112,7 +112,7 @@ fn make_config_graph() -> ZeroCopyGraph {
         out_offsets,
         in_offsets,
         in_edge_idx,
-        name_index: vec![],
+        name_index: Vec::new(),
         process_start: 6,
         traces_offsets: vec![],
         traces_data: vec![],
@@ -120,6 +120,8 @@ fn make_config_graph() -> ZeroCopyGraph {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     }
 }
 

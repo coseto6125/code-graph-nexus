@@ -8,6 +8,7 @@ pub mod commit_lookup;
 pub mod config_parser;
 pub mod engine;
 pub mod git;
+pub mod git_cache;
 pub mod git_state;
 pub mod graph_path;
 pub mod hint;

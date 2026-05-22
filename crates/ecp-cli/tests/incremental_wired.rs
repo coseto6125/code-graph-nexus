@@ -76,6 +76,8 @@ fn write_valid_empty_graph(path: &Path) {
         route_shapes: Vec::new(),
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&graph).unwrap();
     fs::write(path, &*bytes).unwrap();
@@ -329,6 +331,8 @@ fn test_version_incompatible_falls_through_to_build_l2() {
         route_shapes: Vec::new(),
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&bad_graph).unwrap();
     fs::write(&graph_path, &*bytes).unwrap();

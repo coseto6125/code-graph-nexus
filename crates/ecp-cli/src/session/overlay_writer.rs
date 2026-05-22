@@ -18,7 +18,6 @@
 
 #![allow(dead_code)]
 
-use ecp_core::analyzer::pipeline::AnalyzerPipeline;
 use ecp_core::analyzer::types::{LocalGraph, RawEventTopic, RawSchemaField, RawTxScope};
 use ecp_core::graph::NodeKind;
 use ecp_core::registry::{atomic_write_json, replace_file};
@@ -30,7 +29,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
 
 /// A single symbol span produced by `parse_to_fragment`.
 ///
@@ -221,13 +219,9 @@ fn content_hash_hex(bytes: &[u8]) -> String {
 
 static WRITE_BATCH_SEQ: AtomicU64 = AtomicU64::new(0);
 
-// Process-wide pipeline — built once, shared across all `OverlayWriter` calls.
-// OnceLock ensures construction happens exactly once even under concurrent access.
-static PIPELINE: OnceLock<AnalyzerPipeline> = OnceLock::new();
-
-fn pipeline() -> &'static AnalyzerPipeline {
-    PIPELINE.get_or_init(crate::reanalyze::make_pipeline)
-}
+// Process-wide pipeline — built once, shared across all consumers (both
+// overlay writes and reanalyze hot path) via `crate::reanalyze::pipeline()`.
+use crate::reanalyze::pipeline;
 
 fn map_node_kind(k: &NodeKind) -> SymbolKind {
     match k {

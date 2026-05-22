@@ -61,7 +61,7 @@ fn seed_repo(home_ecp: &Path, dir_name: &str, sha_dir: &str, node_names: &[&str]
         out_offsets: vec![0; (n + 1) as usize],
         in_offsets: vec![0; (n + 1) as usize],
         in_edge_idx: vec![],
-        name_index: (0..n).collect(),
+        name_index: Vec::new(),
         process_start: n,
         traces_offsets: vec![0],
         traces_data: vec![],
@@ -69,6 +69,8 @@ fn seed_repo(home_ecp: &Path, dir_name: &str, sha_dir: &str, node_names: &[&str]
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
     let bytes = rkyv::to_bytes::<Error>(&graph).unwrap();
     let commit_dir = home_ecp.join(dir_name).join("commits").join(sha_dir);

@@ -77,10 +77,9 @@ fn list_routes(
     let mut results = Vec::new();
     let mut test_results = Vec::new();
 
-    for node in graph.nodes.iter() {
-        if !matches!(&node.kind, ArchivedNodeKind::Route) {
-            continue;
-        }
+    // v10 kind_offsets CSR: iterate Route nodes only, not all N nodes.
+    for idx in graph.nodes_by_kind(ecp_core::graph::NodeKind::Route) {
+        let node = &graph.nodes[idx as usize];
         let name = node.name.resolve(&graph.string_pool);
         let (method, path) = split_route_name(name);
 
@@ -123,10 +122,9 @@ fn list_routes(
             "No production routes detected ({} test-file routes were filtered).\n\
              → Re-run with `--include-tests` to inspect them.",
             graph
-                .nodes
-                .iter()
-                .filter(|n| matches!(&n.kind, ArchivedNodeKind::Route))
-                .filter(|n| {
+                .nodes_by_kind(ecp_core::graph::NodeKind::Route)
+                .filter(|&idx| {
+                    let n = &graph.nodes[idx as usize];
                     matches!(
                         graph.files[n.file_idx.to_native() as usize].category,
                         ArchivedFileCategory::Test
@@ -250,10 +248,9 @@ fn inspect_route(
     let mut matched: Vec<usize> = Vec::new();
     let mut all_routes: Vec<(usize, String, String)> = Vec::new(); // (idx, method, path)
 
-    for (i, node) in graph.nodes.iter().enumerate() {
-        if !matches!(&node.kind, ArchivedNodeKind::Route) {
-            continue;
-        }
+    for i_u32 in graph.nodes_by_kind(ecp_core::graph::NodeKind::Route) {
+        let i = i_u32 as usize;
+        let node = &graph.nodes[i];
         let name = node.name.resolve(&graph.string_pool);
         let (method, path) = split_route_name(name);
         all_routes.push((i, method.to_string(), path.to_string()));

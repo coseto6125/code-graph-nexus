@@ -46,7 +46,7 @@ fn build_single() -> (Vec<u8>, u64) {
         out_offsets: vec![0, 0],
         in_offsets: vec![0, 0],
         in_edge_idx: vec![],
-        name_index: vec![0],
+        name_index: Vec::new(),
         process_start: 1,
         traces_offsets: vec![],
         traces_data: vec![],
@@ -54,6 +54,8 @@ fn build_single() -> (Vec<u8>, u64) {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     (
@@ -124,6 +126,8 @@ fn build_two() -> (Vec<u8>, u64, u64) {
         route_shapes: vec![],
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     (

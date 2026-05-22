@@ -154,7 +154,7 @@ fn build_graph(
         out_offsets,
         in_offsets,
         in_edge_idx,
-        name_index: vec![],
+        name_index: Vec::new(),
         process_start: 2,
         traces_offsets: vec![],
         traces_data: vec![],
@@ -162,6 +162,8 @@ fn build_graph(
         route_shapes,
         call_metas: vec![],
         function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
     };
 
     rkyv::to_bytes::<Error>(&g).unwrap().to_vec()
