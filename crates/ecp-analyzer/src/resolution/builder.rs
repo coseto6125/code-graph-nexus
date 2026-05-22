@@ -3111,14 +3111,12 @@ mod tests {
         // resolver for cross-file basename / dir-component indexing that can't
         // be moved to Pass-2 without breaking its streaming design.
         // `Implements` lifted by spec §8.2; `Defines` lifted by this PR (§8.4).
-        // Update when Fetches ships.
-        for unimplemented in &["Fetches"] {
-            assert!(
-                !parallel_buckets.contains_key(*unimplemented),
-                "RelType {unimplemented} unexpectedly emitted (parallel) — \
-                 Sub-projects 1/5 will lift this; update this assertion when they ship",
-            );
-        }
+        // Only `Fetches` remains; when it ships, delete this assertion.
+        assert!(
+            !parallel_buckets.contains_key("Fetches"),
+            "RelType Fetches unexpectedly emitted by Pass-2 — \
+             spec §8.5 will lift this; update this assertion when it ships",
+        );
 
         // Imports is intentionally post-process only (imports_edges.rs Tier-1-2-3
         // resolver); Pass-2 must never emit it.

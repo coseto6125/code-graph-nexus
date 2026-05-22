@@ -388,6 +388,16 @@ impl ArchivedRelType {
     pub const fn is_heuristic(&self) -> bool {
         matches!(self, Self::MirrorsField | Self::EventTopicMirror)
     }
+
+    /// Structural containment edges describe "where a symbol lives", not
+    /// "who calls or reaches it". Upstream / downstream impact BFS must
+    /// exclude these so File→Function Defines edges don't register as callers.
+    pub const fn is_scope_containment(&self) -> bool {
+        matches!(
+            self,
+            Self::Defines | Self::HasMethod | Self::HasProperty | Self::Imports
+        )
+    }
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Default)]
