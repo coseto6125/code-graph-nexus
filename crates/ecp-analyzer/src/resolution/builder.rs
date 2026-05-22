@@ -440,10 +440,19 @@ impl GraphBuilder {
                     // The tombstone is NOT registered in file_scoped / global_scoped,
                     // so it is invisible to all name-based lookups and cannot produce
                     // OOB edges via class_membership or overrides post-processes.
+                    // Tombstone uid+name MUST differ from the surviving node's;
+                    // otherwise `seen_uids.insert(node.uid)` would falsely flag a
+                    // duplicate and name-based queries (`n.name == X`) would still
+                    // hit the tombstone. The surviving node already owns `uid_u64`
+                    // and the original `raw_node.name`; the tombstone gets bit-
+                    // inverted uid (`!uid_u64`) plus empty name (StrRef::default,
+                    // which resolves to "" against any pool). Bit-invert keeps the
+                    // tombstone uid unique-per-collision without inventing a
+                    // counter, and "" can never match a real symbol-name query.
                     symbol_table.register_tombstone(raw_node.kind, file_meta);
                     nodes.push(Node {
-                        uid: uid_u64,
-                        name: string_pool.add(&raw_node.name),
+                        uid: !uid_u64,
+                        name: StrRef::default(),
                         file_idx,
                         kind: raw_node.kind,
                         span: raw_node.span,
