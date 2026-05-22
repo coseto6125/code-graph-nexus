@@ -186,7 +186,7 @@ fn main() {
         Commands::Summary(args) => {
             run_no_graph!(commands::summary::run(args.clone(), &cli.graph))
         }
-        Commands::Dev { command } => run_no_graph!(commands::dev::run(command.clone())),
+        Commands::Dev { command } => run_no_graph!(commands::dev::run(command.clone(), &cli.graph)),
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
         Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),

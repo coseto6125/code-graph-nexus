@@ -23,9 +23,9 @@ pub enum DevCommands {
     VerifyResolver(crate::commands::verify_resolver::VerifyResolverArgs),
 }
 
-pub fn run(cmd: DevCommands) -> Result<(), EcpError> {
+pub fn run(cmd: DevCommands, cli_graph: &std::path::Path) -> Result<(), EcpError> {
     match cmd {
-        DevCommands::UidAudit(args) => uid_audit::run(args),
+        DevCommands::UidAudit(args) => uid_audit::run(args, cli_graph),
         DevCommands::VerifyResolver(args) => crate::commands::verify_resolver::run(args),
     }
 }

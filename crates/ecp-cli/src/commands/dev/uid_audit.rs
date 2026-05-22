@@ -38,14 +38,10 @@ type ClusterRow = ((String, String, String, String), (u32, String));
 pub struct UidAuditArgs {
     /// Repository selector (path | name | dir_name). Defaults to cwd-resolved
     /// repo. Picks the most-recently-built `graph.bin` under
-    /// `~/.ecp/<dir_name>/commits/`.
+    /// `~/.ecp/<dir_name>/commits/`. For an arbitrary snapshot, pass
+    /// `--graph <path>` at the top level (the global flag).
     #[arg(long)]
     pub repo: Option<String>,
-
-    /// Path to a specific `graph.bin` (bypasses registry resolution). Useful
-    /// for auditing an arbitrary snapshot.
-    #[arg(long)]
-    pub graph: Option<PathBuf>,
 
     /// Maximum number of clusters to show (sorted by cluster size desc).
     #[arg(long, default_value_t = 40)]
@@ -65,8 +61,8 @@ pub struct UidAuditArgs {
     pub format: Option<String>,
 }
 
-pub fn run(args: UidAuditArgs) -> Result<(), EcpError> {
-    let graph_path = resolve_graph_path(&args)?;
+pub fn run(args: UidAuditArgs, cli_graph: &std::path::Path) -> Result<(), EcpError> {
+    let graph_path = resolve_graph_path(&args, cli_graph)?;
     let f = File::open(&graph_path)
         .map_err(|e| EcpError::InvalidArgument(format!("open {}: {e}", graph_path.display())))?;
     let mmap = unsafe {
@@ -93,9 +89,24 @@ pub fn run(args: UidAuditArgs) -> Result<(), EcpError> {
     Ok(())
 }
 
-fn resolve_graph_path(args: &UidAuditArgs) -> Result<PathBuf, EcpError> {
-    if let Some(p) = &args.graph {
-        return Ok(p.clone());
+/// Resolve which `graph.bin` to audit. Order of precedence:
+///
+/// 1. If the global `--graph <p>` was overridden from its default sentinel
+///    `.ecp/graph.bin` → use that path verbatim (ad-hoc snapshot audit).
+/// 2. If `--repo <sel>` is set → resolve via registry and pick the
+///    most-recently-built commit dir's `graph.bin`.
+/// 3. Otherwise → registry-resolve the cwd via the same path.
+///
+/// The `--graph` default sentinel is recognised by string match against
+/// `LEGACY_DEFAULT` (mirrors `graph_path::resolve`); any other value counts
+/// as an explicit user override.
+fn resolve_graph_path(
+    args: &UidAuditArgs,
+    cli_graph: &std::path::Path,
+) -> Result<PathBuf, EcpError> {
+    const LEGACY_DEFAULT: &str = ".ecp/graph.bin";
+    if cli_graph.as_os_str() != LEGACY_DEFAULT {
+        return Ok(cli_graph.to_path_buf());
     }
     let home_ecp = resolve_home_ecp();
     let registry = Registry::open(&home_ecp)
