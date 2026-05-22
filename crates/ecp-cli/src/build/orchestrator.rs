@@ -25,6 +25,30 @@ pub struct BuildResult {
     pub commit_dir: PathBuf,
     pub sha_hex: String,
     pub source_type: SourceType,
+    /// Background tantivy writer (CI-B). `None` for fast-path attaches or
+    /// when no L2 was built fresh. CLI `admin index` calls
+    /// [`BuildResult::join_background`] before returning to the shell so
+    /// the subprocess does not exit while tantivy is still writing temp
+    /// segments under the publish dir — that race was the source of the
+    /// `tantivy/.tmpXXX: No such file or directory` test failures on
+    /// Linux + macOS (CI-M). Long-lived callers (MCP, `auto_ensure`) can
+    /// drop the handle to keep the fire-and-forget behaviour.
+    pub tantivy_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl BuildResult {
+    /// Join the deferred tantivy writer if one was spawned. Idempotent
+    /// (handle is taken out of the result). Errors from the background
+    /// thread are logged at `warn`; tantivy failures do not bubble up
+    /// because `ecp find` already falls back to substring scan when the
+    /// index is missing.
+    pub fn join_background(&mut self) {
+        if let Some(h) = self.tantivy_handle.take() {
+            if let Err(panic) = h.join() {
+                tracing::warn!("tantivy background thread panicked: {panic:?}");
+            }
+        }
+    }
 }
 
 pub fn build_l2(worktree: &Path, target_sha: Option<&str>) -> io::Result<BuildResult> {
@@ -196,8 +220,16 @@ pub(crate) fn build_inside_locked(
         // bm25 query immediately after build is the worst-case degradation.
         // global_graph moves into the thread; the main path needs only the
         // node_count (already extracted).
+        //
+        // CI-M: handle is returned in `BuildResult.tantivy_handle` so the
+        // CLI `admin index` path joins before exit. Without joining, a
+        // subprocess invocation (e.g. a test driving `ecp admin index` then
+        // dropping its TempDir) would race with the still-writing tantivy
+        // thread → `tantivy/.tmpXXX: No such file or directory`. Long-lived
+        // callers (MCP, auto_ensure) can drop the handle to keep
+        // fire-and-forget semantics.
         let tantivy_dir = publish_dir.clone();
-        std::thread::spawn(move || {
+        let tantivy_handle = std::thread::spawn(move || {
             if let Err(e) = crate::search::TantivyEngine::build_index(&tantivy_dir, &global_graph) {
                 tracing::warn!(
                     "Full-text index build failed for {:?}: {}; exact-name queries still work",
@@ -230,6 +262,7 @@ pub(crate) fn build_inside_locked(
             commit_dir: publish_dir,
             sha_hex: sha_hex.to_string(),
             source_type,
+            tantivy_handle: Some(tantivy_handle),
         })
     })();
 
@@ -272,6 +305,7 @@ pub(crate) fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildRe
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: meta.sha,
         source_type: meta.source_type,
+        tantivy_handle: None,
     })
 }
 
@@ -583,6 +617,7 @@ pub(crate) fn wait_for_completion(building: &Path, commit_dir: &Path) -> io::Res
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: meta.sha,
         source_type: meta.source_type,
+        tantivy_handle: None,
     })
 }
 

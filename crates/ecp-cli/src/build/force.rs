@@ -106,7 +106,6 @@ fn spawn_delayed_rm_rf(path: PathBuf, delay: Duration) {
     });
 }
 
-#[derive(Debug)]
 pub struct ForceRebuildResult {
     pub sha_hex: String,
     pub source_type: SourceType,
@@ -121,6 +120,20 @@ pub struct ForceRebuildResult {
     #[allow(dead_code)]
     pub rebuilt: bool,
     pub invalidate_report: InvalidateReport,
+    /// Propagated from the inner `BuildResult.tantivy_handle`. See
+    /// `BuildResult::join_background`. `None` for the attach short-circuit
+    /// (no rebuild → no background tantivy run).
+    pub tantivy_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ForceRebuildResult {
+    pub fn join_background(&mut self) {
+        if let Some(h) = self.tantivy_handle.take() {
+            if let Err(panic) = h.join() {
+                tracing::warn!("tantivy background thread panicked: {panic:?}");
+            }
+        }
+    }
 }
 
 /// --force orchestration. See spec §4.2.
@@ -178,6 +191,7 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
                 commit_dir: attached.commit_dir,
                 rebuilt: false,
                 invalidate_report: InvalidateReport::default(),
+                tantivy_handle: attached.tantivy_handle,
             });
         }
 
@@ -220,6 +234,7 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         sha_hex,
         source_type,
         commit_dir,
+        tantivy_handle,
     } = build_inside_locked(
         worktree,
         &sha_hex,
@@ -237,6 +252,7 @@ pub fn force_rebuild_l2(worktree: &Path, target_sha: &str) -> io::Result<ForceRe
         source_type,
         commit_dir,
         rebuilt: true,
+        tantivy_handle,
         invalidate_report,
     })
 }

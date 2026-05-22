@@ -404,7 +404,7 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
             Ok(())
         }
         (false, None) => {
-            let r = crate::build::orchestrator::build_l2(&worktree, None)
+            let mut r = crate::build::orchestrator::build_l2(&worktree, None)
                 .map_err(|e| format!("build_l2 failed: {e}"))?;
             if !args.quiet {
                 eprintln!(
@@ -414,10 +414,17 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
                     start.elapsed().as_secs_f32(),
                 );
             }
+            // CI-M: wait for the background tantivy writer before returning
+            // to the shell. The user-visible "l2.built" line was already
+            // printed with the foreground wall-clock so the CI-B perf win
+            // remains observable; this join only prevents the subprocess
+            // from exiting while tantivy still has open temp segments under
+            // the publish dir (which raced with TempDir cleanup in tests).
+            r.join_background();
             Ok(())
         }
         (true, _) => {
-            let r = crate::build::force::force_rebuild_l2(&worktree, &sha)
+            let mut r = crate::build::force::force_rebuild_l2(&worktree, &sha)
                 .map_err(|e| format!("force rebuild failed: {e}"))?;
             if !args.quiet {
                 eprintln!(
@@ -430,6 +437,7 @@ pub fn run(args: IndexArgs) -> Result<(), String> {
                     r.invalidate_report.stale_skipped,
                 );
             }
+            r.join_background();
             Ok(())
         }
     }
