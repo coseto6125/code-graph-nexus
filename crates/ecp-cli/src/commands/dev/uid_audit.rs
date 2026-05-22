@@ -362,6 +362,7 @@ mod tests {
     use super::*;
 
     // Helper: build a hint string with \x1F separators (mirrors builder.rs emit).
+    #[allow(clippy::too_many_arguments)]
     fn make_hint(
         bs_kind: &str,
         fk: &str,
