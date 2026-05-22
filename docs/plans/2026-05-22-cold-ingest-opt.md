@@ -1,7 +1,7 @@
 # ecp Cold-Ingest Pipeline Optimization
 
 **Date:** 2026-05-22
-**Status:** In flight — depends on `perf/ecp-multilayer-opt` (PR #333)
+**Status:** Shipped — depends on `perf/ecp-multilayer-opt` (PR #333)
 **Scope:** Cold reindex hot-path fixes; complements warm-query roadmap.
 
 ## 1. Context
@@ -74,10 +74,24 @@ truth instead of guesses.
 | # | Fix | Severity | Status | Commit | Evidence |
 |---|---|---|---|---|---|
 | **CI-INST** | ECP_PROF phase timings | tooling | shipped | ad54073b | orchestrator + step4 phase splits |
-| CI-A | Defer cache_puts to background | 🔴 -11% | — | — | `admin/index.rs:251-264` blocks for 0.34s |
-| CI-B | Defer tantivy index to background | 🔴 -10% | — | — | `admin/index.rs:323-331` blocks for 0.32s |
-| CI-C | parse_only investigation | 🟡 51% | research | — | `admin/index.rs:235` — already rayon, what else? |
-| CI-D | pass3 community Leiden | 🟡 6% | research | — | `builder.rs:1304` 0.19s; rayon? optional? |
+| CI-A | Defer cache_puts to background | 🔴 -11% | shipped | 4b706e5e | dedicated thread (NOT rayon) avoids pass2 contention |
+| CI-B | Defer tantivy index to background | 🔴 -10% | shipped | (next) | dispatched in orchestrator AFTER rename — stale-path race resolved |
+| CI-C | parse_only investigation | 🟡 51% | **deferred** | — | already rayon; sub-improvements need provider-level work |
+| CI-D | pass3 community Leiden | 🟡 6% | **deferred** | — | algorithmic — graph community detection itself, not parallelism |
+
+**Final benchmark (.sample_repo, 16814 files, 262k nodes, 3-run median):**
+
+| Run | Time | Δ |
+|---|---|---|
+| Baseline (main) | 3.13s | — |
+| After CI-A | 2.58s | -17.6% |
+| After CI-A + CI-B | **2.28s** | **-27.2%** |
+
+Tantivy index continues to be built in background after the user-visible
+"l2.built" line. A `ecp find --mode bm25` query issued within ~300ms of
+the rebuild will fall back to substring scan (already the documented
+no-tantivy path), then ranked BM25 kicks back in once the background
+finishes.
 
 ## 5. Deferred (with rationale)
 
@@ -103,3 +117,46 @@ truth instead of guesses.
   - Target: total wall time ≤ 2.5s (from 3.13s) — ~20% reduction
   - User-visible "ready to query" time ≤ 2.5s (graph.bin durable)
 - A "Things to highlight" section gets added at end-of-PR.
+
+## 7. Things to highlight (post-implementation)
+
+- **The original roadmap was wrong about where the time lived.** First-pass
+  scope (C1 par_iter `add_graph`, C3 Arc `path_aliases`, C7 file-node loop)
+  was based on misread profile output that confused step4 total (0.04s on
+  the small ecp self-scan corpus) with the orchestrator's full publish
+  wall. Once `.sample_repo` was instrumented, the real distribution
+  emerged and the roadmap was rewritten in the next commit. Lesson:
+  match the benchmark target to the real workload before scoping work —
+  ecp self-scan (10k files) was misleading; `.sample_repo` (17k files,
+  262k nodes) was the right target per the eywa hook's "14343 files, 2.7s
+  baseline" reference.
+- **CI-A's first draft used rayon for the background writes** and caused
+  `pass2_imports_resolve` to jump from 36ms → 225ms (6×) due to global
+  thread pool contention. The fix was a single dedicated `std::thread`
+  doing sequential `atomic_write_bytes_no_fsync` — kernel-buffered writes
+  saturate a single thread at disk speed without poaching CPU from the
+  foreground. The commit body documents this trap so future maintainers
+  don't "re-parallelize" the background writer.
+- **CI-B's first draft caused a stale-path race**. Dispatching tantivy
+  from inside `run_analyzer_for_paths` left the background thread writing
+  to `building/` while the orchestrator renamed `building/ → publish_dir`
+  underneath it. Tantivy failed with "Failed to acquire Lockfile … NotFound"
+  and the `review_first_run_builds_v2_index_then_loads_it` test flaked.
+  Fix: move the dispatch into the orchestrator, AFTER the rename returns.
+  `run_analyzer_for_paths` now returns `(node_count, ZeroCopyGraph)` so the
+  orchestrator owns the graph and can transfer it to the thread by move.
+- **`run_analyzer_for_paths` signature change is internal**. The only
+  call site is `build_inside_locked`; the test
+  `build_orchestrator::tests::lock_is_released_on_drop` is `#[ignore]`'d
+  per its module doc, so no fixtures needed updating.
+- **CI-C parse_only stays deferred even though it's 51% of total**. The
+  loop is already rayon-parallel; meaningful gains require provider-level
+  work (e.g. mmap source bytes instead of `fs::read_to_string`, profile
+  individual `Provider::parse_file` implementations). That's a multi-PR
+  scope and the existing wall is already inside the project budget.
+- **CI-D Leiden community detection stays deferred**. The 0.19s `pass3`
+  wall comes from the graph-algorithmic work itself (community detection
+  on 262k-node graph), not from a missing parallelism opportunity. The
+  algorithm's intermediate state has cross-iteration dependencies that
+  resist embarrassingly-parallel decomposition without changing the
+  community-assignment semantics.
