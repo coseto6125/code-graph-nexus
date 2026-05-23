@@ -112,3 +112,26 @@
   method: (identifier) @delegator_method
   (#match? @delegator_method "^(def_delegator|def_delegators|delegate)$")
   arguments: (argument_list) @delegator_args)
+
+;; ---- BlindSpot patterns (FU-001 P5b) ----
+;; eval(<expr>) — runtime Ruby code execution.
+((call
+   method: (identifier) @_m) @blind.eval
+  (#eq? @_m "eval"))
+
+;; <expr>.instance_eval — runtime code execution in the receiver's context.
+;; Matches both block form `obj.instance_eval { ... }` and string form
+;; `obj.instance_eval("code")`.
+((call
+   receiver: (_)
+   method: (identifier) @_m) @blind.instance_eval
+  (#eq? @_m "instance_eval"))
+
+;; <expr>.send(<arg>, ...) — dynamic method dispatch. Parser gates emission
+;; on the first argument being non-literal-symbol/non-literal-string (per
+;; Constraint 2); `obj.send(:to_s)` and `obj.send("to_s")` are statically
+;; resolvable and intentionally skipped.
+((call
+   receiver: (_)
+   method: (identifier) @_m) @blind.send
+  (#eq? @_m "send"))

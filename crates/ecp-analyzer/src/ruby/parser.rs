@@ -1,16 +1,49 @@
 use super::receiver_types::extract_ruby_calls;
 use super::spec::RubySpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
+use crate::framework_helpers::{detect_ast_framework_patterns, node_span, FrameworkPatternSpec};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode, RawRoute};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawImport, RawNode, RawRoute};
 use ecp_core::graph::NodeKind;
 use std::collections::HashMap;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Node, Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch
+/// in `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "rb-eval",
+        "eval(<expr>) — runtime Ruby code execution; argument is not statically determinable as a callable",
+    ),
+    (
+        "rb-instance-eval",
+        "<expr>.instance_eval { ... } — runtime code execution in receiver context; block contents bound to receiver at call time",
+    ),
+    (
+        "rb-send",
+        "<expr>.send(<var>, ...) — dynamic method dispatch through a non-literal name; target method resolved at runtime",
+    ),
+];
+
+/// True iff the first positional argument of `call_node` is a Ruby symbol
+/// literal (`:method`) or string literal (`"method"`) — the cases where
+/// `send` is statically resolvable per Constraint 2.
+fn ruby_first_arg_is_literal_callable(call_node: &Node) -> bool {
+    let Some(args) = call_node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let Some(first) = args.named_child(0) else {
+        return false;
+    };
+    matches!(
+        first.kind(),
+        "simple_symbol" | "symbol_array" | "string" | "bare_symbol" | "delimited_symbol"
+    )
+}
 
 /// Per upstream `ruby.ts:156-178` `astFrameworkPatterns`.
 const RUBY_FRAMEWORKS: &[FrameworkPatternSpec] = &[
@@ -167,6 +200,7 @@ impl LanguageProvider for RubyProvider {
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
         let mut routes: Vec<RawRoute> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
         // Mixin module additions, applied after primary node emission. Each
         // entry is (module_name, call_line) — we attach to the smallest
         // enclosing class node by span containment. Document-order traversal
@@ -189,6 +223,10 @@ impl LanguageProvider for RubyProvider {
         let idx_const_alias_source = self.query.capture_index_for_name("const_alias.source");
         let idx_delegator_method = self.query.capture_index_for_name("delegator_method");
         let idx_delegator_args = self.query.capture_index_for_name("delegator_args");
+
+        let idx_blind_eval = self.query.capture_index_for_name("blind.eval");
+        let idx_blind_instance_eval = self.query.capture_index_for_name("blind.instance_eval");
+        let idx_blind_send = self.query.capture_index_for_name("blind.send");
 
         // Pending delegator emissions: (target, method, line). Applied after
         // the match loop so we can cross-check against `pending_mixins` to
@@ -274,6 +312,32 @@ impl LanguageProvider for RubyProvider {
                     delegator_method_node = Some(cap.node);
                 } else if cap_idx == idx_delegator_args {
                     delegator_args_node = Some(cap.node);
+                } else if cap_idx == idx_blind_eval {
+                    let (kind, hint) = BLIND_SPEC[0];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if cap_idx == idx_blind_instance_eval {
+                    let (kind, hint) = BLIND_SPEC[1];
+                    blind_spots.push(BlindSpot {
+                        kind: kind.to_string(),
+                        file_path: path.to_path_buf(),
+                        span: node_span(&cap.node),
+                        hint: hint.to_string(),
+                    });
+                } else if cap_idx == idx_blind_send {
+                    if !ruby_first_arg_is_literal_callable(&cap.node) {
+                        let (kind, hint) = BLIND_SPEC[2];
+                        blind_spots.push(BlindSpot {
+                            kind: kind.to_string(),
+                            file_path: path.to_path_buf(),
+                            span: node_span(&cap.node),
+                            hint: hint.to_string(),
+                        });
+                    }
                 }
             }
 
@@ -660,7 +724,7 @@ impl LanguageProvider for RubyProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
