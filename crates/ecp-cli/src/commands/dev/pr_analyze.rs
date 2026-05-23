@@ -138,18 +138,24 @@ struct ImpactBySymbol {
 /// {
 ///   "status": "success",
 ///   "baseline": "<ref>",
+///   "changed_paths": [ "<repo-relative path>", ... ],
 ///   "changed_symbols": [ { "name", "kind", "filePath", "line", "change_type" } ],
 ///   "impact_by_symbol": [ { "symbol", "filePath", "impact": [ { "name", "depth", ... } ] } ],
 ///   "hidden_heuristic_edges": 0
 /// }
 /// ```
-/// There is no flat `impact_set` or `changed_files` field; those must be
-/// derived from `changed_symbols[*].file_path` and
-/// `impact_by_symbol[*].impact[depth>0]` respectively.
-// Will be wired into `run()` in a later task.
+/// `changed_paths` is the un-filtered `git diff --name-only` list (includes
+/// docs / whitespace-only / comment-only files that produce zero
+/// `changed_symbols`). Used by `run()` for area classification, replacing
+/// what was previously a second `git diff` subprocess.
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct ImpactJson {
+    /// All files touched between baseline and HEAD (un-filtered).
+    /// Empty by default so older `ecp` binaries that don't emit the field
+    /// still deserialize cleanly (deprecation-friendly fallback).
+    #[serde(default)]
+    pub changed_paths: Vec<String>,
     /// Symbols whose source body changed between baseline and HEAD.
     #[serde(default)]
     pub changed_symbols: Vec<ChangedSymbol>,
@@ -160,14 +166,12 @@ struct ImpactJson {
 
 impl ImpactJson {
     /// Files that contain at least one *semantically* changed symbol.
-    /// Distinct from `git_diff_files(...)` (used by `run()` for area
-    /// classification): symbol-derived view skips whitespace-only and
-    /// comment-only diffs, where the git-diff view includes them. PR #390
-    /// switched `run()` to git-diff so docs-only PRs classify correctly,
-    /// but this view stays in the library surface so future LLM consumers
-    /// can ask "which files actually had code changes?" without re-deriving
-    /// from `changed_symbols` themselves. Mirrors `impact_set_names` /
-    /// `changed_symbol_names` for derived-view symmetry on ImpactJson.
+    /// Distinct from `changed_paths`: this view skips whitespace-only and
+    /// comment-only diffs (those produce zero `changed_symbols`). Kept on
+    /// the library surface so LLM consumers can ask "which files actually
+    /// had code changes?" without re-deriving from `changed_symbols`.
+    /// Mirrors `impact_set_names` / `changed_symbol_names` for derived-view
+    /// symmetry on ImpactJson.
     #[allow(dead_code)]
     pub fn changed_files(&self) -> Vec<String> {
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -259,21 +263,15 @@ pub struct PrAnalyzeArgs {
 
 pub fn run(args: PrAnalyzeArgs, _cli_graph: &std::path::Path) -> Result<(), EcpError> {
     // 1. Shell out to ecp impact to get changed symbols + impact closure.
-    //    Comment-only or whitespace-only diffs return 0 changed_symbols, so
-    //    impact.changed_files() (which derives from changed_symbols[].filePath)
-    //    would be empty even when files DID change — pull the file list
-    //    directly from git instead so area classification still works for
-    //    docs/comment-only PRs.
+    //    `impact.changed_paths` is the un-filtered `git diff --name-only`
+    //    list emitted by the subprocess (FU-044) — single source of truth,
+    //    no second subprocess. Comment-only / whitespace-only / docs-only
+    //    diffs still appear here even though they produce zero
+    //    `changed_symbols`, so area classification works for docs PRs.
     let impact = run_impact_subprocess(&args.baseline)?;
-    // PR #390: use git diff so comment-only / whitespace-only changes (which
-    // produce zero `changed_symbols`) still classify into the right area.
-    // FU-043: `classify_area` is now generic over `AsRef<Path>` so the
-    // `Vec<String>` from git diff can feed it without a `Vec<PathBuf>`
-    // shim allocation.
-    let changed_files = git_diff_files(&args.baseline, &args.pr_head)?;
 
     // 2. Classify
-    let area = classify_area(&changed_files);
+    let area = classify_area(&impact.changed_paths);
     let impact_set_names = impact.impact_set_names();
     let risk = classify_risk(impact_set_names.len());
 
@@ -376,31 +374,6 @@ fn git_rev_parse(reference: &str) -> Result<String, EcpError> {
         });
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// Lists files changed between baseline..pr_head, regardless of whether the
-/// diff carried semantic symbol changes. Needed because comment-only edits
-/// (typo fixes, doc tweaks, WHY-comment adds) don't produce changed_symbols
-/// in `ecp impact` output but DO change files — `classify_area` still needs
-/// to know the touched paths to assign the right Mergify queue.
-fn git_diff_files(baseline: &str, pr_head: &str) -> Result<Vec<String>, EcpError> {
-    let out = safe_exec::git()
-        .args(["diff", "--name-only", &format!("{baseline}..{pr_head}")])
-        .output()
-        .map_err(EcpError::Io)?;
-    if !out.status.success() {
-        return Err(EcpError::GitDiff {
-            reason: format!(
-                "git diff --name-only {baseline}..{pr_head}: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ),
-        });
-    }
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect())
 }
 
 fn path_area(p: &Path) -> Option<Area> {
@@ -725,12 +698,38 @@ mod tests {
         assert_eq!(parsed.changed_symbol_names(), vec!["FnA", "MethodB"]);
         // 3 unique callers at depth > 0: CallerC, CallerD, CallerE
         assert_eq!(parsed.impact_set_names().len(), 3);
-        // file_path still parses (even though run() reads files from git
-        // diff directly now — see ImpactJson note re: changed_files removal).
         assert_eq!(
             parsed.changed_symbols[0].file_path,
             "crates/ecp-cli/src/commands/impact.rs"
         );
+        // FU-044: `changed_paths` carries the un-filtered git-diff list,
+        // including docs-only files (README.md) that produce zero
+        // `changed_symbols`. `run()` uses this for area classification
+        // instead of a second `git diff` subprocess.
+        assert_eq!(
+            parsed.changed_paths,
+            vec![
+                "crates/ecp-cli/src/commands/impact.rs".to_string(),
+                "README.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_impact_json_legacy_without_changed_paths() {
+        // Older ecp binaries don't emit `changed_paths` — the deserializer
+        // must default to an empty Vec so `run()` doesn't panic when run
+        // against a pre-FU-044 subprocess. Area classification will simply
+        // see no paths and fall back to `None` (default queue).
+        let legacy = r#"{
+            "status": "success",
+            "baseline": "HEAD~1",
+            "changed_symbols": [],
+            "impact_by_symbol": []
+        }"#;
+        let parsed: ImpactJson = serde_json::from_str(legacy).unwrap();
+        assert!(parsed.changed_paths.is_empty());
+        assert!(parsed.changed_symbols.is_empty());
     }
 
     use std::cell::RefCell;
