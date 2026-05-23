@@ -28,8 +28,18 @@ Options:
           Comma-separated relation types to follow (calls, extends, ...)
       --repo <REPO>
           Repository selector
+      --test-coverage
+          Coverage gap analysis: for each touched symbol, classify by test-caller presence (uncovered / partial / covered). Uses FunctionMeta.is_test flag from per-language extraction. Outputs uncovered symbols first to support LLM PR review ("X 改了沒測試"). Implies --include-tests during traversal so test callers are reachable from the walker
+      --include-heuristic
+          Include heuristic edges (MirrorsField, EventTopicMirror) in BFS. Default off keeps blast-radius results noise-free
+      --confidence-threshold <CONFIDENCE_THRESHOLD>
+          Informational confidence gate — promotes heuristic edges when T4-7/T5-33 emit per-edge tiers. Currently controls the --explain-confidence report [default: 0.85]
+      --explain-confidence
+          Emit explain_confidence block with threshold + per-tier filtered counts
       --format <FORMAT>
           Output format (mostly internal — agent doesn't set this)
+      --literal <VALUE>
+          List sites of a path-shaped string literal by exact value. Mutually exclusive with --target/--baseline/<name>. Returns JSON with each site's file, line, enclosing fn, and sink classification (`sink:read` / `sink:write` / `sink:open-read` / `sink:join` / etc). Designed for LLM split-brain queries: `ecp impact --literal session_meta.json` answers "where is this file read or written?" without writing cypher
       --graph <GRAPH>
           Path to the graph.bin file [default: .ecp/graph.bin]
   -h, --help

@@ -131,6 +131,9 @@ ecp inspect validateUser
 # 5. Every HTTP route in the repo (declarative @Get + imperative app.get())
 ecp routes
 ecp routes /api/users --method POST     # route → handler → caller chain
+
+# 6. Path-literal site lookup — "who reads / writes this file?"
+ecp impact --literal session_meta.json  # 14 langs; sink:read / sink:write / sink:join / sink:free
 ```
 
 Read-side commands accept `--format text|json|toon`. Default per command is the token-cheapest representation (mostly `toon`; `find` defaults to `text`; `cypher`/`summary` default to `json`).
