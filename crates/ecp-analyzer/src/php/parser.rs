@@ -208,6 +208,7 @@ struct PhpCaptureIndices {
     namespace: Option<u32>,
     trait_: Option<u32>,
     enum_: Option<u32>,
+    enum_case_node: Option<u32>,
     const_: Option<u32>,
     route_call: Option<u32>,
     route_scope: Option<u32>,
@@ -257,6 +258,7 @@ impl PhpProvider {
             namespace: query.capture_index_for_name("namespace"),
             trait_: query.capture_index_for_name("trait"),
             enum_: query.capture_index_for_name("enum"),
+            enum_case_node: query.capture_index_for_name("enum_case_node"),
             const_: query.capture_index_for_name("const"),
             route_call: query.capture_index_for_name("route.call"),
             route_scope: query.capture_index_for_name("route.scope"),
@@ -322,6 +324,7 @@ impl LanguageProvider for PhpProvider {
         let idx_namespace = idx.namespace;
         let idx_trait = idx.trait_;
         let idx_enum = idx.enum_;
+        let idx_enum_case_node = idx.enum_case_node;
         let idx_const = idx.const_;
 
         let idx_route_call = idx.route_call;
@@ -419,6 +422,7 @@ impl LanguageProvider for PhpProvider {
                     || Some(cap_idx) == idx_namespace
                     || Some(cap_idx) == idx_trait
                     || Some(cap_idx) == idx_enum
+                    || Some(cap_idx) == idx_enum_case_node
                     || Some(cap_idx) == idx_const
                 {
                     if root_span_node.is_none() {
