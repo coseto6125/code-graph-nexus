@@ -335,30 +335,35 @@ fn go_implements_edge_raw_fixture() {
 
 // ── Kotlin ────────────────────────────────────────────────────────────────────
 //
-// Kotlin's tree-sitter grammar uses `class_declaration` for both class and
-// interface; the ecp parser does not yet emit NodeKind::Interface for Kotlin
-// interfaces. Raw fixture asserts the kind-based dispatch logic fires correctly
-// when a future parser update promotes Kotlin interfaces.
+// fwcd/tree-sitter-kotlin parses both `class` and `interface` as
+// `class_declaration`; `is_interface_class()` in kotlin/parser.rs demotes the
+// emitted NodeKind to `Interface` when the first keyword child is `interface`.
 
 #[test]
-fn kotlin_implements_edge_raw_fixture() {
-    let iface_graph = empty_graph(
-        "src/IRepo.kt",
-        vec![raw_node("IRepo", NodeKind::Interface, vec![])],
-    );
-    let impl_graph = empty_graph(
-        "src/InMemoryRepo.kt",
-        vec![
-            raw_node("InMemoryRepo", NodeKind::Class, vec!["IRepo"]),
-            raw_node("BaseRepo", NodeKind::Class, vec![]),
-            raw_node("CachedRepo", NodeKind::Class, vec!["BaseRepo"]),
-        ],
-    );
+fn kotlin_implements_edge() {
+    use ecp_analyzer::kotlin::parser::KotlinProvider;
+    use ecp_core::analyzer::provider::LanguageProvider;
+
+    let provider = KotlinProvider::new().expect("KotlinProvider::new");
+
+    let iface_src = b"interface IRepo { fun find(id: String): String }
+open class BaseRepo";
+    let impl_src = b"class InMemoryRepo : IRepo {
+    override fun find(id: String): String = id
+}
+class CachedRepo : BaseRepo()";
+
+    let iface_graph = provider
+        .parse_file("IRepo.kt".as_ref(), iface_src)
+        .expect("parse IRepo.kt");
+    let impl_graph = provider
+        .parse_file("InMemoryRepo.kt".as_ref(), impl_src)
+        .expect("parse InMemoryRepo.kt");
 
     let edges = build_edges(iface_graph, impl_graph);
     assert!(
         has_rel(&edges, RelType::Implements),
-        "expected Implements edge (InMemoryRepo → IRepo interface); got: {edges:?}"
+        "expected Implements edge (InMemoryRepo → IRepo); got: {edges:?}"
     );
     assert!(
         has_rel(&edges, RelType::Extends),
