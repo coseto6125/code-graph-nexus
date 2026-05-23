@@ -70,14 +70,16 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        # Swatinem with cache-targets: false preserves the original intent
+        # (cache deps download, never cache target/ — LTO fat link must
+        # always rerun on workspace crates, see Build step note below).
+        # shared-key per cross-build target so x86_64-windows and
+        # aarch64-darwin don't trample each other's registry layout.
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-registry-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-registry-${{ matrix.target }}-
+          shared-key: release-${{ matrix.target }}
+          cache-targets: false
+          cache-on-failure: true
 
       - name: Build release binary
         # target/ is intentionally NOT cached so LTO fat link always runs on
