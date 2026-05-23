@@ -176,9 +176,10 @@ pub fn classify_sink(callee: Option<&str>) -> (SinkKind, SinkConfidence) {
         // ── HIGH-confidence writes ────────────────────────────────────
         "write_all" | "atomic_write" | "atomic_write_json" | "writeFile" | "writeFileSync"
         | "WriteFile" | "WriteAllText" | "WriteAllBytes" | "WriteAllLines"
-        | "file_put_contents" | "writeAsString" | "writeAsStringSync" | "writeAsBytes" => {
-            (Write, High)
-        }
+        | "file_put_contents" | "writeAsString" | "writeAsStringSync" | "writeAsBytes"
+        // Kotlin stdlib + java.io.File.writeText/writeBytes; symmetric with
+        // the readText/readBytes/readLines listed in HIGH reads above.
+        | "writeText" | "writeBytes" | "appendText" | "appendBytes" => (Write, High),
 
         // ── MEDIUM (overloaded with non-file IO writes) ───────────────
         "write" => (Write, Medium),

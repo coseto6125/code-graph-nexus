@@ -72,29 +72,109 @@ fn strip_quotes(raw: &str) -> Option<&str> {
 }
 
 /// Climb the AST to find the enclosing Kotlin call expression callee.
-/// Kotlin call nodes: `call_expression > value_arguments > value_argument > string_literal`
+/// Kotlin tree-sitter shape for `File("x.json").readText()`:
+/// ```text
+/// call_expression                     (outer — readText() call)
+///   navigation_expression
+///     call_expression                 (inner — File(...) call)
+///       simple_identifier "File"
+///       call_suffix
+///         value_arguments
+///           value_argument
+///             string_literal          ← str_node
+///     navigation_suffix
+///       simple_identifier "readText"
+///   call_suffix (empty args)
+/// ```
+///
+/// FU-2026-05-23-023 — for chained calls, promote the callee from the
+/// inner constructor (`File`) to the outer terminal method (`readText`)
+/// when that name is in the high-confidence read/write/ext-change list.
+/// Constructor names alone classify as `sink:join|medium` — the LLM
+/// can't tell read-only from write-only without the promotion.
 fn enclosing_callee(str_node: Node<'_>, source: &[u8]) -> Option<String> {
-    // value_argument or string_literal may be nested in different ways
+    // string_literal → value_argument → value_arguments
     let mut cur = str_node.parent()?;
-    // Handle `value_argument` wrapper
     if cur.kind() == "value_argument" {
         cur = cur.parent()?;
     }
     if cur.kind() != "value_arguments" {
         return None;
     }
-    let call = cur.parent()?;
-    if call.kind() != "call_expression" {
+    // value_arguments may sit directly under call_expression (older grammar)
+    // or under a `call_suffix` wrapper (current). Accept either.
+    let mut parent = cur.parent()?;
+    if parent.kind() == "call_suffix" {
+        parent = parent.parent()?;
+    }
+    if parent.kind() != "call_expression" {
         return None;
     }
-    // The callee is the `callsuffix` or the leading expression child
-    // In Kotlin grammar: `call_expression > (navigation_expression | simple_identifier) > call_suffix`
-    // The first child of call_expression holds the callee
+    let inner_call = parent;
+
+    // Try chain-terminal promotion first; fall back to the inner call's
+    // leading callee when the chain doesn't yield a whitelisted name.
+    if let Some(terminal) = terminal_chained_callee(inner_call, source) {
+        if is_high_confidence_chain_terminal(&terminal) {
+            return Some(terminal);
+        }
+    }
+    leading_callee_name(inner_call, source)
+}
+
+/// Walk outward from `inner_call` through one `navigation_expression`
+/// wrapper to find the outer chained `call_expression`, and return its
+/// method name. Returns `None` when the inner call isn't chained.
+fn terminal_chained_callee(inner_call: Node<'_>, source: &[u8]) -> Option<String> {
+    let nav = inner_call.parent()?;
+    if nav.kind() != "navigation_expression" {
+        return None;
+    }
+    let outer = nav.parent()?;
+    if outer.kind() != "call_expression" {
+        return None;
+    }
+    // navigation_expression's last child is `navigation_suffix` whose
+    // last child is the method `simple_identifier`.
+    let mut c = nav.walk();
+    let mut method_node: Option<Node<'_>> = None;
+    for child in nav.children(&mut c) {
+        if child.kind() == "navigation_suffix" {
+            method_node = Some(child);
+        }
+    }
+    let suffix = method_node?;
+    let mut c = suffix.walk();
+    for child in suffix.children(&mut c) {
+        if child.kind() == "simple_identifier" {
+            return std::str::from_utf8(&source[child.start_byte()..child.end_byte()])
+                .ok()
+                .map(str::to_string);
+        }
+    }
+    None
+}
+
+/// Names that justify chain-terminal promotion. Each must match a
+/// `classify_sink` HIGH-confidence entry; otherwise the LLM gains nothing
+/// from the override.
+fn is_high_confidence_chain_terminal(name: &str) -> bool {
+    matches!(
+        name,
+        // reads (Kotlin stdlib + java.io.File)
+        "readText" | "readBytes" | "readLines"
+        // writes
+        | "writeText" | "writeBytes" | "appendText" | "appendBytes"
+    )
+}
+
+/// Resolve the leading callee name for a Kotlin `call_expression`.
+/// Mirrors the original logic — `navigation_expression` member ident,
+/// otherwise raw text.
+fn leading_callee_name(call: Node<'_>, source: &[u8]) -> Option<String> {
     let callee_node = call.child(0)?;
-    // For `foo.bar(...)` it's a `navigation_expression`; for `bar(...)` an `identifier`
     match callee_node.kind() {
         "navigation_expression" => {
-            // Last child of navigation_expression is the member name
             let count = callee_node.child_count();
             if count == 0 {
                 return None;
