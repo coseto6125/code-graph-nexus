@@ -153,42 +153,23 @@ jobs:
           echo "::endgroup::"
 
   # ==================== Cross-Platform Tests (nextest) ====================
-  # Sharding strategy is OS-dependent. `cargo nextest --partition count:N/T`
-  # splits ~3177 tests into T partitions; all shards compile the same target/,
-  # so the Swatinem rust-cache `shared-key` is identical across shards —
-  # first finisher saves, others no-op (GHA cache "exists, skip" semantics).
+  # One nextest job per platform (no sharding). Sharding (PR #362) was
+  # reverted because 9–12 concurrent jobs per push push the free-tier
+  # GHA concurrency window into rate-limit territory when multiple PR
+  # workflows run in parallel. With this matrix, push:main fires 3 test
+  # jobs; PR fires 0 (entire job gated below).
   #
-  # - Linux (T=4): runner pool is abundant → 4 shards truly parallel,
-  #   wall-clock per platform ~7m → ~2m45s.
-  # - Windows (T=4): runner pool was measured at queue ~2-25s on the
-  #   pre-merge ci-windows-nightly.yml, so 4-way sharding genuinely
-  #   parallelises (exec ~870s un-sharded → ~220s per shard, ~5× wins).
-  # - macOS (T=1): GitHub free-tier macOS pool serialises allocation
-  #   (1–2 concurrent), so 4-way sharding pays queue tax. Measured:
-  #     sharded:    queue 600s + exec 250s = ~850s
-  #     unsharded:  queue 370s + exec 430s = ~800s
-  #   macOS stays as single job until runner availability changes.
-  #
-  # Aggregated status is exposed via the `test-result` job below as a single
-  # required check ("Test (all platforms)") — branch protection cares about
-  # that one name, not the individual shard contexts.
+  # Aggregated status is exposed via the `test-result` job below as a
+  # single required check ("Test (all platforms)") — branch protection
+  # cares about that one name, not the individual OS contexts.
   test:
-    name: Test on ${{ matrix.os }} (shard ${{ matrix.shard }}/${{ matrix.total }})
+    name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: detect-changes
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest,  shard: 1, total: 4 }
-          - { os: ubuntu-latest,  shard: 2, total: 4 }
-          - { os: ubuntu-latest,  shard: 3, total: 4 }
-          - { os: ubuntu-latest,  shard: 4, total: 4 }
-          - { os: windows-latest, shard: 1, total: 4 }
-          - { os: windows-latest, shard: 2, total: 4 }
-          - { os: windows-latest, shard: 3, total: 4 }
-          - { os: windows-latest, shard: 4, total: 4 }
-          - { os: macos-latest,   shard: 1, total: 1 }
+        os: [ubuntu-latest, macos-latest, windows-latest]
     # Heavy test matrix only runs on push-to-main / merge_group / workflow_dispatch
     # — PR-time skips entirely to keep iteration latency low. PR-time signal
     # comes from `code-quality` (fmt + clippy) + `audit` + `actionlint`; full
@@ -207,7 +188,7 @@ jobs:
     steps:
       - name: Short-circuit for docs-only PR
         if: needs.detect-changes.outputs.code != 'true'
-        run: echo "✓ Docs-only PR — skipping cargo nextest on ${{ matrix.os }} shard ${{ matrix.shard }}/${{ matrix.total }}"
+        run: echo "✓ Docs-only PR — skipping cargo nextest on ${{ matrix.os }}"
 
       - name: Harden the runner (Audit all outbound calls)
         if: needs.detect-changes.outputs.code == 'true'
@@ -268,12 +249,11 @@ jobs:
           cache-on-failure: true
           cache-workspace-crates: true
 
-      - name: Run tests (nextest, sharded)
+      - name: Run tests (nextest)
         if: needs.detect-changes.outputs.code == 'true'
         run: |
-          echo "::group::cargo nextest (shard ${{ matrix.shard }}/${{ matrix.total }})"
-          cargo nextest run --workspace --all-features --no-fail-fast \
-            --partition count:${{ matrix.shard }}/${{ matrix.total }}
+          echo "::group::cargo nextest"
+          cargo nextest run --workspace --all-features --no-fail-fast
           echo "::endgroup::"
 
   # ==================== Test aggregator (required-check facade) ====================
