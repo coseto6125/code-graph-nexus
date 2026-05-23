@@ -256,17 +256,37 @@ fn main() {
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     let mut graph_path = graph_path::resolve(&cli.graph, &cwd);
 
-    if let Err(err) = auto_ensure::ensure_fresh(&graph_path, &cwd) {
-        eprintln!("Error preparing index for {}: {err}", cwd.display());
-        std::process::exit(1);
-    }
-    graph_path = graph_path::resolve(&cli.graph, &cwd);
-
-    let engine = match Engine::load(&graph_path) {
-        Ok(e) => e,
+    let engine = match auto_ensure::ensure_fresh(&graph_path, &cwd) {
         Err(err) => {
-            eprintln!("Error loading graph from {}: {}", graph_path.display(), err);
+            eprintln!("Error preparing index for {}: {err}", cwd.display());
             std::process::exit(1);
+        }
+        Ok(auto_ensure::EnsureFreshOutcome::WarmAttach { sibling_graph_path }) => {
+            // New HEAD has no published graph. Load the sibling SHA's graph
+            // immediately so this invocation is not blocked; the real rebuild
+            // is running in the background.
+            eprintln!("note: results may be slightly stale (warm-attach, rebuild in progress)");
+            match Engine::load_warm(&sibling_graph_path) {
+                Ok(e) => e,
+                Err(err) => {
+                    eprintln!(
+                        "Error loading warm-attach graph from {}: {}",
+                        sibling_graph_path.display(),
+                        err
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        Ok(auto_ensure::EnsureFreshOutcome::Ready) => {
+            graph_path = graph_path::resolve(&cli.graph, &cwd);
+            match Engine::load(&graph_path) {
+                Ok(e) => e,
+                Err(err) => {
+                    eprintln!("Error loading graph from {}: {}", graph_path.display(), err);
+                    std::process::exit(1);
+                }
+            }
         }
     };
 
