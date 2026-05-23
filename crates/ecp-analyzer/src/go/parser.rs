@@ -4,7 +4,7 @@ use super::receiver_types::{
 use super::spec::GoSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, node_span, push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
@@ -352,23 +352,21 @@ impl LanguageProvider for GoProvider {
                         local_name_nodes.push(cap.node);
                     }
                 } else if cap_idx == idx_blind_method_by_name {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if cap_idx == idx_blind_plugin_open {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 

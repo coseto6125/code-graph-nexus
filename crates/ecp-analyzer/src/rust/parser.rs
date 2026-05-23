@@ -4,7 +4,7 @@ use super::receiver_types::{
 };
 use super::spec::RustSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{has_import_from, node_span, MODULE_LEVEL_SOURCE};
+use crate::framework_helpers::{has_import_from, node_span, push_blind_spot, MODULE_LEVEL_SOURCE};
 use crate::indirect_dispatch::{collect_rust_indirect_param_types, detect_rust_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
@@ -264,23 +264,21 @@ impl LanguageProvider for RustProvider {
                 } else if cap_idx == idx.actix_handler {
                     actix_handler = Some(cap.node);
                 } else if cap_idx == idx.blind_transmute_fn {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if cap_idx == idx.blind_libloading_get {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 

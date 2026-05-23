@@ -2,7 +2,7 @@ use super::receiver_types::extract_js_calls;
 use super::spec::JavaScriptSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, node_span, push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
@@ -278,44 +278,40 @@ impl LanguageProvider for JavaScriptProvider {
                             .push((handler_name.to_string(), node_span(&cap.node)));
                     }
                 } else if Some(cap_idx) == idx_blind_eval {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if Some(cap_idx) == idx_blind_function_ctor {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if Some(cap_idx) == idx_blind_dynamic_import {
                     if !first_arg_is_literal_string(&cap.node) {
-                        let (kind, hint) = BLIND_SPEC[2];
-                        blind_spots.push(BlindSpot {
-                            kind: kind.to_string(),
-                            file_path: path.to_path_buf(),
-                            span: node_span(&cap.node),
-                            hint: hint.to_string(),
-                            is_test: is_test_file,
-                        });
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[2],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
                     }
                 } else if Some(cap_idx) == idx_blind_dynamic_require {
                     if !first_arg_is_literal_string(&cap.node) {
-                        let (kind, hint) = BLIND_SPEC[3];
-                        blind_spots.push(BlindSpot {
-                            kind: kind.to_string(),
-                            file_path: path.to_path_buf(),
-                            span: node_span(&cap.node),
-                            hint: hint.to_string(),
-                            is_test: is_test_file,
-                        });
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[3],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
                     }
                 } else if Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class

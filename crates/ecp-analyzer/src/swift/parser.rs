@@ -1,7 +1,9 @@
 use super::receiver_types::{collect_bindings, extract_swift_calls};
 use super::spec::SwiftSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, node_span, FrameworkPatternSpec};
+use crate::framework_helpers::{
+    detect_ast_framework_patterns, push_blind_spot, FrameworkPatternSpec,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
@@ -277,23 +279,21 @@ impl LanguageProvider for SwiftProvider {
                 } else if Some(cap_idx) == idx_enum_case_name {
                     enum_case_names.push(cap.node);
                 } else if Some(cap_idx) == idx_blind_nsclass {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if Some(cap_idx) == idx_blind_perform {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 

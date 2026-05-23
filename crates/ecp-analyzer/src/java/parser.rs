@@ -1,7 +1,9 @@
 use super::receiver_types::extract_java_calls;
 use super::spec::JavaSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{collect_jvm_transactional_scopes, has_import_from, node_span};
+use crate::framework_helpers::{
+    collect_jvm_transactional_scopes, has_import_from, node_span, push_blind_spot,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
@@ -251,23 +253,21 @@ impl LanguageProvider for JavaProvider {
                 } else if cap_idx == idx.spring_route_handler {
                     route_handler_node = Some(cap.node);
                 } else if cap_idx == idx.blind_class_forname {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if cap_idx == idx.blind_method_invoke {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
 
                 // Track the `@import` pattern node (the import_declaration itself).

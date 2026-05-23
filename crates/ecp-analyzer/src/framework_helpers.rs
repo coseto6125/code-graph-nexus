@@ -46,6 +46,33 @@ pub fn node_span(node: &tree_sitter::Node) -> Span {
     )
 }
 
+/// Push a `BlindSpot` record into the parser-local Vec from a (kind, hint)
+/// table entry and a captured tree-sitter node.
+///
+/// Centralises the seven-line boilerplate that previously repeated at every
+/// `BLIND_SPEC[N]` dispatch arm across 15 parsers. Per FU-001 dispatcher-skel,
+/// extracted AFTER P1–P7 shipped so the abstraction has 31 concrete call sites
+/// motivating it (vs. the spec-warned single-data-point premature generalization).
+///
+/// `is_test_file` is the per-file value of `is_test_path(path)`, hoisted by
+/// the caller once per `parse_file` invocation.
+#[inline]
+pub fn push_blind_spot(
+    out: &mut Vec<ecp_core::analyzer::types::BlindSpot>,
+    spec: (&str, &str),
+    node: &tree_sitter::Node,
+    path: &std::path::Path,
+    is_test_file: bool,
+) {
+    out.push(ecp_core::analyzer::types::BlindSpot {
+        kind: spec.0.to_string(),
+        file_path: path.to_path_buf(),
+        span: node_span(node),
+        hint: spec.1.to_string(),
+        is_test: is_test_file,
+    });
+}
+
 /// True iff `outer` (row,col,row,col) fully contains `inner`.
 #[inline]
 pub fn span_contains(outer: Span, inner: Span) -> bool {

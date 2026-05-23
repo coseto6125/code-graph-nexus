@@ -3,7 +3,7 @@ use super::spec::PythonSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
-    point_in_span, Span, MODULE_LEVEL_SOURCE,
+    point_in_span, push_blind_spot, Span, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_python_param_names, detect_python_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
@@ -716,14 +716,8 @@ impl LanguageProvider for PythonProvider {
                     } else {
                         None
                     };
-                    if let Some((kind, hint)) = blind_match {
-                        blind_spots.push(BlindSpot {
-                            kind: kind.to_string(),
-                            file_path: path.to_path_buf(),
-                            span: node_span(&cap.node),
-                            hint: hint.to_string(),
-                            is_test: is_test_file,
-                        });
+                    if let Some(spec) = blind_match {
+                        push_blind_spot(&mut blind_spots, spec, &cap.node, path, is_test_file);
                     }
                 }
             }

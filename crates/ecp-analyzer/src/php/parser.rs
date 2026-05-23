@@ -2,7 +2,7 @@ use super::receiver_types::extract_php_calls;
 use super::spec::PhpSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, node_span, push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
@@ -466,34 +466,31 @@ impl LanguageProvider for PhpProvider {
                 } else if Some(cap_idx) == idx_laravel_args {
                     laravel_args_node = Some(cap.node);
                 } else if Some(cap_idx) == idx_blind_eval {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if Some(cap_idx) == idx_blind_call_user_func {
                     if !first_arg_is_literal_string(&cap.node) {
-                        let (kind, hint) = BLIND_SPEC[1];
-                        blind_spots.push(BlindSpot {
-                            kind: kind.to_string(),
-                            file_path: path.to_path_buf(),
-                            span: node_span(&cap.node),
-                            hint: hint.to_string(),
-                            is_test: is_test_file,
-                        });
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[1],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
                     }
                 } else if Some(cap_idx) == idx_blind_variable_call {
-                    let (kind, hint) = BLIND_SPEC[2];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[2],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 

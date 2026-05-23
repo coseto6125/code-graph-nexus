@@ -1,7 +1,9 @@
 use super::receiver_types::extract_ruby_calls;
 use super::spec::RubySpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, node_span, FrameworkPatternSpec};
+use crate::framework_helpers::{
+    detect_ast_framework_patterns, push_blind_spot, FrameworkPatternSpec,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
@@ -315,34 +317,31 @@ impl LanguageProvider for RubyProvider {
                 } else if cap_idx == idx_delegator_args {
                     delegator_args_node = Some(cap.node);
                 } else if cap_idx == idx_blind_eval {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if cap_idx == idx_blind_instance_eval {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if cap_idx == idx_blind_send
                     && !ruby_first_arg_is_literal_callable(&cap.node)
                 {
-                    let (kind, hint) = BLIND_SPEC[2];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[2],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 

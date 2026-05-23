@@ -2,7 +2,8 @@ use super::receiver_types::extract_kotlin_calls;
 use super::spec::KotlinSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    collect_jvm_transactional_scopes, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    collect_jvm_transactional_scopes, has_import_from, node_span, push_blind_spot,
+    MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
 use ecp_core::algorithms::process_trace::is_test_path;
@@ -317,23 +318,21 @@ impl LanguageProvider for KotlinProvider {
                 } else if Some(cap_idx) == idx_alias {
                     import_alias = Some(cap.node);
                 } else if Some(cap_idx) == idx.blind_class_forname {
-                    let (kind, hint) = BLIND_SPEC[0];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if Some(cap_idx) == idx.blind_method_invoke {
-                    let (kind, hint) = BLIND_SPEC[1];
-                    blind_spots.push(BlindSpot {
-                        kind: kind.to_string(),
-                        file_path: path.to_path_buf(),
-                        span: node_span(&cap.node),
-                        hint: hint.to_string(),
-                        is_test: is_test_file,
-                    });
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if (Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_function
                     || Some(cap_idx) == self.idx_constructor
