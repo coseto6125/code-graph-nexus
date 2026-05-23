@@ -800,11 +800,19 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Ecp
     let provider = ShellGitProvider;
     let file_diffs = provider.diff(&repo_path, &scope)?;
 
+    // Un-filtered file list from `git diff`. Emitted in the JSON envelope as
+    // `changed_paths` so downstream consumers (pr-analyze, future area
+    // classifiers) can branch on docs-only / whitespace-only / comment-only
+    // diffs (which yield zero `changed_symbols`) without a second
+    // `git diff --name-only` subprocess.
+    let changed_paths: Vec<String> = file_diffs.iter().map(|fd| fd.file_path.clone()).collect();
+
     if file_diffs.is_empty() {
         return Ok(json!({
             "status": "success",
             "baseline": baseline_ref,
             "message": "0 changes detected — no symbols to assess",
+            "changed_paths": changed_paths,
             "changed_symbols": [],
             "impact_by_symbol": [],
         }));
@@ -812,8 +820,9 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Ecp
 
     let graph = engine.graph().map_err(|e| EcpError::Rkyv(e.to_string()))?;
 
-    // Identify changed file paths from the diff.
-    let changed_paths: Vec<String> = file_diffs
+    // Test-filtered subset for the semantic re-parse + BFS lookup. The JSON
+    // envelope still emits the full `changed_paths` (above).
+    let parsed_paths: Vec<String> = file_diffs
         .iter()
         .filter(|fd| args.include_tests || !is_test_path(&fd.file_path))
         .map(|fd| fd.file_path.clone())
@@ -829,7 +838,7 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Ecp
     type NewEntry = ((&'static str, String, String), (u64, u32));
     type OldEntry = ((&'static str, String, String), u64);
 
-    let per_file: Vec<(Vec<NewEntry>, Vec<OldEntry>)> = changed_paths
+    let per_file: Vec<(Vec<NewEntry>, Vec<OldEntry>)> = parsed_paths
         .par_iter()
         .map(|rel_path| {
             let mut new_local: Vec<NewEntry> = Vec::new();
@@ -887,18 +896,18 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Ecp
     }
 
     // Build lookup from old graph: (kind_str, file_path, name) → node_idx.
-    let changed_files_set: HashSet<&str> = changed_paths.iter().map(|s| s.as_str()).collect();
+    let parsed_paths_set: HashSet<&str> = parsed_paths.iter().map(|s| s.as_str()).collect();
     let mut old_graph_idx: HashMap<(&'static str, String, String), usize> = HashMap::new();
     for (idx, node) in graph.nodes.iter().enumerate() {
         // Synthetic nodes (decorates_edges resolver-miss `Annotation`) carry
         // `file_idx == SYNTHETIC_FILE_IDX` (u32::MAX). Skip — they don't
-        // belong to any file in `changed_files_set` by construction.
+        // belong to any file in `parsed_paths_set` by construction.
         if !node.has_owning_file() {
             continue;
         }
         let file_node = &graph.files[node.file_idx.to_native() as usize];
         let file_path = file_node.path.resolve(&graph.string_pool);
-        if !changed_files_set.contains(file_path) {
+        if !parsed_paths_set.contains(file_path) {
             continue;
         }
         let kind_str = kind_to_str(&node.kind);
@@ -1029,6 +1038,7 @@ fn impact_with_baseline(args: &ImpactArgs, engine: &Engine) -> Result<Value, Ecp
     let mut result = json!({
         "status": "success",
         "baseline": baseline_ref,
+        "changed_paths": changed_paths,
         "changed_symbols": changed_symbols,
         "impact_by_symbol": impact_by_symbol,
     });

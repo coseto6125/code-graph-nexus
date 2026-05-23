@@ -1,6 +1,10 @@
 {
   "status": "success",
   "baseline": "HEAD~1",
+  "changed_paths": [
+    "crates/ecp-cli/src/commands/impact.rs",
+    "README.md"
+  ],
   "changed_symbols": [
     {
       "name": "FnA",
