@@ -94,8 +94,14 @@ fn enum_case_with_associated_values_emits_property() {
         "enum AFError {\n    case bodyPartFileIsDirectory(at: URL)\n    case bodyPartFileNotReachable(at: URL)\n}\n",
     );
     let variants = names_of(&g, NodeKind::EnumVariant);
-    assert!(variants.contains(&"bodyPartFileIsDirectory"), "{variants:?}");
-    assert!(variants.contains(&"bodyPartFileNotReachable"), "{variants:?}");
+    assert!(
+        variants.contains(&"bodyPartFileIsDirectory"),
+        "{variants:?}"
+    );
+    assert!(
+        variants.contains(&"bodyPartFileNotReachable"),
+        "{variants:?}"
+    );
 }
 
 #[test]

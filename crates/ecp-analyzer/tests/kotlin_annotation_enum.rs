@@ -138,7 +138,10 @@ fn enum_entries_emit_as_enum_nodes() {
         .filter(|n| n.kind == NodeKind::EnumVariant)
         .map(|n| n.name.as_str())
         .collect();
-    assert!(enum_names.contains(&"OperatingSystem"), "parent enum missing");
+    assert!(
+        enum_names.contains(&"OperatingSystem"),
+        "parent enum missing"
+    );
     assert!(variant_names.contains(&"Linux"), "Linux entry missing");
     assert!(variant_names.contains(&"MacOS"), "MacOS entry missing");
     assert!(variant_names.contains(&"Windows"), "Windows entry missing");
@@ -163,8 +166,16 @@ fn plain_enum_entries_without_constructor_args_emit() {
         .filter(|n| n.kind == NodeKind::EnumVariant)
         .map(|n| n.name.as_str())
         .collect();
-    assert!(enum_names.contains(&"Color"), "Color enum missing from {:?}", enum_names);
+    assert!(
+        enum_names.contains(&"Color"),
+        "Color enum missing from {:?}",
+        enum_names
+    );
     for name in ["RED", "GREEN", "BLUE"] {
-        assert!(variant_names.contains(&name), "{name} missing from {:?}", variant_names);
+        assert!(
+            variant_names.contains(&name),
+            "{name} missing from {:?}",
+            variant_names
+        );
     }
 }

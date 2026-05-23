@@ -80,8 +80,7 @@ pub fn emit_edges(
                 let Some(&enum_idx) = enum_by_name.get(enum_name.as_str()) else {
                     continue;
                 };
-                let Some(variant_idx) = symbol_table.lookup_in_file(path_str, &variant.name)
-                else {
+                let Some(variant_idx) = symbol_table.lookup_in_file(path_str, &variant.name) else {
                     continue;
                 };
                 // Self-loop guard: same-named enum and variant (extremely rare).

@@ -20,10 +20,7 @@ use std::path::Path;
 fn variant_names<'a>(g: &'a LocalGraph, enum_name: &str) -> Vec<&'a str> {
     g.nodes
         .iter()
-        .filter(|n| {
-            n.kind == NodeKind::EnumVariant
-                && n.owner_class.as_deref() == Some(enum_name)
-        })
+        .filter(|n| n.kind == NodeKind::EnumVariant && n.owner_class.as_deref() == Some(enum_name))
         .map(|n| n.name.as_str())
         .collect()
 }

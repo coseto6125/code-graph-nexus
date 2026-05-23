@@ -48,11 +48,7 @@ fn test_node_kind_discriminants_locked() {
         26,
         "TransactionScope discriminant"
     );
-    assert_eq!(
-        NodeKind::EnumVariant as u8,
-        27,
-        "EnumVariant discriminant"
-    );
+    assert_eq!(NodeKind::EnumVariant as u8, 27, "EnumVariant discriminant");
 }
 
 #[test]
