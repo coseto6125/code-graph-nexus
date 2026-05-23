@@ -170,14 +170,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows moved to nightly (.github/workflows/ci-windows-nightly.yml):
-        # the windows-latest runner has a known partner-runner-images bash
-        # startup race (#169) that flakes ~5% of PR runs, and Rust CLI code
-        # here is platform-agnostic (uses `dirs` / `PathBuf` everywhere).
-        # Windows still validates on schedule + push-to-main + workflow_dispatch.
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         shard: [1, 2, 3, 4]
-    if: ${{ !(contains(github.event.pull_request.title, '[skip ci]') || contains(github.event.head_commit.message, '[skip ci]')) }}
+    # Heavy test matrix only runs on push-to-main / merge_group / workflow_dispatch
+    # — PR-time skips entirely to keep iteration latency low. PR-time signal
+    # comes from `code-quality` (fmt + clippy) + `audit` + `actionlint`; full
+    # cross-platform / sharded test runs once post-merge. test-result aggregator
+    # below treats `skipped` as success so PRs aren't blocked.
+    if: |
+      github.event_name != 'pull_request'
+      && !(contains(github.event.pull_request.title, '[skip ci]') || contains(github.event.head_commit.message, '[skip ci]'))
     env:
       # 14 tree-sitter parsers × 30+ test binaries × debug-info defaulted to
       # `true` produced ~30 GB in target/debug/deps/ and filled the ubuntu
