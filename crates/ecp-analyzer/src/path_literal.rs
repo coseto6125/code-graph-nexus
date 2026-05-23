@@ -159,13 +159,15 @@ pub fn classify_sink(callee: Option<&str>) -> (SinkKind, SinkConfidence) {
     match bare {
         // ── HIGH-confidence reads (name uniquely identifies a read op) ──
         "read_to_string" | "read_to_end" | "readText" | "read_text" | "ReadAllText"
-        | "ReadAllBytes" | "ReadAllLines" | "readFile" | "readFileSync" | "slurp" | "read_all" => {
-            (Read, High)
-        }
+        | "ReadAllBytes" | "ReadAllLines" | "readFile" | "readFileSync" | "ReadFile" | "slurp"
+        | "read_all" | "readAsString" | "readAsStringSync" | "readAsBytes" => (Read, High),
 
         // ── HIGH-confidence writes ────────────────────────────────────
         "write_all" | "atomic_write" | "atomic_write_json" | "writeFile" | "writeFileSync"
-        | "WriteAllText" | "WriteAllBytes" | "WriteAllLines" | "file_put_contents" => (Write, High),
+        | "WriteFile" | "WriteAllText" | "WriteAllBytes" | "WriteAllLines"
+        | "file_put_contents" | "writeAsString" | "writeAsStringSync" | "writeAsBytes" => {
+            (Write, High)
+        }
 
         // ── MEDIUM (overloaded with non-file IO writes) ───────────────
         "write" => (Write, Medium),
