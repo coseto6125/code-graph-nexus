@@ -24,6 +24,57 @@ Before modifying a function or class, always run `ecp impact` to see who calls i
 
 ---
 
+## ⚡ Quick Reference (command × use-case)
+
+### Symbol lookup
+| Command | Use for |
+|---|---|
+| `ecp find <name>` | Exact symbol match (default) |
+| `ecp find <n> --mode fuzzy` | Substring match for partial names |
+| `ecp find <n> --mode bm25` | BM25-ranked, bucketed top-K |
+| `ecp find <n> --kind function,method` | Filter by symbol kind |
+| `ecp inspect --name <n>` | Full context: signature + body + edges + callers |
+
+### Impact / blast radius
+| Command | Use for |
+|---|---|
+| `ecp impact <name>` | Upstream callers + risk_level (default depth 5) |
+| `ecp impact <n> --direction down --depth N` | Custom traversal |
+| `ecp impact --baseline origin/main` | All symbols changed in a PR diff |
+| `ecp diff` | Edge-level resolver delta (binding tier-degradation, route / contract changes) |
+
+### Architecture / cross-cutting
+| Command | Use for |
+|---|---|
+| `ecp summary` | Repo health + frameworks + blind spots |
+| `ecp routes <path>` | HTTP route → handler + caller chain |
+| `ecp contracts` | Cross-repo API contracts |
+| `ecp tool-map` | External HTTP / DB / Redis / queue calls |
+| `ecp shape-check` | HTTP consumer ↔ Route response shape drift |
+| `ecp processes [trace <pat>]` | Execution-flow community detection |
+| `ecp review` | Full audit (impact + summary + tool-map + shape-check + diff) |
+| `ecp rename <old> <new>` | AST-aware multi-file rename |
+
+### Cypher escape hatch
+| Command | Use for |
+|---|---|
+| `ecp cypher "<query>"` | Ad-hoc `MATCH ... RETURN ...` when no command fits |
+
+### Schema introspection (graph-loadless)
+| Command | Output |
+|---|---|
+| `ecp schema blindspots` | Per-lang BlindSpot coverage; disambiguates "no dispatch in diff" vs "parser doesn't detect it" |
+| `ecp schema reltypes` | All 19 RelType edges + LLM-utility category + heuristic flag |
+| `ecp schema node-kinds` | All 28 NodeKind variants + same-name distinctions (Struct vs Class, Trait vs Interface) |
+| `ecp schema graph-version` | rkyv `graph.bin` format version + bump history |
+
+All `schema` commands default to `--format json` (agent-consumable); pass `--format text` for a human table.
+
+### When grep IS correct
+String literals · error messages · config keys in toml / yaml / json · vendored / generated code · file-system layout (`find . -name ...`).
+
+---
+
 ## 🧭 Layer 2: Workflow Guides
 
 Match your current task to a guide.
@@ -44,21 +95,4 @@ These are detailed manuals for specific commands and concepts.
 - `_shared/cli/` — Command-specific flag references (e.g., `inspect`, `impact`, `cypher`).
 - `_shared/refs/` — Conceptual background (e.g., Cypher syntax, Repo resolution).
 
----
-
-## 🔬 Schema Introspection (graph-loadless)
-
-When you need to know **what ecp can detect** without loading any repo's graph:
-
-| Command | Output |
-|---|---|
-| `ecp schema blindspots` | Per-language BlindSpot emitter coverage (14 langs, ~31 kinds total) |
-| `ecp schema reltypes` | All 19 RelType edges + LLM-utility category (A/B/C) + heuristic flag |
-| `ecp schema node-kinds` | All 28 NodeKind variants + the load-bearing same-name distinctions (Struct vs Class, Trait vs Interface, etc.) |
-| `ecp schema graph-version` | Current rkyv `graph.bin` format version + bump history |
-
-All four default to `--format json` (agent-consumable). Pass `--format text` for a human-readable table.
-
-**Use case**: when `INDIRECT_DISPATCH_IN_DIFF_REGION` verdict is empty for a Java/Go/etc. PR, `ecp schema blindspots` disambiguates "no dispatch in diff" from "parser doesn't detect that pattern yet".
-
-**`BlindSpotRecord` carries `is_test: bool`** — verdict layer filters out test-region BlindSpots from prod-refactor warnings. Test fixtures that legitimately use eval/reflection/dlsym to exercise prod code no longer surface noise.
+`BlindSpotRecord` carries `is_test: bool` — verdict layer filters test-region BlindSpots from prod-refactor warnings so legitimate test fixtures (eval / reflection / dlsym to exercise prod code) don't surface noise.
