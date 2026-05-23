@@ -67,6 +67,15 @@ mod tests {
         );
     }
 
+    // `/bin/true` and `/bin/false` are POSIX-only fixtures. Windows CI
+    // would hit `No such file or directory (os error 2)` because the
+    // paths don't exist on the platform. The behaviour these tests pin
+    // (success-path empty stdout, non-zero exit error message shape) is
+    // platform-independent inside the helper; the unix-only assertion
+    // is sufficient because the spawn-failure test below covers the
+    // cross-platform spawn-failure branch.
+
+    #[cfg(unix)]
     #[test]
     fn run_at_propagates_nonzero_exit_with_subcommand_in_message() {
         // `/bin/false` exits 1 unconditionally, simulating an ecp subcommand
@@ -82,6 +91,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_at_returns_stdout_on_success() {
         // `/bin/true` exits 0 with empty stdout. Confirms the success path
