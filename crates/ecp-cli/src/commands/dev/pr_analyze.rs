@@ -27,6 +27,9 @@ pub enum Area {
 }
 
 impl Area {
+    /// Wire-format string used for both the `ecp:area-X` GitHub label and
+    /// the JSON serialization (matches `#[serde(rename_all = "kebab-case")]`
+    /// on the enum). Keep in sync with the queue name suffix in `.mergify.yml`.
     pub fn to_kebab(self) -> &'static str {
         match self {
             Area::Parser => "parser",
