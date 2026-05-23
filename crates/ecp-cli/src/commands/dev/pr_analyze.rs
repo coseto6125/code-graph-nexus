@@ -5,11 +5,17 @@
 //! Black-box wraps `ecp impact --baseline <ref> --format json` (subprocess),
 //! so no tight coupling to impact's internal API.
 
+use crate::git::safe_exec;
 use crate::output::OutputFormat;
 use clap::Args;
 use ecp_core::EcpError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+const CACHE_MARKER: &str = "<!-- ecp-impact-cache:V1 -->";
+// Prefix form (no trailing ` -->`): used by jq `startswith` to match both
+// the plain marker and the `:truncated` suffix variant written on overflow.
+const CACHE_MARKER_PREFIX: &str = "<!-- ecp-impact-cache:V1";
 
 #[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "kebab-case")]
@@ -20,12 +26,33 @@ pub enum Area {
     Docs,
 }
 
+impl Area {
+    pub fn to_kebab(self) -> &'static str {
+        match self {
+            Area::Parser => "parser",
+            Area::Cli => "cli",
+            Area::Test => "test",
+            Area::Docs => "docs",
+        }
+    }
+}
+
 #[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "kebab-case")]
 pub enum Risk {
     Low,
     Medium,
     High,
+}
+
+impl Risk {
+    pub fn to_kebab(self) -> &'static str {
+        match self {
+            Risk::Low => "low",
+            Risk::Medium => "medium",
+            Risk::High => "high",
+        }
+    }
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -157,21 +184,22 @@ impl ImpactJson {
 /// Returns an error if the impact CLI exits non-zero or produces invalid JSON.
 fn run_impact_subprocess(baseline: &str) -> Result<ImpactJson, EcpError> {
     use std::process::Command;
-    let exe = std::env::current_exe()
-        .map_err(|e| EcpError::InvalidArgument(format!("locate self exe: {e}")))?;
+    let exe = std::env::current_exe().map_err(EcpError::Io)?;
     let out = Command::new(&exe)
         .args(["impact", "--baseline", baseline, "--format", "json"])
         .output()
-        .map_err(|e| EcpError::InvalidArgument(format!("spawn ecp impact: {e}")))?;
+        .map_err(EcpError::Io)?;
     if !out.status.success() {
-        return Err(EcpError::InvalidArgument(format!(
-            "ecp impact failed (exit {}): {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr)
-        )));
+        return Err(EcpError::GitDiff {
+            reason: format!(
+                "ecp impact failed (exit {}): {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        });
     }
     serde_json::from_slice(&out.stdout)
-        .map_err(|e| EcpError::InvalidArgument(format!("parse impact JSON: {e}")))
+        .map_err(|e| EcpError::Serialization(format!("parse impact JSON: {e}")))
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -241,19 +269,9 @@ pub fn run(args: PrAnalyzeArgs, _cli_graph: &std::path::Path) -> Result<(), EcpE
     // 6. Build suggested labels
     let mut suggested_labels = Vec::new();
     if let Some(a) = area {
-        let area_str = serde_json::to_value(a)
-            .map_err(|e| EcpError::InvalidArgument(format!("encode area: {e}")))?;
-        let area_kebab = area_str
-            .as_str()
-            .ok_or_else(|| EcpError::InvalidArgument("area not a string".into()))?;
-        suggested_labels.push(format!("ecp:area-{area_kebab}"));
+        suggested_labels.push(format!("ecp:area-{}", a.to_kebab()));
     }
-    let risk_str = serde_json::to_value(risk)
-        .map_err(|e| EcpError::InvalidArgument(format!("encode risk: {e}")))?;
-    let risk_kebab = risk_str
-        .as_str()
-        .ok_or_else(|| EcpError::InvalidArgument("risk not a string".into()))?;
-    suggested_labels.push(format!("ecp:risk-{risk_kebab}"));
+    suggested_labels.push(format!("ecp:risk-{}", risk.to_kebab()));
 
     // 7. Build commit status suggestion
     let suggested_status = if conflicts.is_empty() {
@@ -295,7 +313,7 @@ pub fn run(args: PrAnalyzeArgs, _cli_graph: &std::path::Path) -> Result<(), EcpE
             println!(
                 "{}",
                 serde_json::to_string_pretty(&out)
-                    .map_err(|e| EcpError::InvalidArgument(format!("emit JSON: {e}")))?
+                    .map_err(|e| EcpError::Serialization(format!("emit JSON: {e}")))?
             );
         }
         _ => {
@@ -314,16 +332,17 @@ pub fn run(args: PrAnalyzeArgs, _cli_graph: &std::path::Path) -> Result<(), EcpE
 }
 
 fn git_rev_parse(reference: &str) -> Result<String, EcpError> {
-    use std::process::Command;
-    let out = Command::new("git")
+    let out = safe_exec::git()
         .args(["rev-parse", reference])
         .output()
-        .map_err(|e| EcpError::InvalidArgument(format!("git rev-parse {reference}: {e}")))?;
+        .map_err(EcpError::Io)?;
     if !out.status.success() {
-        return Err(EcpError::InvalidArgument(format!(
-            "git rev-parse {reference} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        )));
+        return Err(EcpError::GitDiff {
+            reason: format!(
+                "git rev-parse {reference} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+        });
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -465,30 +484,28 @@ impl GhClient for RealGhClient {
                 "50",
             ])
             .output()
-            .map_err(|e| EcpError::InvalidArgument(format!("gh pr list: {e}")))?;
+            .map_err(EcpError::Io)?;
         if !out.status.success() {
-            return Err(EcpError::InvalidArgument(format!(
-                "gh pr list failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            )));
+            return Err(EcpError::GitDiff {
+                reason: format!(
+                    "gh pr list failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                ),
+            });
         }
         let prs: Vec<SiblingPr> = serde_json::from_slice(&out.stdout)
-            .map_err(|e| EcpError::InvalidArgument(format!("parse gh pr list: {e}")))?;
+            .map_err(|e| EcpError::Serialization(format!("parse gh pr list: {e}")))?;
         Ok(prs.into_iter().filter(|p| p.number != exclude_pr).collect())
     }
 
     fn read_cached_impact(&self, pr: u32) -> Result<Option<Vec<String>>, EcpError> {
         use std::process::Command;
         let endpoint = format!("repos/{{owner}}/{{repo}}/issues/{pr}/comments");
+        let jq_filter = format!(".[] | select(.body | startswith(\"{CACHE_MARKER}\")) | .body");
         let out = Command::new("gh")
-            .args([
-                "api",
-                &endpoint,
-                "--jq",
-                ".[] | select(.body | startswith(\"<!-- ecp-impact-cache:V1 -->\")) | .body",
-            ])
+            .args(["api", &endpoint, "--jq", &jq_filter])
             .output()
-            .map_err(|e| EcpError::InvalidArgument(format!("gh api comments: {e}")))?;
+            .map_err(EcpError::Io)?;
         if !out.status.success() {
             return Ok(None); // no comments / no access — treat as cache miss
         }
@@ -501,7 +518,7 @@ impl GhClient for RealGhClient {
         let json_start = body.find('\n').map(|i| i + 1).unwrap_or(body.len());
         let json_payload = &body[json_start..];
         let symbols: Vec<String> = serde_json::from_str(json_payload)
-            .map_err(|e| EcpError::InvalidArgument(format!("parse cached impact: {e}")))?;
+            .map_err(|e| EcpError::Serialization(format!("parse cached impact: {e}")))?;
         Ok(Some(symbols))
     }
 
@@ -509,27 +526,24 @@ impl GhClient for RealGhClient {
         use std::process::Command;
         // Truncate to 65000 chars worth of JSON to stay under GH's 65535 limit.
         let mut payload = serde_json::to_string(impact_set)
-            .map_err(|e| EcpError::InvalidArgument(format!("encode impact: {e}")))?;
-        let truncated_marker = if payload.len() > 65_000 {
+            .map_err(|e| EcpError::Serialization(format!("encode impact: {e}")))?;
+        // CACHE_MARKER is "<!-- ecp-impact-cache:V1 -->"; splice `:truncated`
+        // before the closing ` -->` so the prefix-match in find-existing still works.
+        let body = if payload.len() > 65_000 {
             payload.truncate(65_000);
             payload.push_str("\"]"); // best-effort close
-            ":truncated"
+            format!("<!-- ecp-impact-cache:V1:truncated -->\n{payload}")
         } else {
-            ""
+            format!("{CACHE_MARKER}\n{payload}")
         };
-        let body = format!("<!-- ecp-impact-cache:V1{truncated_marker} -->\n{payload}");
 
         // Try to find an existing marker comment to PATCH; otherwise POST a new one.
         let list_endpoint = format!("repos/{{owner}}/{{repo}}/issues/{pr}/comments");
+        let jq_find = format!(".[] | select(.body | startswith(\"{CACHE_MARKER_PREFIX}\")) | .id");
         let list_out = Command::new("gh")
-            .args([
-                "api",
-                &list_endpoint,
-                "--jq",
-                ".[] | select(.body | startswith(\"<!-- ecp-impact-cache:V1\")) | .id",
-            ])
+            .args(["api", &list_endpoint, "--jq", &jq_find])
             .output()
-            .map_err(|e| EcpError::InvalidArgument(format!("gh api list comments: {e}")))?;
+            .map_err(EcpError::Io)?;
         let existing_id = String::from_utf8_lossy(&list_out.stdout)
             .lines()
             .next()
@@ -547,12 +561,11 @@ impl GhClient for RealGhClient {
                 .args(["pr", "comment", &pr.to_string(), "--body", &body])
                 .status()
         };
-        let status =
-            exec.map_err(|e| EcpError::InvalidArgument(format!("gh write comment: {e}")))?;
+        let status = exec.map_err(EcpError::Io)?;
         if !status.success() {
-            return Err(EcpError::InvalidArgument(format!(
-                "gh write comment exit {status}"
-            )));
+            return Err(EcpError::GitDiff {
+                reason: format!("gh write comment exit {status}"),
+            });
         }
         Ok(())
     }
