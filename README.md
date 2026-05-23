@@ -68,6 +68,21 @@ Measured on the [gitnexus](https://github.com/abhigyanpatwari/GitNexus) codebase
 
 Reproduce: `python scripts/benchmark/benchmark_ecp.py`.
 
+### Same-corpus vs. peer-tier Rust tools
+
+A SCAFFOLD framework lives at `scripts/benchmark/benchmark_vs_competitors.py` for side-by-side comparison against actual Rust-tier competitors — currently targeting [`codescope`](https://github.com/onur-gokyildiz-bhi/codescope) (SurrealDB-backed) and `coraline` (SQLite-backed). The script detects whether each competitor binary is on `$PATH`, skips it cleanly when missing, and emits a per-phase table to `docs/benchmark-vs-competitors.md`.
+
+Six canonical phases per tool: `cold-index`, `symbol-find`, `callers`, `file-context`, `route-map`, `cypher`. Phases a competitor doesn't expose are marked `N/A` (absence is signal). Cold-index is timed once with cache drop; query phases default to 3-iteration median.
+
+Reproduce:
+```bash
+python scripts/benchmark/benchmark_vs_competitors.py                          # default .sample_repo
+python scripts/benchmark/benchmark_vs_competitors.py --corpus path/to/repo    # custom corpus
+python scripts/benchmark/benchmark_vs_competitors.py --iterations 5 --no-plot
+```
+
+Output regenerates `docs/benchmark-vs-competitors.md` (+ optional `.svg` chart via matplotlib). The current snapshot in that file is ecp-only — landing competitor numbers requires installing the binaries first and verifying their CLI verb tables against the placeholder commands in the script.
+
 ---
 
 ## vs. upstream GitNexus

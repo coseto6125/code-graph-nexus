@@ -55,7 +55,7 @@ ecp's **only true differentiator** in this crowded space:
 | **codescope** | `codescope insight` "per-repo + hourly activity" pattern — gives users visibility into which MCP tools agents actually invoke (observability) | Low, pure telemetry |
 | **codescope / Jakedismo** | LSP bridge **as an opt-in feature** (not required) — solves tree-sitter blind spots (C++ templates, Java generics, etc.) | Medium — introduces LSP cold-start cost, must be feature-gated |
 | **nusy-codegraph** | Arrow-native storage angle — same zero-copy as rkyv but with broader cross-language ecosystem (Python pandas can mmap-read directly); relevant only if a Python wheel binding becomes a need | High, defer until user demand |
-| **codescope / coraline** | "sub-second indexing" demo benchmark **as a standard comparison** — same corpus, side-by-side numbers, publish | Low engineering effort, but marketing follow-through needed |
+| **codescope / coraline** | ~~"sub-second indexing" demo benchmark **as a standard comparison** — same corpus, side-by-side numbers, publish~~ → **scaffold landed**: `scripts/benchmark/benchmark_vs_competitors.py` + `docs/benchmark-vs-competitors.md`. Competitor numbers awaiting `cargo install codescope` / `cargo install coraline` + CLI verb-table verification. | Low engineering effort, but marketing follow-through needed |
 
 ## Do not borrow
 
