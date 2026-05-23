@@ -417,6 +417,7 @@ impl LanguageProvider for CSharpProvider {
             schema_fields: None,
             event_topics: None,
             tx_scopes,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas,
         })

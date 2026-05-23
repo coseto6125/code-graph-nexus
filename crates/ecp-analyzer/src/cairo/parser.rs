@@ -164,6 +164,7 @@ impl LanguageProvider for CairoProvider {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         })

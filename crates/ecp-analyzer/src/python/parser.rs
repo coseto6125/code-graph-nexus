@@ -1167,6 +1167,7 @@ impl LanguageProvider for PythonProvider {
             schema_fields,
             event_topics,
             tx_scopes,
+            path_literals: None,
             call_metas,
             raw_function_metas,
         })

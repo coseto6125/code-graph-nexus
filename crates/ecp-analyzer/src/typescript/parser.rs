@@ -570,6 +570,7 @@ impl LanguageProvider for TypeScriptProvider {
             schema_fields,
             event_topics,
             tx_scopes: None,
+            path_literals: None,
             call_metas,
             raw_function_metas,
         })

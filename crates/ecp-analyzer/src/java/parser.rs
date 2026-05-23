@@ -459,6 +459,7 @@ impl LanguageProvider for JavaProvider {
             schema_fields: None,
             event_topics,
             tx_scopes,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas,
         })
