@@ -55,6 +55,7 @@ impl std::str::FromStr for NodeKind {
                 Ok(NodeKind::TransactionScope)
             }
             "enumvariant" | "enum_variant" | "enum variant" => Ok(NodeKind::EnumVariant),
+            "pathliteral" | "path_literal" | "path literal" => Ok(NodeKind::PathLiteral),
             _ => Err(()),
         }
     }
@@ -84,6 +85,7 @@ impl std::str::FromStr for RelType {
             "OPENSTXSCOPE" | "OPENS_TX_SCOPE" => Ok(RelType::OpensTxScope),
             "OVERRIDES" => Ok(RelType::Overrides),
             "DECORATES" => Ok(RelType::Decorates),
+            "USESPATHLITERAL" | "USES_PATH_LITERAL" => Ok(RelType::UsesPathLiteral),
             _ => Err(()),
         }
     }
@@ -117,6 +119,7 @@ impl RelType {
             Self::OpensTxScope => "OpensTxScope",
             Self::Overrides => "Overrides",
             Self::Decorates => "Decorates",
+            Self::UsesPathLiteral => "UsesPathLiteral",
         }
     }
 }
@@ -232,6 +235,21 @@ pub enum NodeKind {
     ///   `MATCH (e:Enum {name:"Status"})-[:Defines]->(v:EnumVariant) RETURN v`
     ///   `ecp impact Active --upstream` to find all variant consumers
     EnumVariant,
+    /// Path-shaped string literal: `"session_meta.json"`, `"crates/foo/Cargo.toml"`,
+    /// `"src/lib.rs"`. Emitted from `string_literal` captures that satisfy
+    /// `ecp_analyzer::path_literal::is_path_shaped` (contains `/` or `\` with
+    /// non-escape continuation, or ends with a known config/data suffix).
+    /// LLM-utility (B) Node coverage: without this, refactor agents fall back
+    /// to grep when asking "who reads this file"; the resulting context is
+    /// imprecise (matches comments, format strings, irrelevant occurrences)
+    /// and loses relation traversal to the enclosing function. (C) Edge
+    /// semantics: the paired `UsesPathLiteral` edge carries sink classification
+    /// (`sink:read` / `sink:write` / `sink:join` / `sink:free`) so a query
+    /// distinguishing readers from writers resolves without re-parsing.
+    /// Cross-language: same kind serves Rust `"x.json"`, Python `'x.json'`,
+    /// Go `"x.json"`, etc.; per-language predicate refinements live in
+    /// `path_literal::is_path_shaped` (escape-sequence rules differ by lang).
+    PathLiteral,
 }
 
 impl NodeKind {
@@ -272,7 +290,7 @@ impl NodeKind {
     /// CSR array (`length = VARIANT_COUNT + 1`). Append-only schema rule
     /// means this only ever grows; matching the variant total at the bottom
     /// of the enum keeps the CI green when a new kind lands.
-    pub const VARIANT_COUNT: usize = 28;
+    pub const VARIANT_COUNT: usize = 29;
 
     /// Discriminant as a usize, suitable for indexing into the v10
     /// `kind_offsets` array. Matches the `#[repr(u8)]` order so the
@@ -315,6 +333,7 @@ impl NodeKind {
             Self::EventTopic => "EventTopic",
             Self::TransactionScope => "TransactionScope",
             Self::EnumVariant => "EnumVariant",
+            Self::PathLiteral => "PathLiteral",
         }
     }
 }
@@ -416,6 +435,23 @@ pub enum RelType {
     /// Appended at the END to preserve rkyv discriminants for existing
     /// `graph.bin` files.
     Decorates,
+    /// Enclosing `Function` / `Method` / `File` → `PathLiteral` it embeds.
+    /// `Edge.reason` carries the sink classification produced by
+    /// `ecp_analyzer::path_literal::classify_sink`:
+    ///   `sink:read`         — direct read (`fs::read_to_string("x")`)
+    ///   `sink:write`        — direct write (`fs::write("x", …)`)
+    ///   `sink:open-read`    — `File::open("x")`, `OpenOptions::open` read-only
+    ///   `sink:open-write`   — `File::create("x")`, write-mode opens
+    ///   `sink:join`         — `Path::new("x")`, `.join("x")`, etc.
+    ///   `sink:ext-change`   — `.with_extension("x")` / `.with_file_name("x")`
+    ///   `sink:free`         — bound to a `let`, returned, or passed un-classified
+    /// Optionally suffixed with `|confidence:high|medium|low` when the sink
+    /// match is method-name-only (e.g. `.join` is overloaded across `Path`,
+    /// `Vec`, `Iterator`); resolution-quality is encoded so an LLM consumer
+    /// can choose strict vs. permissive filtering without re-parsing.
+    /// Appended at the END to preserve rkyv discriminants for existing
+    /// `graph.bin` files.
+    UsesPathLiteral,
 }
 
 impl ArchivedRelType {

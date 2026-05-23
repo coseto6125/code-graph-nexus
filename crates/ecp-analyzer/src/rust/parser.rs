@@ -549,6 +549,11 @@ impl LanguageProvider for RustProvider {
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
 
+        let path_literals = {
+            let lits = super::path_literals::extract_rust_path_literals(tree.root_node(), source);
+            (!lits.is_empty()).then(|| lits.into_boxed_slice())
+        };
+
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes: vec![],
@@ -562,6 +567,7 @@ impl LanguageProvider for RustProvider {
             schema_fields: None,
             event_topics,
             tx_scopes: None,
+            path_literals,
             call_metas,
             raw_function_metas,
         })

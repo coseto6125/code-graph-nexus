@@ -1671,6 +1671,18 @@ impl GraphBuilder {
             &mut edges,
         );
 
+        // PathLiteral promotion — emits `PathLiteral` Nodes + `UsesPathLiteral`
+        // edges (enclosing fn → PathLiteral). Same idx-contiguity contract as
+        // schema_field_mirrors / event_topic_mirrors above: appends Nodes
+        // before the File-node loop runs.
+        crate::post_process::path_literal_nodes::emit_edges(
+            &self.local_graphs,
+            &symbol_table,
+            &mut string_pool,
+            &mut nodes,
+            &mut edges,
+        );
+
         // Append one `NodeKind::File` node per LocalGraph at the tail of
         // `nodes` (idx >= raw-node count). Doing it here — AFTER all passes
         // that index symbols by SymbolTable + use raw node idx ranges —
@@ -2405,6 +2417,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -2432,6 +2445,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -2594,6 +2608,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -2685,6 +2700,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -2754,6 +2770,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -2802,6 +2819,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         }
@@ -2905,6 +2923,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         };
@@ -3022,6 +3041,7 @@ mod tests {
                     schema_fields: None,
                     event_topics: None,
                     tx_scopes: None,
+                    path_literals: None,
                     call_metas: vec![],
                     raw_function_metas: vec![],
                 },
@@ -3083,6 +3103,7 @@ mod tests {
                     schema_fields: None,
                     event_topics: None,
                     tx_scopes: None,
+                    path_literals: None,
                     call_metas: vec![],
                     raw_function_metas: vec![],
                 },
@@ -3112,6 +3133,7 @@ mod tests {
                     schema_fields: None,
                     event_topics: None,
                     tx_scopes: None,
+                    path_literals: None,
                     call_metas: vec![],
                     raw_function_metas: vec![],
                 },
@@ -3272,6 +3294,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         }
@@ -3302,6 +3325,7 @@ mod tests {
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,
+            path_literals: None,
             call_metas: vec![],
             raw_function_metas: vec![],
         }

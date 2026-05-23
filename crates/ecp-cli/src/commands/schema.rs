@@ -271,6 +271,7 @@ const RELTYPES: &[RelTypeEntry] = &[
     RelTypeEntry { name: "OpensTxScope", utility: "A", heuristic: false, note: "Reverse edge from TransactionScope back to opener Function/Method. Direction reads as 'scope's opener is X'." },
     RelTypeEntry { name: "Overrides", utility: "A", heuristic: false, note: "Method-level override (Java @Override, Kotlin override fun, C# override, C++ virtual-match). Distinct from class-level Extends." },
     RelTypeEntry { name: "Decorates", utility: "A", heuristic: false, note: "Decorator/attribute → decorated symbol (Python @decorator, Java/Kotlin @annotation, C# attribute, Rust attribute macro). 10-language emission." },
+    RelTypeEntry { name: "UsesPathLiteral", utility: "A", heuristic: false, note: "Function/Method → PathLiteral. Drives `ecp impact --literal <value>` to find every read/write site touching a filesystem path or config key. 14-language emission." },
 ];
 
 fn reltypes(args: FormatArgs) -> Result<(), EcpError> {
@@ -344,6 +345,7 @@ const NODE_KINDS: &[NodeKindEntry] = &[
     NodeKindEntry { name: "EventTopic", category: "framework", distinction: "Kafka topic / SNS topic / EventBridge rule. Carries routing semantics — distinct from Const." },
     NodeKindEntry { name: "TransactionScope", category: "framework", distinction: "Transaction boundary (@Transactional, BEGIN…COMMIT). Distinct from Function so atomicity queries resolve at the right granularity." },
     NodeKindEntry { name: "EnumVariant", category: "type", distinction: "Individual case/member of an Enum (TS enum member, Rust enum variant, Java/Kotlin enum constant, Swift case). 8-language emission. Distinct from Property because it belongs to the Enum's discriminant set, not the in-memory field set." },
+    NodeKindEntry { name: "PathLiteral", category: "data", distinction: "String literal that names a filesystem path or config key (14-language coverage). Distinct from Const because the value is a path/key referenced by `UsesPathLiteral` edges — drives `ecp impact --literal <value>` queries to find every read/write site." },
 ];
 
 fn node_kinds(args: FormatArgs) -> Result<(), EcpError> {
@@ -469,13 +471,13 @@ mod tests {
 
     #[test]
     fn reltypes_inventory_count_matches_repr_u8_enum() {
-        // RelType currently has 19 variants (post-merge with origin/main:
-        // `Decorates` added in #365). If a new variant lands, bump this
-        // number AND append the entry to RELTYPES. RelType has no
-        // VARIANT_COUNT constant like NodeKind does — manual sync.
+        // RelType currently has 20 variants (post-merge: `Decorates` from
+        // #365 + `UsesPathLiteral` from #367). If a new variant lands,
+        // bump this number AND append the entry to RELTYPES. RelType has
+        // no VARIANT_COUNT constant like NodeKind does — manual sync.
         assert_eq!(
             RELTYPES.len(),
-            19,
+            20,
             "reltypes inventory drifted from RelType enum"
         );
     }

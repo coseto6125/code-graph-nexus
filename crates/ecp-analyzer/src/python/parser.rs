@@ -1151,6 +1151,11 @@ impl LanguageProvider for PythonProvider {
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
 
+        let path_literals = {
+            let lits = super::path_literals::extract_python_path_literals(tree.root_node(), source);
+            (!lits.is_empty()).then(|| lits.into_boxed_slice())
+        };
+
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
@@ -1164,6 +1169,7 @@ impl LanguageProvider for PythonProvider {
             schema_fields,
             event_topics,
             tx_scopes,
+            path_literals,
             call_metas,
             raw_function_metas,
         })

@@ -131,6 +131,9 @@ ecp inspect validateUser
 # 5. Every HTTP route in the repo (declarative @Get + imperative app.get())
 ecp routes
 ecp routes /api/users --method POST     # route → handler → caller chain
+
+# 6. Path-literal site lookup — "who reads / writes this file?"
+ecp impact --literal session_meta.json  # 14 langs; sink:read / sink:write / sink:join / sink:free
 ```
 
 Read-side commands accept `--format text|json|toon`. Default per command is the token-cheapest representation (mostly `toon`; `find` defaults to `text`; `cypher`/`summary` default to `json`).
@@ -143,7 +146,7 @@ Two tiers — **agent commands** at top level (query/refactor/verify) and **admi
 
 | Command | Purpose |
 |---|---|
-| `inspect <name>` | One symbol → metadata, decorators, signature, callers, callees, 1-hop impact |
+| `inspect <name>` | One symbol → metadata, decorators, signature, callers, callees, 1-hop impact, contained methods / properties / enum variants |
 | `find <pattern>` | Locate symbols — exact (default) · `--mode fuzzy` substring · `--mode bm25` lexical ranking; bm25 partitions output into source / tests / reference / document / config buckets |
 | `find-schema-bindings <field>` | Surface MirrorsField heuristic edges + blind-spot candidates (schema field mirrors across classes / services). Format: toon (default) or json. |
 | `find-transaction-patterns [--class <Name>]` | Detect Saga compensate/undo/rollback name-pairs on same class. Confidence ≥0.75 tier:POSSIBLY_RELATED, <0.75 tier:BLIND_SPOT. Outbox half deferred (T5-33). |

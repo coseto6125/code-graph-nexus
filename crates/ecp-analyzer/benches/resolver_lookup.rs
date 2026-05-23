@@ -56,6 +56,7 @@ fn build_test_graph(n: usize) -> (Vec<u8>, Vec<u64>) {
         schema_fields: None,
         event_topics: None,
         tx_scopes: None,
+        path_literals: None,
         call_metas: vec![],
         raw_function_metas: vec![],
     });

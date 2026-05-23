@@ -630,6 +630,12 @@ impl LanguageProvider for TypeScriptProvider {
             (!topics.is_empty()).then(|| topics.into_boxed_slice())
         };
 
+        let path_literals = {
+            let lits =
+                super::path_literals::extract_typescript_path_literals(tree.root_node(), source);
+            (!lits.is_empty()).then(|| lits.into_boxed_slice())
+        };
+
         Ok(LocalGraph {
             content_hash: [0; 8],
             routes,
@@ -643,6 +649,7 @@ impl LanguageProvider for TypeScriptProvider {
             schema_fields,
             event_topics,
             tx_scopes: None,
+            path_literals,
             call_metas,
             raw_function_metas,
         })
