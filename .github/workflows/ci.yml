@@ -76,18 +76,38 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          # Push to main: always treat as code change (final validation).
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "Event is '$EVENT_NAME' (not pull_request) — defaulting code=true"
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
 
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
-          CHANGED=$(git diff --name-only "origin/$BASE_REF...HEAD")
-          echo "Changed files:"
+          case "$EVENT_NAME" in
+            pull_request)
+              git fetch --no-tags --depth=1 origin "$BASE_REF"
+              diff_range="origin/$BASE_REF...HEAD"
+              ;;
+            push)
+              # $BEFORE_SHA is the previous HEAD on this ref; 0..0 means
+              # branch creation / force-push with no common ancestor — be
+              # conservative and treat as code change.
+              if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+                echo "No before SHA — defaulting code=true"
+                echo "code=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              diff_range="$BEFORE_SHA...HEAD"
+              ;;
+            *)
+              # merge_group / workflow_dispatch / anything else: don't try
+              # to classify (merge_group's combined diff base is fiddly;
+              # workflow_dispatch is an explicit "run everything" signal).
+              echo "Event '$EVENT_NAME' — defaulting code=true"
+              echo "code=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          CHANGED=$(git diff --name-only "$diff_range")
+          echo "Changed files (range: $diff_range):"
           while IFS= read -r file; do echo "  $file"; done <<< "$CHANGED"
 
           # Positive list — anything outside it is docs/config/license-only.
