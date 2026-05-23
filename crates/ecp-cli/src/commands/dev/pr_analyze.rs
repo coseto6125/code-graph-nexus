@@ -282,6 +282,49 @@ pub trait GhClient {
 
 pub const CACHE_MARKER: &str = "<!-- ecp-impact-cache:V1 -->";
 
+use std::collections::BTreeSet;
+
+/// For each sibling PR with the queue label, compute the overlap between
+/// THIS PR's changed_symbols and the sibling's cached impact_set.
+///
+/// If a sibling has no cached impact (e.g. race-condition on near-simultaneous
+/// pushes), it is reported with overlap_symbols = ["__pending_analysis__"] —
+/// a conservative signal so Mergify holds off until next tick.
+pub fn detect_cross_pr_conflicts<G: GhClient>(
+    gh: &G,
+    queue_label: &str,
+    self_pr: u32,
+    self_changed_symbols: &[String],
+) -> Result<Vec<CrossPrConflict>, EcpError> {
+    let self_set: BTreeSet<&String> = self_changed_symbols.iter().collect();
+    let siblings = gh.list_sibling_prs(queue_label, self_pr)?;
+    let mut out = Vec::new();
+    for sibling in siblings {
+        match gh.read_cached_impact(sibling.number)? {
+            None => {
+                out.push(CrossPrConflict {
+                    pr: sibling.number,
+                    overlap_symbols: vec!["__pending_analysis__".to_string()],
+                });
+            }
+            Some(other_impact) => {
+                let other_set: BTreeSet<&String> = other_impact.iter().collect();
+                let overlap: Vec<String> = self_set
+                    .intersection(&other_set)
+                    .map(|s| (*s).clone())
+                    .collect();
+                if !overlap.is_empty() {
+                    out.push(CrossPrConflict {
+                        pr: sibling.number,
+                        overlap_symbols: overlap,
+                    });
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub struct RealGhClient;
 
 impl GhClient for RealGhClient {
@@ -482,5 +525,128 @@ mod tests {
             parsed.changed_files()[0],
             "crates/ecp-cli/src/commands/impact.rs"
         );
+    }
+
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    struct MockGh {
+        siblings: Vec<SiblingPr>,
+        cached: HashMap<u32, Vec<String>>,
+        writes: RefCell<Vec<(u32, Vec<String>)>>,
+    }
+
+    impl MockGh {
+        fn new(siblings: Vec<SiblingPr>, cached: HashMap<u32, Vec<String>>) -> Self {
+            Self {
+                siblings,
+                cached,
+                writes: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl GhClient for MockGh {
+        fn list_sibling_prs(&self, _label: &str, exclude: u32) -> Result<Vec<SiblingPr>, EcpError> {
+            Ok(self
+                .siblings
+                .iter()
+                .cloned()
+                .filter(|p| p.number != exclude)
+                .collect())
+        }
+        fn read_cached_impact(&self, pr: u32) -> Result<Option<Vec<String>>, EcpError> {
+            Ok(self.cached.get(&pr).cloned())
+        }
+        fn write_cached_impact(&self, pr: u32, impact: &[String]) -> Result<(), EcpError> {
+            self.writes.borrow_mut().push((pr, impact.to_vec()));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn cross_pr_conflict_disjoint() {
+        let mut cached = HashMap::new();
+        cached.insert(101, vec!["FnX".into(), "FnY".into()]);
+        let gh = MockGh::new(
+            vec![SiblingPr {
+                number: 101,
+                head_ref_oid: "abc".into(),
+            }],
+            cached,
+        );
+        let conflicts = detect_cross_pr_conflicts(
+            &gh,
+            "merge-queue",
+            100,
+            &["FnA".to_string(), "FnB".to_string()],
+        )
+        .unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn cross_pr_conflict_overlap() {
+        let mut cached = HashMap::new();
+        cached.insert(101, vec!["FnA".into(), "FnY".into()]);
+        let gh = MockGh::new(
+            vec![SiblingPr {
+                number: 101,
+                head_ref_oid: "abc".into(),
+            }],
+            cached,
+        );
+        let conflicts = detect_cross_pr_conflicts(
+            &gh,
+            "merge-queue",
+            100,
+            &["FnA".to_string(), "FnB".to_string()],
+        )
+        .unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].pr, 101);
+        assert_eq!(conflicts[0].overlap_symbols, vec!["FnA"]);
+    }
+
+    #[test]
+    fn cross_pr_conflict_missing_cache_is_conservative() {
+        // Sibling PR exists but has no cached impact yet (race condition).
+        // Spec: treat as conflict to be conservative.
+        let gh = MockGh::new(
+            vec![SiblingPr {
+                number: 101,
+                head_ref_oid: "abc".into(),
+            }],
+            HashMap::new(),
+        );
+        let conflicts =
+            detect_cross_pr_conflicts(&gh, "merge-queue", 100, &["FnA".to_string()]).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(
+            conflicts[0].overlap_symbols,
+            vec!["__pending_analysis__".to_string()]
+        );
+    }
+
+    #[test]
+    fn cross_pr_conflict_excludes_self() {
+        let gh = MockGh::new(
+            vec![
+                SiblingPr {
+                    number: 100,
+                    head_ref_oid: "self".into(),
+                },
+                SiblingPr {
+                    number: 101,
+                    head_ref_oid: "abc".into(),
+                },
+            ],
+            HashMap::new(),
+        );
+        let conflicts =
+            detect_cross_pr_conflicts(&gh, "merge-queue", 100, &["FnA".to_string()]).unwrap();
+        // Only PR 101 should appear; self (100) filtered.
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].pr, 101);
     }
 }
