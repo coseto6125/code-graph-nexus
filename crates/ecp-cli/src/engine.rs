@@ -12,6 +12,11 @@ pub struct Engine {
     #[allow(dead_code)]
     overlay_dir: Option<PathBuf>,
     view: GraphView,
+    /// True when this engine was loaded from a sibling SHA's graph because the
+    /// current HEAD had no published graph yet (OOB branch-switch warm-attach
+    /// path). LLM consumers should treat results as slightly stale; a background
+    /// rebuild for the new SHA is already in flight.
+    pub is_stale_for_sha: bool,
 }
 
 /// Discriminated view over the L2 graph plus an optional L1 overlay.
@@ -43,7 +48,17 @@ impl Engine {
             graph_path,
             overlay_dir: None,
             view: GraphView::L2Only,
+            is_stale_for_sha: false,
         })
+    }
+
+    /// Load from a sibling SHA's `graph.bin` for the warm-attach fast path.
+    /// Sets `is_stale_for_sha = true` so the caller can surface a staleness
+    /// note to the LLM consumer without altering query results.
+    pub fn load_warm<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let mut eng = Self::load(path)?;
+        eng.is_stale_for_sha = true;
+        Ok(eng)
     }
 
     /// SessionState-driven constructor (spec §5.1). Classifies the session and
@@ -73,6 +88,7 @@ impl Engine {
                 eng.view = GraphView::L2WithOverlay;
                 Ok(eng)
             }
+
             ecp_core::session::SessionState::Stale { reason } => Err(io::Error::other(format!(
                 "session stale: {reason:?}; remove via `ecp admin sessions reset <id>`"
             ))),
@@ -87,6 +103,14 @@ impl Engine {
         self.overlay_dir = Some(dir);
         self.view = GraphView::L2WithOverlay;
         self
+    }
+
+    /// Expose the stale-for-sha flag so the MCP layer and test assertions can
+    /// inspect it without accessing the private field directly. Returns `true`
+    /// only for engines created via `load_warm`.
+    #[allow(dead_code)]
+    pub fn is_stale_for_sha(&self) -> bool {
+        self.is_stale_for_sha
     }
 
     /// Current view discriminator. PureReference sessions yield `L2Only`;

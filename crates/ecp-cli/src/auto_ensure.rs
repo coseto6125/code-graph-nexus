@@ -3,7 +3,10 @@
 //! `ensure_index` reports state (Ready / Stale / Missing). `ensure_fresh`
 //! is the actionable wrapper:
 //!
-//! - Missing → full L2 build via `build_l2` (sync, cold path).
+//! - Missing → warm-attach most-recent sibling SHA + background rebuild (fast
+//!   path for OOB branch switch — IDE / external terminal `git checkout` where
+//!   no PostToolUse hook fires). Falls back to sync `build_l2` when no sibling
+//!   exists.
 //! - Stale, header-incompatible → full L2 rebuild (corrupt overlay = corruption risk).
 //! - Stale, header-compatible → incremental: `reanalyze_files` for dirty set,
 //!   then L1 overlay fragment write under `<repo>/sessions/<sid>/`.
@@ -38,11 +41,16 @@ pub mod test_counters {
     /// `tests/ensure_fresh_tantivy_drain.rs`; in normal prod (cache root
     /// sibling to the repo) this counter stays at 0.
     pub static TANTIVY_JOIN_COUNT: AtomicUsize = AtomicUsize::new(0);
+    /// Incremented every time `ensure_fresh` returns `WarmAttach` instead of
+    /// blocking on a cold build. Lets integration tests assert the fast path
+    /// fires for OOB branch-switch scenarios.
+    pub static WARM_ATTACH_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     pub fn reset() {
         REANALYZE_CALL_COUNT.store(0, Ordering::Relaxed);
         BUILD_L2_CALL_COUNT.store(0, Ordering::Relaxed);
         TANTIVY_JOIN_COUNT.store(0, Ordering::Relaxed);
+        WARM_ATTACH_COUNT.store(0, Ordering::Relaxed);
     }
 
     pub fn reanalyze_calls() -> usize {
@@ -56,6 +64,10 @@ pub mod test_counters {
     pub fn tantivy_join_calls() -> usize {
         TANTIVY_JOIN_COUNT.load(Ordering::Relaxed)
     }
+
+    pub fn warm_attach_calls() -> usize {
+        WARM_ATTACH_COUNT.load(Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +79,20 @@ pub enum EnsureResult {
     /// Graph exists but working tree has newer files.
     /// `age_seconds` = how long since graph was last built.
     Stale { age_seconds: u64 },
+}
+
+/// Outcome returned by `ensure_fresh`, disambiguating the warm-attach fast
+/// path from a fully synchronous build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnsureFreshOutcome {
+    /// Graph is up-to-date (or was synchronously rebuilt / overlaid). No
+    /// special action needed; `graph_path::resolve` will find the right graph.
+    Ready,
+    /// New HEAD has no published graph yet. The most-recent sibling SHA's graph
+    /// is usable for this invocation; a background rebuild for the new SHA has
+    /// been spawned. The caller should load `sibling_graph_path` and mark the
+    /// engine stale so LLM consumers know results may be slightly behind.
+    WarmAttach { sibling_graph_path: PathBuf },
 }
 
 pub fn ensure_index(graph_path: &Path, worktree_root: &Path) -> io::Result<EnsureResult> {
@@ -180,19 +206,31 @@ fn git_fingerprint_shortcut(
 
 /// Ensure the graph exists and is fresher than the working tree.
 ///
-/// - Missing → `build_l2` (sync, L2 cold path).
+/// - Missing → warm-attach most-recent sibling SHA (background rebuild for new
+///   SHA). Falls back to sync `build_l2` when no sibling exists.
 /// - Stale, header-incompatible → `build_l2` (full rebuild; applying an L1
 ///   overlay against an incompatible base schema produces a corrupt graph).
 /// - Stale, header-compatible → incremental: `reanalyze_files` for the dirty
 ///   file set (T7-4), followed by L1 overlay fragment write (T7-5 will replace
 ///   the overlay write with a zero-copy in-place merge).
 /// - Ready → noop.
-pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<(), String> {
+pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<EnsureFreshOutcome, String> {
     let state =
         ensure_index(graph_path, worktree_root).map_err(|e| format!("ensure_index probe: {e}"))?;
     match state {
-        EnsureResult::Ready => Ok(()),
+        EnsureResult::Ready => Ok(EnsureFreshOutcome::Ready),
         EnsureResult::Missing => {
+            if let Some(sibling) = attach_latest_sibling_sha(worktree_root) {
+                spawn_background_rebuild(worktree_root);
+                test_counters::WARM_ATTACH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                eprintln!(
+                    "l2.warm-attach sibling={} rebuild=background",
+                    sibling.display()
+                );
+                return Ok(EnsureFreshOutcome::WarmAttach {
+                    sibling_graph_path: sibling,
+                });
+            }
             let start = std::time::Instant::now();
             // build_l2 → build_inside_locked writes the HEAD-SHA sidecar in
             // the background as its final step; no extra write needed here.
@@ -200,7 +238,7 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<(), Strin
                 .map_err(|e| format!("build_l2: {e}"))?;
             drain_tantivy_if_inside_worktree(&mut result, worktree_root);
             eprintln!("l2.built elapsed={:.2}s", start.elapsed().as_secs_f32());
-            Ok(())
+            Ok(EnsureFreshOutcome::Ready)
         }
         EnsureResult::Stale { .. } => {
             if !crate::engine::header_compatible(graph_path) {
@@ -255,9 +293,54 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<(), Strin
                 // current HEAD — refresh the fingerprint as the very last step.
                 write_head_sha_sidecar(graph_path, worktree_root);
             }
-            Ok(())
+            Ok(EnsureFreshOutcome::Ready)
         }
     }
+}
+
+/// Returns the `graph.bin` path of the most recently built sibling commit dir
+/// for this repo, or `None` if no published sibling exists.
+///
+/// Scans `~/.ecp/<repo>/commits/` and picks the dir whose `graph.bin` mtime
+/// is newest among all complete (non-recovery) entries. Mtime rather than
+/// generation order is intentional here: we want the most recently *written*
+/// graph regardless of which branch it came from, so the warm base is as fresh
+/// as possible without needing to parse generation suffixes.
+fn attach_latest_sibling_sha(worktree_root: &Path) -> Option<PathBuf> {
+    let home_ecp = ecp_core::registry::resolve_home_ecp();
+    let repo_dir_name = crate::repo_identity::repo_dir_name_for_cwd(worktree_root).ok()?;
+    let commits_dir = home_ecp.join(&repo_dir_name).join("commits");
+    let sibling_dir = crate::commit_lookup::find_latest_by_mtime(&commits_dir)?;
+    let graph_bin = sibling_dir.join("graph.bin");
+    if graph_bin.is_file() && crate::engine::header_compatible(&graph_bin) {
+        Some(graph_bin)
+    } else {
+        None
+    }
+}
+
+/// Fire-and-forget background rebuild for `worktree_root`.
+///
+/// Uses the same `spawn_bg` + `flock -n` pattern as `post_tool_use`'s
+/// `spawn_background_reindex`. Concurrent triggers no-op because `flock -n`
+/// exits immediately if another builder holds the lock.
+fn spawn_background_rebuild(worktree_root: &Path) {
+    let home_ecp = ecp_core::registry::resolve_home_ecp();
+    let Ok(repo_dir_name) = crate::repo_identity::repo_dir_name_for_cwd(worktree_root) else {
+        return;
+    };
+    let lock = home_ecp
+        .join(&repo_dir_name)
+        .join(".warm-attach-rebuild.lock");
+    let repo_str = worktree_root.to_string_lossy();
+    let args: Vec<&str> = vec!["admin", "index", "--repo", repo_str.as_ref()];
+    let _ = crate::background::spawn_bg(crate::background::BgJob {
+        args: &args,
+        lock: &lock,
+        cwd: worktree_root,
+        retry: (1, 0),
+        markers: None,
+    });
 }
 
 /// FU-2026-05-23-047: when `resolve_home_ecp()` resolves to a path NESTED
