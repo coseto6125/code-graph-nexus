@@ -445,6 +445,9 @@ pub fn detect_cross_pr_conflicts<G: GhClient>(
     for sibling in siblings {
         match gh.read_cached_impact(sibling.number)? {
             None => {
+                // Conservative: sibling hasn't cached its impact yet (analyze
+                // workflow still running on its push). Treat as conflict so
+                // Mergify holds off until the next tick fills the cache.
                 out.push(CrossPrConflict {
                     pr: sibling.number,
                     overlap_symbols: vec!["__pending_analysis__".to_string()],
