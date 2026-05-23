@@ -281,6 +281,32 @@ ecp admin gemini install skills
 Progressive path (TUI): `ecp admin → Agent Integrations → MCP → <host> → install`.
 
 <details>
+<summary><b>Manual mcp.json snippet</b> — Cursor / Windsurf / Cline (no scripted installer yet)</summary>
+
+These hosts read an `mcp.json` (or equivalent) but the file location varies per IDE. Paste this server entry into the host's MCP config; the binary just needs to be on `$PATH`:
+
+```json
+{
+  "mcpServers": {
+    "ecp": {
+      "command": "ecp",
+      "args": ["admin", "mcp", "serve"]
+    }
+  }
+}
+```
+
+Per-host file:
+
+- **Cursor** → `~/.cursor/mcp.json` (global) or `<repo>/.cursor/mcp.json` (per-project)
+- **Windsurf** → `~/.codeium/windsurf/mcp_config.json`
+- **Cline** → VS Code settings → `cline.mcpServers` (object keyed the same way)
+
+After saving, restart the IDE; verify with `ecp admin mcp tools` matches what the host now lists.
+
+</details>
+
+<details>
 <summary><b>Codex CLI native integration</b> (separate from MCP — prepares a patch for an openai/codex fork)</summary>
 
 The Codex native path doesn't edit the running Codex installation; it writes a patch you apply to an `openai/codex` fork.

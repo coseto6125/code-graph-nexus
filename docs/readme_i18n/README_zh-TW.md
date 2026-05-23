@@ -232,6 +232,32 @@ ecp admin gemini install skills
 ```
 
 <details>
+<summary><b>手動 mcp.json snippet</b> —— Cursor / Windsurf / Cline（尚無 scripted installer）</summary>
+
+這幾個 host 讀 `mcp.json`（或同類設定），但檔案位置依 IDE 各異。把下面這段 server entry 貼進對應設定即可，binary 只要在 `$PATH` 上：
+
+```json
+{
+  "mcpServers": {
+    "ecp": {
+      "command": "ecp",
+      "args": ["admin", "mcp", "serve"]
+    }
+  }
+}
+```
+
+各 host 設定檔位置：
+
+- **Cursor** → `~/.cursor/mcp.json`（global）或 `<repo>/.cursor/mcp.json`（per-project）
+- **Windsurf** → `~/.codeium/windsurf/mcp_config.json`
+- **Cline** → VS Code settings → `cline.mcpServers`（key 結構一樣）
+
+存檔後重啟 IDE，跑 `ecp admin mcp tools` 對照 host 那邊列出的工具集對得上即可。
+
+</details>
+
+<details>
 <summary><b>Codex CLI 原生整合</b>（跟 MCP 不一樣 —— 對 openai/codex fork 出 patch）</summary>
 
 Codex 原生路徑不會改你正在跑的 Codex 安裝；它寫出一份 patch，你拿去套用在 `openai/codex` fork。

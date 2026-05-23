@@ -81,8 +81,8 @@ For agent → agent piping `toon` is better than json (compact key:value); for s
 
 WHERE: `AND / OR / NOT`, `= != < <= > >=`, `STARTS WITH / ENDS WITH / CONTAINS / =~ / IN [...]`. 支援 `COUNT(*)` / `DISTINCT` / `ORDER BY` / `SKIP` / `LIMIT` / `WITH` / `UNION` / 變長 `[:Rel*1..2]` / 反向 `<-[r:Rel]-`.
 
-**NodeKind** (case-sensitive): `Function Method Class Property Constructor Interface Const Variable Import Route Process Document Section EntryPoint File`
-**RelType** (CamelCase only — `HAS_METHOD` 報 `unknown RelType`): `Calls Extends Imports Implements HasMethod HasProperty Accesses HandlesRoute StepInProcess References Defines Fetches`
+**NodeKind** (case-sensitive). Symbol: `Function Method Class Interface Constructor Property Variable Const Struct Enum EnumVariant Typedef Trait Impl Annotation Macro`. Scope: `File Namespace Module Process`. Runtime: `Route EntryPoint TransactionScope`. Data/IO: `SchemaField EventTopic PathLiteral`. Import/doc: `Import Document Section`.
+**RelType** (CamelCase only — `HAS_METHOD` 報 `unknown RelType`). Structure: `Defines HasMethod HasProperty Extends Implements Overrides`. Flow: `Calls Accesses References Imports`. Routing/IO: `HandlesRoute Fetches StepInProcess UsesPathLiteral`. Schema/event/tx: `MirrorsField Publishes Subscribes EventTopicMirror OpensTxScope`. Metadata: `Decorates`.
 **Node props**: `name uid kind filePath content` · **Edge props**: `rel_type confidence reason`
 
 `HasMethod` target kind 依語言：Python `def` 和 Rust 關聯 fn 是 `Function`；真 method 是 `Method`。`MATCH (c:Class)-[:HasMethod]->(m) RETURN m` 比 `:Method` filter 通用（涵蓋所有語言）。
