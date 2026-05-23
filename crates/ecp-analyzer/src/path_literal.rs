@@ -171,7 +171,9 @@ pub fn classify_sink(callee: Option<&str>) -> (SinkKind, SinkConfidence) {
         // ── HIGH-confidence reads (name uniquely identifies a read op) ──
         "read_to_string" | "read_to_end" | "readText" | "read_text" | "ReadAllText"
         | "ReadAllBytes" | "ReadAllLines" | "readFile" | "readFileSync" | "ReadFile" | "slurp"
-        | "read_all" | "readAsString" | "readAsStringSync" | "readAsBytes" => (Read, High),
+        | "read_all" | "readAsString" | "readAsStringSync" | "readAsBytes"
+        // pathlib.Path snake_case equivalents (FU-2026-05-23-023 Python chain promotion)
+        | "read_bytes" => (Read, High),
 
         // ── HIGH-confidence writes ────────────────────────────────────
         "write_all" | "atomic_write" | "atomic_write_json" | "writeFile" | "writeFileSync"
@@ -179,7 +181,9 @@ pub fn classify_sink(callee: Option<&str>) -> (SinkKind, SinkConfidence) {
         | "file_put_contents" | "writeAsString" | "writeAsStringSync" | "writeAsBytes"
         // Kotlin stdlib + java.io.File.writeText/writeBytes; symmetric with
         // the readText/readBytes/readLines listed in HIGH reads above.
-        | "writeText" | "writeBytes" | "appendText" | "appendBytes" => (Write, High),
+        | "writeText" | "writeBytes" | "appendText" | "appendBytes"
+        // pathlib.Path snake_case equivalents (FU-2026-05-23-023 Python chain promotion)
+        | "write_text" | "write_bytes" => (Write, High),
 
         // ── MEDIUM (overloaded with non-file IO writes) ───────────────
         "write" => (Write, Medium),
