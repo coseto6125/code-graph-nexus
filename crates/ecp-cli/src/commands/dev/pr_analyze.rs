@@ -5,6 +5,7 @@
 //! Black-box wraps `ecp impact --baseline <ref> --format json` (subprocess),
 //! so no tight coupling to impact's internal API.
 
+use crate::output::OutputFormat;
 use clap::Args;
 use ecp_core::EcpError;
 
@@ -28,7 +29,7 @@ pub struct PrAnalyzeArgs {
 
     /// Output format. Workflow consumes JSON.
     #[arg(long, default_value = "json")]
-    pub format: String,
+    pub format: OutputFormat,
 
     /// Do not write/update own cache comment, do not call gh mutations.
     #[arg(long = "dry-run")]
