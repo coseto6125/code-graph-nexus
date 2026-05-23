@@ -347,6 +347,12 @@ impl FrameworkId {
             20 => Self::Unknown,
             21 => Self::DotNetTransactional,
             22 => Self::SymfonyTransactional,
+            23 => Self::TypeOrmTransactional,
+            24 => Self::RustTransaction,
+            25 => Self::DartTransaction,
+            26 => Self::GoSqlTx,
+            27 => Self::RubyActiveRecordTransaction,
+            28 => Self::SwiftTransactional,
             _ => Self::Unknown,
         }
     }
