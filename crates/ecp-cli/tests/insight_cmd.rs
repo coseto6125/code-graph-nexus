@@ -4,46 +4,21 @@
 //! the real `~/.ecp/` directory and to keep tests reproducible.
 
 use ecp_cli::commands::insight::{build_payload, InsightArgs};
+use ecp_core::time::unix_secs_to_rfc3339;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
 // ─── fixture helpers ──────────────────────────────────────────────────────────
 
-/// RFC3339 UTC timestamp that is definitely within the last 24h window.
+/// RFC3339 UTC timestamp 30 minutes ago — within the default 24h window.
 fn recent_ts() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    // Use a fixed offset from now: 30 minutes ago.
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
         - 1800;
-    unix_to_rfc3339(secs)
-}
-
-/// RFC3339 UTC from Unix seconds (same algorithm as insight.rs).
-fn unix_to_rfc3339(secs: u64) -> String {
-    let days = secs / 86400;
-    let time = secs % 86400;
-    let hh = time / 3600;
-    let mm = (time % 3600) / 60;
-    let ss = time % 60;
-    let (y, m, d) = days_to_ymd(days);
-    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
-}
-
-fn days_to_ymd(days: u64) -> (u32, u32, u32) {
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z % 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as u32, m as u32, d as u32)
+    unix_secs_to_rfc3339(secs)
 }
 
 /// Write a fixture jsonl file with `n` calls for `tool`, all within the
@@ -170,7 +145,7 @@ fn insight_old_records_outside_window_excluded() {
             .as_secs()
             .saturating_sub(48 * 3600)
     };
-    let old_ts = unix_to_rfc3339(old_secs);
+    let old_ts = unix_secs_to_rfc3339(old_secs);
     std::fs::write(
         &path,
         format!("{{\"ts\":\"{old_ts}\",\"tool\":\"ecp_old\",\"duration_ms\":5,\"ok\":true}}\n"),

@@ -35,6 +35,18 @@ pub enum McpAction {
 }
 
 pub fn run(args: McpArgs, root_cmd: Command) -> Result<(), EcpError> {
+    // Register the canonical repo identity with the MCP telemetry writer
+    // BEFORE serving. Without this, telemetry.rs falls back to no-op
+    // (the writer can't safely pick a key on its own — `repo_dir_name_for_cwd`
+    // lives in ecp-cli and depends on `git_cache`). `Tools` action: still
+    // call it so `init_repo_id` is consistent regardless of subcommand
+    // (idempotent; no-op for any future re-entry).
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(repo_key) = crate::repo_identity::repo_dir_name_for_cwd(&cwd) {
+            ecp_mcp::telemetry::init_repo_id(repo_key);
+        }
+    }
+
     let server =
         EcpMcpServer::new(&root_cmd).map_err(|e| EcpError::Output(format!("server init: {e}")))?;
 

@@ -10,6 +10,7 @@
 use crate::output::{emit, OutputFormat};
 use clap::Args;
 use ecp_core::registry::resolve_home_ecp;
+use ecp_core::time::{parse_rfc3339_secs, unix_secs_to_rfc3339};
 use ecp_core::EcpError;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -87,19 +88,25 @@ fn resolve_path(args: &InsightArgs) -> Result<(PathBuf, String), EcpError> {
         return Ok((explicit.clone(), display));
     }
 
-    let repo_name = match &args.repo {
+    // Use the same `<basename>__<xxh3_hash>` key the rest of ~/.ecp/ uses
+    // (graph.bin / parse_cache / blind_spots all go through
+    // `repo_dir_name_for_cwd`). The bare `file_name()` we had in v1 of
+    // this file produced a different key, leaving telemetry orphaned vs.
+    // every other ecp consumer — and risked collisions for two repos
+    // sharing a basename across different parent dirs.
+    let repo_key = match &args.repo {
         Some(r) => r.clone(),
-        None => std::env::current_dir()
-            .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .ok_or_else(|| {
-                EcpError::InvalidArgument("cannot determine repo name from cwd".into())
-            })?,
+        None => {
+            let cwd = std::env::current_dir()
+                .map_err(|e| EcpError::InvalidArgument(format!("cannot determine cwd: {e}")))?;
+            crate::repo_identity::repo_dir_name_for_cwd(&cwd)
+                .map_err(|e| EcpError::InvalidArgument(format!("repo identity: {e}")))?
+        }
     };
 
     let base = resolve_home_ecp();
-    let path = base.join("telemetry").join(&repo_name).join("calls.jsonl");
-    let display = format!("~/.ecp/telemetry/{repo_name}/calls.jsonl");
+    let path = base.join("telemetry").join(&repo_key).join("calls.jsonl");
+    let display = format!("~/.ecp/telemetry/{repo_key}/calls.jsonl");
     Ok((path, display))
 }
 
@@ -230,7 +237,7 @@ fn percentile(sorted: &[u64], pct: usize) -> u64 {
     sorted[idx]
 }
 
-// ─── time helpers (stdlib-only, mirrors telemetry.rs) ────────────────────────
+// ─── time helpers ────────────────────────────────────────────────────────────
 
 fn now_unix_secs() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -244,61 +251,7 @@ fn cutoff_unix_secs(hours: u64) -> u64 {
     now_unix_secs().saturating_sub(hours * 3600)
 }
 
-/// Minimal RFC3339 parser: handles `YYYY-MM-DDTHH:MM:SSZ` only.
-/// Fields beyond seconds (fractional, offsets) are ignored — telemetry
-/// writer emits whole-second precision.
-fn parse_rfc3339_secs(s: &str) -> Option<u64> {
-    // Expected: 2026-05-23T07:30:00Z  (20 chars minimum)
-    if s.len() < 19 {
-        return None;
-    }
-    let year: u64 = s[0..4].parse().ok()?;
-    let month: u64 = s[5..7].parse().ok()?;
-    let day: u64 = s[8..10].parse().ok()?;
-    let hh: u64 = s[11..13].parse().ok()?;
-    let mm: u64 = s[14..16].parse().ok()?;
-    let ss: u64 = s[17..19].parse().ok()?;
-
-    // Days since epoch via Gregorian formula (same as telemetry.rs).
-    let days = ymd_to_days(year, month, day)?;
-    Some(days * 86400 + hh * 3600 + mm * 60 + ss)
-}
-
-fn ymd_to_days(y: u64, m: u64, d: u64) -> Option<u64> {
-    if m == 0 || m > 12 || d == 0 || d > 31 {
-        return None;
-    }
-    // Shift year so Mar 1 is the start (simplifies leap-year logic).
-    let (y, m) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
-    let era = y / 400;
-    let yoe = y % 400;
-    let doy = (153 * m + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe;
-    // Subtract days between 0000-03-01 and 1970-01-01 = 719468
-    days.checked_sub(719468)
-}
-
-fn unix_secs_to_rfc3339(secs: u64) -> String {
-    let days = secs / 86400;
-    let time = secs % 86400;
-    let hh = time / 3600;
-    let mm = (time % 3600) / 60;
-    let ss = time % 60;
-    let (year, month, day) = days_to_ymd(days);
-    format!("{year:04}-{month:02}-{day:02}T{hh:02}:{mm:02}:{ss:02}Z")
-}
-
-fn days_to_ymd(days: u64) -> (u32, u32, u32) {
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z % 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as u32, m as u32, d as u32)
-}
+// Calendar / RFC3339 helpers (`parse_rfc3339_secs`, `unix_secs_to_rfc3339`,
+// `days_to_ymd`, `ymd_to_days`) now live in `ecp_core::time`. Previously
+// three copies existed — telemetry.rs / insight.rs / insight_cmd.rs —
+// and any calendar fix had to be applied to all three.
