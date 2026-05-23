@@ -15,9 +15,14 @@ name: Dependabot auto-merge
 on:
   pull_request_target:
 
+# GITHUB_TOKEN under `pull_request_target` from a Dependabot-authored
+# event is minted with reduced scope regardless of what `permissions:`
+# declares (GitHub safety against malicious deps). The
+# `enablePullRequestAutoMerge` GraphQL mutation fails with "Resource
+# not accessible by integration" as a result. AUTO_MERGE_PAT bypasses
+# this restriction; GITHUB_TOKEN stays read-only for `fetch-metadata`.
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   dependabot:
@@ -42,4 +47,4 @@ jobs:
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_PAT }}
