@@ -229,6 +229,13 @@ pub struct PrAnalyzeArgs {
     #[arg(long = "queue-label", default_value = "merge-queue")]
     pub queue_label: String,
 
+    /// Target branch of this PR. Sibling PRs targeting a different branch
+    /// are excluded from cross-PR conflict scan — Mergify batches per target
+    /// branch and we don't want a PR to develop to spuriously block a PR
+    /// to main on overlapping symbols.
+    #[arg(long = "base-branch", default_value = "main")]
+    pub base_branch: String,
+
     /// Output format. Workflow consumes JSON.
     #[arg(long, default_value = "json")]
     pub format: OutputFormat,
@@ -259,6 +266,7 @@ pub fn run(args: PrAnalyzeArgs, _cli_graph: &std::path::Path) -> Result<(), EcpE
         detect_cross_pr_conflicts(
             &gh,
             &args.queue_label,
+            &args.base_branch,
             args.pr_number,
             &changed_symbol_names,
         )?
@@ -410,10 +418,13 @@ pub struct SiblingPr {
 /// Abstracted GitHub interactions so the cross-PR conflict logic is testable
 /// without spawning `gh` or hitting the real API.
 pub trait GhClient {
-    /// List open PRs with the given label, excluding the given PR number.
+    /// List open PRs with the given label and target branch, excluding the
+    /// given PR number. `base_branch` filters by target — siblings targeting
+    /// a different branch are out-of-scope for cross-PR conflict.
     fn list_sibling_prs(
         &self,
         queue_label: &str,
+        base_branch: &str,
         exclude_pr: u32,
     ) -> Result<Vec<SiblingPr>, EcpError>;
 
@@ -436,11 +447,12 @@ use std::collections::BTreeSet;
 pub fn detect_cross_pr_conflicts<G: GhClient>(
     gh: &G,
     queue_label: &str,
+    base_branch: &str,
     self_pr: u32,
     self_changed_symbols: &[String],
 ) -> Result<Vec<CrossPrConflict>, EcpError> {
     let self_set: BTreeSet<&String> = self_changed_symbols.iter().collect();
-    let siblings = gh.list_sibling_prs(queue_label, self_pr)?;
+    let siblings = gh.list_sibling_prs(queue_label, base_branch, self_pr)?;
     let mut out = Vec::new();
     for sibling in siblings {
         match gh.read_cached_impact(sibling.number)? {
@@ -474,6 +486,7 @@ impl GhClient for RealGhClient {
     fn list_sibling_prs(
         &self,
         queue_label: &str,
+        base_branch: &str,
         exclude_pr: u32,
     ) -> Result<Vec<SiblingPr>, EcpError> {
         use std::process::Command;
@@ -483,6 +496,8 @@ impl GhClient for RealGhClient {
                 "list",
                 "--label",
                 queue_label,
+                "--base",
+                base_branch,
                 "--state",
                 "open",
                 "--json",
@@ -557,21 +572,30 @@ impl GhClient for RealGhClient {
             .map(str::to_owned)
             .filter(|s| !s.is_empty());
 
+        // .output() captures gh's stdout (e.g. the new-comment URL from
+        // `gh pr comment`) instead of letting it pass through to our parent
+        // stdout — pr_analyze prints its JSON payload to stdout and the
+        // workflow pipes that to /tmp/analysis.json, so any subprocess
+        // output here would corrupt the JSON and break the downstream jq.
         let exec = if let Some(id) = existing_id {
             let patch_endpoint = format!("repos/{{owner}}/{{repo}}/issues/comments/{id}");
             Command::new("gh")
                 .args(["api", "-X", "PATCH", &patch_endpoint, "-f"])
                 .arg(format!("body={body}"))
-                .status()
+                .output()
         } else {
             Command::new("gh")
                 .args(["pr", "comment", &pr.to_string(), "--body", &body])
-                .status()
+                .output()
         };
-        let status = exec.map_err(EcpError::Io)?;
-        if !status.success() {
+        let out = exec.map_err(EcpError::Io)?;
+        if !out.status.success() {
             return Err(EcpError::GitDiff {
-                reason: format!("gh write comment exit {status}"),
+                reason: format!(
+                    "gh write comment exit {}: {}",
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
             });
         }
         Ok(())
@@ -684,7 +708,12 @@ mod tests {
     }
 
     impl GhClient for MockGh {
-        fn list_sibling_prs(&self, _label: &str, exclude: u32) -> Result<Vec<SiblingPr>, EcpError> {
+        fn list_sibling_prs(
+            &self,
+            _label: &str,
+            _base_branch: &str,
+            exclude: u32,
+        ) -> Result<Vec<SiblingPr>, EcpError> {
             Ok(self
                 .siblings
                 .iter()
@@ -715,6 +744,7 @@ mod tests {
         let conflicts = detect_cross_pr_conflicts(
             &gh,
             "merge-queue",
+            "main",
             100,
             &["FnA".to_string(), "FnB".to_string()],
         )
@@ -736,6 +766,7 @@ mod tests {
         let conflicts = detect_cross_pr_conflicts(
             &gh,
             "merge-queue",
+            "main",
             100,
             &["FnA".to_string(), "FnB".to_string()],
         )
@@ -757,7 +788,8 @@ mod tests {
             HashMap::new(),
         );
         let conflicts =
-            detect_cross_pr_conflicts(&gh, "merge-queue", 100, &["FnA".to_string()]).unwrap();
+            detect_cross_pr_conflicts(&gh, "merge-queue", "main", 100, &["FnA".to_string()])
+                .unwrap();
         assert_eq!(conflicts.len(), 1);
         assert_eq!(
             conflicts[0].overlap_symbols,
@@ -781,7 +813,8 @@ mod tests {
             HashMap::new(),
         );
         let conflicts =
-            detect_cross_pr_conflicts(&gh, "merge-queue", 100, &["FnA".to_string()]).unwrap();
+            detect_cross_pr_conflicts(&gh, "merge-queue", "main", 100, &["FnA".to_string()])
+                .unwrap();
         // Only PR 101 should appear; self (100) filtered.
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].pr, 101);
