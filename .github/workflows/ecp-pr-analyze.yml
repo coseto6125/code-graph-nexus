@@ -58,7 +58,7 @@ jobs:
         run: cargo build -p egent-code-plexus --bin ecp --release
 
       - name: Index repo
-        run: ./target/release/ecp index
+        run: ./target/release/ecp admin index
 
       - name: Run pr-analyze
         id: analyze
