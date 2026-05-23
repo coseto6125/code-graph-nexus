@@ -17,6 +17,45 @@ const CACHE_MARKER: &str = "<!-- ecp-impact-cache:V1 -->";
 // the plain marker and the `:truncated` suffix variant written on overflow.
 const CACHE_MARKER_PREFIX: &str = "<!-- ecp-impact-cache:V1";
 
+/// Render the cache body with the JSON wrapped in a collapsed `<details>`
+/// block so the PR-conversation view doesn't show a raw JSON array. The
+/// marker stays on line 1 (jq `startswith` invariant), and the JSON stays
+/// on its own line inside the `<details>` so [`parse_cache_body`] can
+/// recover it with a single substring scan.
+fn format_cache_body(
+    marker: &str,
+    json_payload: &str,
+    n_symbols: usize,
+    truncated: bool,
+) -> String {
+    let truncated_tag = if truncated { " · truncated" } else { "" };
+    format!(
+        "{marker}\n\
+         <details><summary>ecp impact cache ({n_symbols} symbols{truncated_tag}) — internal, used by <code>ecp dev pr-analyze</code></summary>\n\
+         \n\
+         {json_payload}\n\
+         \n\
+         </details>"
+    )
+}
+
+/// Extract the JSON array from a cache comment body. Tolerates both the
+/// legacy two-line layout (`marker\n[...]`) and the `<details>`-wrapped
+/// layout produced by [`format_cache_body`]: in both cases the JSON is
+/// the first line that starts with `[`.
+fn parse_cache_body(body: &str) -> Result<Option<Vec<String>>, EcpError> {
+    if body.is_empty() {
+        return Ok(None);
+    }
+    let json_line = body
+        .lines()
+        .find(|line| line.starts_with('['))
+        .ok_or_else(|| EcpError::Serialization("cache body has no JSON line".into()))?;
+    let symbols: Vec<String> = serde_json::from_str(json_line)
+        .map_err(|e| EcpError::Serialization(format!("parse cached impact: {e}")))?;
+    Ok(Some(symbols))
+}
+
 #[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "kebab-case")]
 pub enum Area {
@@ -575,32 +614,26 @@ impl GhClient for RealGhClient {
             return Ok(None); // no comments / no access — treat as cache miss
         }
         let body = String::from_utf8_lossy(&out.stdout);
-        let body = body.trim();
-        if body.is_empty() {
-            return Ok(None);
-        }
-        // Body shape: "<!-- ecp-impact-cache:V1 -->\n{JSON array}"
-        let json_start = body.find('\n').map(|i| i + 1).unwrap_or(body.len());
-        let json_payload = &body[json_start..];
-        let symbols: Vec<String> = serde_json::from_str(json_payload)
-            .map_err(|e| EcpError::Serialization(format!("parse cached impact: {e}")))?;
-        Ok(Some(symbols))
+        parse_cache_body(body.trim())
     }
 
     fn write_cached_impact(&self, pr: u32, impact_set: &[String]) -> Result<(), EcpError> {
         use std::process::Command;
-        // Truncate to 65000 chars worth of JSON to stay under GH's 65535 limit.
+        // Cap JSON at 64_800 — leaves ~700 chars budget for the <details>
+        // wrapper while staying under GH's 65_535-byte comment limit.
         let mut payload = serde_json::to_string(impact_set)
             .map_err(|e| EcpError::Serialization(format!("encode impact: {e}")))?;
-        // CACHE_MARKER is "<!-- ecp-impact-cache:V1 -->"; splice `:truncated`
-        // before the closing ` -->` so the prefix-match in find-existing still works.
-        let body = if payload.len() > 65_000 {
-            payload.truncate(65_000);
+        let truncated = payload.len() > 64_800;
+        let marker = if truncated {
+            payload.truncate(64_800);
             payload.push_str("\"]"); // best-effort close
-            format!("<!-- ecp-impact-cache:V1:truncated -->\n{payload}")
+                                     // Splice `:truncated` before the closing ` -->` so prefix-match in
+                                     // find-existing still works.
+            "<!-- ecp-impact-cache:V1:truncated -->"
         } else {
-            format!("{CACHE_MARKER}\n{payload}")
+            CACHE_MARKER
         };
+        let body = format_cache_body(marker, &payload, impact_set.len(), truncated);
 
         // Try to find an existing marker comment to PATCH; otherwise POST a new one.
         let list_endpoint = format!("repos/{{owner}}/{{repo}}/issues/{pr}/comments");
@@ -715,6 +748,32 @@ mod tests {
     fn risk_high_boundary() {
         assert_eq!(classify_risk(31), Risk::High);
         assert_eq!(classify_risk(1000), Risk::High);
+    }
+
+    #[test]
+    fn cache_body_roundtrip() {
+        let symbols = vec!["fn_a".to_string(), "fn_b".to_string()];
+        let json = serde_json::to_string(&symbols).unwrap();
+        let body = format_cache_body(CACHE_MARKER, &json, symbols.len(), false);
+        assert!(body.starts_with(CACHE_MARKER), "marker on first line");
+        assert!(body.contains("<details>"), "JSON wrapped in <details>");
+        assert!(body.contains("2 symbols"), "summary names symbol count");
+        let parsed = parse_cache_body(&body).unwrap().unwrap();
+        assert_eq!(parsed, symbols);
+    }
+
+    #[test]
+    fn cache_body_legacy_two_line_format_still_parses() {
+        // Pre-collapsible writer left `marker\n[...]` bodies in production
+        // comments; reader must still extract them post-migration.
+        let legacy = "<!-- ecp-impact-cache:V1 -->\n[\"old_fn\",\"older_fn\"]";
+        let parsed = parse_cache_body(legacy).unwrap().unwrap();
+        assert_eq!(parsed, vec!["old_fn", "older_fn"]);
+    }
+
+    #[test]
+    fn cache_body_empty_returns_none() {
+        assert!(parse_cache_body("").unwrap().is_none());
     }
 
     #[test]
