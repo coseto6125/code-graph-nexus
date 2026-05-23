@@ -133,6 +133,10 @@ enum Commands {
     /// List `EventTopicMirror` heuristic edges: (publisher_fn, subscriber_fn, topic, confidence).
     /// Edges are emitted by T5-33 at confidence=0.85; filter with --min-confidence, --topic, --lib.
     FindEventMirrors(commands::find_event_mirrors::FindEventMirrorsArgs),
+    /// Per-language BlindSpot emitter inventory (`schema blindspots`) —
+    /// distinguishes "no blind spot in this diff" from "ecp doesn't detect
+    /// this dispatch pattern yet" so LLM-context builders can flag gaps.
+    Schema(commands::schema::SchemaArgs),
 }
 
 fn main() {
@@ -198,6 +202,7 @@ fn main() {
         Commands::Watch(args) => run_no_graph!(commands::watch::run(args.clone())),
         Commands::Peers(args) => run_no_graph!(commands::peers::run(args.clone())),
         Commands::Group { cmd } => run_no_graph!(commands::group::run(cmd.clone())),
+        Commands::Schema(args) => run_no_graph!(commands::schema::run(args.clone())),
         _ => {} // fall through to graph-loading path
     }
 
@@ -225,7 +230,8 @@ fn main() {
         | Commands::Hook(_)
         | Commands::Watch(_)
         | Commands::Peers(_)
-        | Commands::Group { .. } => None,
+        | Commands::Group { .. }
+        | Commands::Schema(_) => None,
     };
     let cwd = repo_opt
         .map(std::path::PathBuf::from)
@@ -270,7 +276,8 @@ fn main() {
         | Commands::Hook(_)
         | Commands::Watch(_)
         | Commands::Peers(_)
-        | Commands::Group { .. } => unreachable!("handled before graph load"),
+        | Commands::Group { .. }
+        | Commands::Schema(_) => unreachable!("handled before graph load"),
     };
     if let Err(e) = result {
         eprintln!("Command failed: {e}");

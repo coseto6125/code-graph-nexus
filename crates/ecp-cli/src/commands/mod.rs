@@ -21,6 +21,7 @@ pub mod peers_msg;
 pub mod rename;
 pub mod review;
 pub mod routes;
+pub mod schema;
 pub mod shape_check;
 pub mod summary;
 pub mod symbol_id;
