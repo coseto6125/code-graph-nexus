@@ -154,35 +154,44 @@ discriminant bump — coordinate with parser owners before landing.
 
 ### Constraint 5: schema introspection requirement
 
-After P1–P7 land, `ecp schema blindspots` (a yet-to-exist subcommand)
-must list:
-- Per-lang: `implemented | partial | none` for BlindSpot emitter
-- Per-lang: `implemented | partial | none` for CallMeta indirect-
-  dispatch detection
-- All known kinds across langs with their hint patterns
+**Status: SHIPPED** in FU-001 schema-cmd (see
+`crates/ecp-cli/src/commands/schema.rs`).
+
+`ecp schema blindspots` lists:
+- Per-lang: `implemented | none` for BlindSpot emitter
+- Per-lang: `implemented | none` for CallMeta indirect-dispatch detection
+- All known kinds across langs
 
 Without this, an LLM seeing `INDIRECT_DISPATCH_IN_DIFF_REGION` empty in a
 Java PR cannot distinguish "no indirect dispatch in this diff" from "our
 Java parser doesn't detect it yet" — silent gap precisely where it
 matters.
 
-This subcommand is out of scope for the current PR but **must** ship
-before P1–P7 close. Suggested shape:
+Actual output shape (the `schema` namespace also gained sibling
+subcommands `reltypes` / `node-kinds` / `graph-version` in the same
+rollout — all graph-loadless, all support `--format json|text`):
 
 ```json
 {
   "languages": [
     {
-      "name": "Python",
+      "name": "python",
       "blindspot_emitter": "implemented",
       "indirect_dispatch": "implemented",
       "blind_kinds": ["python-eval", "python-exec", ...]
     },
-    { "name": "Java",  "blindspot_emitter": "none", "indirect_dispatch": "none", ... },
+    { "name": "java", "blindspot_emitter": "implemented", "indirect_dispatch": "none", "blind_kinds": ["java-class-forname", "java-method-invoke"] },
     ...
   ]
 }
 ```
+
+**Known follow-up**: MCP exposure of `ecp_schema` is currently
+auto-derived from the clap top-level subcommand, so the nested
+`blindspots` / `reltypes` / `node-kinds` / `graph-version` discriminator
+isn't surfaced to MCP clients. Needs a hand-rolled tool fronting the
+subcmd via a JSON enum (mirror `ecp_group` / `ecp_peers`). Tracked in
+FOLLOWUPS.md.
 
 ### Constraint 6: shared dispatcher skeleton
 
