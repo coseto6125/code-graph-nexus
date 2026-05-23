@@ -160,12 +160,14 @@ jobs:
   #
   # - Linux (T=4): runner pool is abundant → 4 shards truly parallel,
   #   wall-clock per platform ~7m → ~2m45s.
-  # - macOS / Windows (T=1): GitHub free-tier runner pool is small enough
-  #   (1–2 concurrent macOS, ~5 concurrent windows) that 4-way sharding
-  #   serialises into queue tax. Measured wall on macOS:
+  # - Windows (T=4): runner pool was measured at queue ~2-25s on the
+  #   pre-merge ci-windows-nightly.yml, so 4-way sharding genuinely
+  #   parallelises (exec ~870s un-sharded → ~220s per shard, ~5× wins).
+  # - macOS (T=1): GitHub free-tier macOS pool serialises allocation
+  #   (1–2 concurrent), so 4-way sharding pays queue tax. Measured:
   #     sharded:    queue 600s + exec 250s = ~850s
   #     unsharded:  queue 370s + exec 430s = ~800s
-  #   So macOS/Windows stay as single jobs until runner availability changes.
+  #   macOS stays as single job until runner availability changes.
   #
   # Aggregated status is exposed via the `test-result` job below as a single
   # required check ("Test (all platforms)") — branch protection cares about
@@ -182,8 +184,11 @@ jobs:
           - { os: ubuntu-latest,  shard: 2, total: 4 }
           - { os: ubuntu-latest,  shard: 3, total: 4 }
           - { os: ubuntu-latest,  shard: 4, total: 4 }
+          - { os: windows-latest, shard: 1, total: 4 }
+          - { os: windows-latest, shard: 2, total: 4 }
+          - { os: windows-latest, shard: 3, total: 4 }
+          - { os: windows-latest, shard: 4, total: 4 }
           - { os: macos-latest,   shard: 1, total: 1 }
-          - { os: windows-latest, shard: 1, total: 1 }
     # Heavy test matrix only runs on push-to-main / merge_group / workflow_dispatch
     # — PR-time skips entirely to keep iteration latency low. PR-time signal
     # comes from `code-quality` (fmt + clippy) + `audit` + `actionlint`; full
