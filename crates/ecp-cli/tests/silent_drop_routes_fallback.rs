@@ -13,7 +13,6 @@ mod common;
 use common::{ecp_bin, init_and_analyze, write};
 
 use serde_json::Value;
-use std::path::Path;
 use std::process::Command;
 
 // 6 distinct routes so take(5) triggers (> 5 candidates) and the fuzzy

@@ -19,7 +19,6 @@ mod common;
 use common::{ecp_bin, init_and_analyze, write};
 
 use serde_json::Value;
-use std::path::Path;
 use std::process::Command;
 
 #[test]

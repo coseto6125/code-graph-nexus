@@ -10,7 +10,6 @@ mod common;
 use common::{ecp_bin, init_and_analyze, write};
 
 use serde_json::Value;
-use std::path::Path;
 use std::process::Command;
 
 // Redis publish/subscribe on "orders" — T5-33 emits EventTopicMirror at confidence=0.85.
