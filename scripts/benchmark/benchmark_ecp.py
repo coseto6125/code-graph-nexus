@@ -119,10 +119,11 @@ def _bench(name: str, cmd: list[str], cwd: Path, runs: int) -> Sample:
 
 
 def _probe_symbols(binary: Path, repo: Path) -> dict[str, str]:
-    """Pick one Class + one Method from the graph for context/impact/query tests.
+    """Pick one Class + one Method from the graph for inspect/impact/query tests.
 
     Strategy: cypher `Class-[:HasMethod]->Method` first row supplies the names;
-    `context --name <class>` resolves the canonical uid.
+    `inspect --name <class>` resolves the canonical `kind:filePath:name` uid
+    (same shape as the method_uid built directly from the cypher row).
     """
     out: dict[str, str] = {}
     elapsed, rc, stdout, stderr = _run(
@@ -155,14 +156,19 @@ def _probe_symbols(binary: Path, repo: Path) -> dict[str, str]:
 
     if name := out.get("class_name"):
         _, rc2, stdout2, _ = _run(
-            [str(binary), "context", "--name", name, "--format", "json", "--repo", str(repo)],
+            [str(binary), "inspect", "--name", name, "--format", "json", "--repo", str(repo)],
             cwd=repo,
         )
         if rc2 == 0:
             try:
-                cands = json.loads(stdout2).get("candidates", [])
-                if cands and (uid := cands[0].get("uid")):
-                    out["class_uid"] = uid
+                matches = json.loads(stdout2).get("matches", [])
+                if matches:
+                    sym = matches[0].get("symbol", {})
+                    kind = sym.get("kind", "")
+                    path = sym.get("filePath", "")
+                    nm = sym.get("name", "")
+                    if kind and path and nm:
+                        out["class_uid"] = f"{kind}:{path}:{nm}"
             except json.JSONDecodeError:
                 pass
     return out
@@ -363,7 +369,7 @@ def main() -> int:
     if sym:
         print(f"  class={sym.get('class_name', '-')}  method={sym.get('method_name', '-')}")
     else:
-        print("  none found — context/impact/query will be skipped")
+        print("  none found — inspect/impact/query will be skipped")
     print()
 
     # Phase 4: query-shape commands.
@@ -392,10 +398,38 @@ def main() -> int:
             args.repo,
         ),
         ("routes", [str(args.binary), "routes", "--repo", str(args.repo)], args.repo),
-        ("coverage", [str(args.binary), "coverage"], args.repo),
+        ("summary", [str(args.binary), "summary", "--repo", str(args.repo)], args.repo),
         (
-            "coverage --detailed",
-            [str(args.binary), "coverage", "--detailed", "--repo", str(args.repo)],
+            "summary --detailed",
+            [str(args.binary), "summary", "--detailed", "--repo", str(args.repo)],
+            args.repo,
+        ),
+        # COUNT(*) ungrouped exercises the Accumulator fast path that bypasses
+        # per-row Binding cloning (FU-2026-05-23-006 sibling). Without this row
+        # the bench can't detect aggregate-path regressions or wins.
+        (
+            "cypher count(*) ungrouped",
+            [
+                str(args.binary),
+                "cypher",
+                "MATCH (m:Method) RETURN count(*)",
+                "--repo",
+                str(args.repo),
+            ],
+            args.repo,
+        ),
+        # `<lit> IN m.decorators` exercises the predicate pushdown that walks
+        # the archived rkyv slice directly (PR #426 / FU-006). 'Override' is
+        # Java-specific but present in any Java/Kotlin subtree of .sample_repo.
+        (
+            "cypher decorator IN",
+            [
+                str(args.binary),
+                "cypher",
+                "MATCH (m:Method) WHERE 'Override' IN m.decorators RETURN count(*)",
+                "--repo",
+                str(args.repo),
+            ],
             args.repo,
         ),
     ]
