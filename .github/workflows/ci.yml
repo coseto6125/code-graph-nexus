@@ -84,6 +84,12 @@ jobs:
         shell: bash
         env:
           BASE_REF: ${{ github.base_ref }}
+          # PR event payload exposes the merge-base-equivalent SHA for free.
+          # Using it avoids the post-checkout `git fetch origin <ref>` that
+          # intermittently 401s on this runner image — the fetch path was
+          # the only thing requiring git credentials in this job, and dropping
+          # it eliminates an entire class of "could not read Username" flake.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
@@ -91,12 +97,12 @@ jobs:
 
           case "$EVENT_NAME" in
             pull_request)
-              # No --depth=1: checkout used fetch-depth: 0, so we already
-              # have full history. A shallow fetch here would truncate
-              # origin/$BASE_REF to its tip and break the merge-base lookup
-              # (origin/main...HEAD → "no merge base").
-              git fetch --no-tags origin "$BASE_REF"
-              diff_range="origin/$BASE_REF...HEAD"
+              # base.sha (PR's branch-point on the base ref) is always an
+              # ancestor of HEAD when checkout uses fetch-depth: 0, so it's
+              # already in our local object DB — no network fetch needed.
+              # Three-dot diff range gives merge-base...HEAD semantics
+              # which is what we want for "files this PR changes".
+              diff_range="$BASE_SHA...HEAD"
               ;;
             push)
               # $BEFORE_SHA is the previous HEAD on this ref; 0..0 means

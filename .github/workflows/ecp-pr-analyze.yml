@@ -40,12 +40,39 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          # No `ref:` override. The default for pull_request events is
+          # refs/pull/N/merge — a synthetic merge commit GitHub computes
+          # whose two parents are (^1) PR head and (^2) current base tip.
+          # fetch-depth: 0 pulls full history reachable from this merge
+          # ref, which is exactly { PR head ancestors ∪ base tip ancestors }.
+          # That gives us everything we need locally — no follow-up
+          # `git fetch origin <base>` (which triggers the runner's
+          # credential-helper flake: "could not read Username … ENXIO").
+          #
+          # If a PR has merge conflicts, GitHub doesn't compute this ref
+          # and checkout fails — that's correct behavior (a conflicting
+          # PR can't merge anyway, ecp analysis would be meaningless).
 
-      - name: Fetch base ref
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-        run: git fetch origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+      - name: Compute branch point + switch HEAD to PR head
+        id: refs
+        run: |
+          # Branch point = merge-base of PR head and current base tip,
+          # both available as parents of the merge ref's HEAD commit.
+          # This is the SAME value `git merge-base origin/<base> <pr-head>`
+          # would produce — derived purely from local objects, no network.
+          PR_HEAD=$(git rev-parse HEAD^1)
+          BASE_TIP=$(git rev-parse HEAD^2)
+          BRANCH_POINT=$(git merge-base "$PR_HEAD" "$BASE_TIP")
+          echo "pr-head=$PR_HEAD" >> "$GITHUB_OUTPUT"
+          echo "branch-point=$BRANCH_POINT" >> "$GITHUB_OUTPUT"
+          echo "pr head: $PR_HEAD"
+          echo "base tip: $BASE_TIP"
+          echo "branch point: $BRANCH_POINT"
+          # Detach HEAD onto PR head so subsequent steps (cargo build /
+          # ecp index / pr-analyze) see the PR's actual tree, not the
+          # synthetic merged tree (which can differ from PR head if any
+          # merge resolution applied).
+          git checkout "$PR_HEAD"
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -91,15 +118,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE: ${{ steps.refs.outputs.branch-point }}
         run: |
-          # Compute merge-base against the PR's actual target branch so the
-          # diff reflects this PR's delta rather than divergence vs. wherever
-          # the target branch happens to be right now. Target branch can be
-          # main / beta / develop / release-* etc. — never hardcode.
-          # (PR #382 first smoke produced 20+ phantom symbols because raw
-          # `origin/main` had moved past the PR's branch point.)
-          BASE=$(git merge-base "origin/$BASE_REF" HEAD)
-          echo "target: $BASE_REF  baseline (merge-base): $BASE"
+          echo "target: $BASE_REF  baseline (branch point): $BASE"
           ./target/release/ecp \
             dev pr-analyze \
             --baseline "$BASE" \
