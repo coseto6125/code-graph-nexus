@@ -8,6 +8,51 @@
 use crate::output::OutputFormat;
 use clap::Args;
 use ecp_core::EcpError;
+use serde::Serialize;
+
+#[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+pub enum Area {
+    Parser,
+    Cli,
+    Test,
+    Docs,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+pub enum Risk {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct CrossPrConflict {
+    pub pr: u32,
+    pub overlap_symbols: Vec<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct StatusSuggestion {
+    pub context: String,
+    pub state: String, // "success" | "pending"
+    pub description: String,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct PrAnalyzeOutput {
+    pub pr_number: u32,
+    pub head_sha: String,
+    pub baseline_sha: String,
+    pub area: Option<Area>,
+    pub risk: Risk,
+    pub impact_size: usize,
+    pub changed_symbols: Vec<String>,
+    pub cross_pr_conflicts: Vec<CrossPrConflict>,
+    pub suggested_labels: Vec<String>,
+    pub suggested_status: StatusSuggestion,
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct PrAnalyzeArgs {
