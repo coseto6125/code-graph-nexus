@@ -114,6 +114,21 @@ fn is_enum_class(class_decl: tree_sitter::Node) -> bool {
     false
 }
 
+/// True when the `class_declaration` is `interface Foo` — fwcd/tree-sitter-kotlin
+/// parses both `class` and `interface` as `class_declaration` and differentiates
+/// via the leading keyword child (`"class"` vs `"interface"`). Without this,
+/// `class Bar : Foo` where `Foo` is an interface incorrectly emits an `Extends`
+/// edge (PR #358 dispatch) instead of `Implements`.
+fn is_interface_class(class_decl: tree_sitter::Node) -> bool {
+    let mut cursor = class_decl.walk();
+    for child in class_decl.children(&mut cursor) {
+        if child.kind() == "interface" {
+            return true;
+        }
+    }
+    false
+}
+
 /// True when the `class_declaration` carries an `annotation` modifier — i.e.
 /// `annotation class Foo`. Distinct from plain `class Foo`.
 fn is_annotation_class(class_decl: tree_sitter::Node, source: &[u8]) -> bool {
@@ -357,6 +372,7 @@ impl LanguageProvider for KotlinProvider {
                     NodeKind::Class if is_annotation_class(root, source) => {
                         Some(NodeKind::Annotation)
                     }
+                    NodeKind::Class if is_interface_class(root) => Some(NodeKind::Interface),
                     _ => None,
                 };
                 if let Some(nk) = new_kind {
