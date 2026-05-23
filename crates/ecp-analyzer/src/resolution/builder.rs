@@ -1706,6 +1706,22 @@ impl GraphBuilder {
                 _t_imports_edges.elapsed().as_secs_f32()
             );
         }
+
+        // Scope-containment Defines post-process. Emits:
+        //   (File)-[:Defines]->(top-level symbol)
+        //   (Namespace|Module)-[:Defines]->(child symbol)
+        // Runs after file_node_idx is populated and after class_membership so
+        // HasMethod/HasProperty edges are in place — the no-duplication invariant
+        // (Defines never overlaps HasMethod/HasProperty) is verified by the
+        // regression test `defines_emission::no_duplication_class_method`.
+        crate::post_process::scope_defines::emit_edges(
+            &self.local_graphs,
+            &file_node_idx,
+            &symbol_table,
+            &mut string_pool,
+            &mut edges,
+        );
+
         let _t_csr = std::time::Instant::now();
         // Final pass: Construct CSR (out_offsets and in_offsets)
         // Sort edges by source to build out_offsets easily.
@@ -3104,14 +3120,13 @@ mod tests {
         // `crates/ecp-analyzer/src/post_process/imports_edges.rs` Tier-1-2-3
         // resolver for cross-file basename / dir-component indexing that can't
         // be moved to Pass-2 without breaking its streaming design.
-        // `Implements` is lifted by this PR (§8.2). Update when Defines/Fetches ship.
-        for unimplemented in &["Defines", "Fetches"] {
-            assert!(
-                !parallel_buckets.contains_key(*unimplemented),
-                "RelType {unimplemented} unexpectedly emitted (parallel) — \
-                 Sub-projects 1/5 will lift this; update this assertion when they ship",
-            );
-        }
+        // `Implements` lifted by spec §8.2; `Defines` lifted by this PR (§8.4).
+        // Only `Fetches` remains; when it ships, delete this assertion.
+        assert!(
+            !parallel_buckets.contains_key("Fetches"),
+            "RelType Fetches unexpectedly emitted by Pass-2 — \
+             spec §8.5 will lift this; update this assertion when it ships",
+        );
 
         // Imports is intentionally post-process only (imports_edges.rs Tier-1-2-3
         // resolver); Pass-2 must never emit it.
@@ -3130,7 +3145,8 @@ mod tests {
         assert!(dump_path.exists(), "serial dump path was not taken");
 
         // Fixture coverage: assert each expected category fired at least once.
-        // Implements is now required — the IThing Interface fixture must trigger it.
+        // Implements + Defines required — IThing Interface fixture + scope_defines
+        // post-process must trigger them.
         for required in &[
             "Calls",
             "Extends",
@@ -3138,6 +3154,7 @@ mod tests {
             "Accesses",
             "References",
             "HandlesRoute",
+            "Defines",
         ] {
             assert!(
                 parallel_buckets.contains_key(*required),
