@@ -58,6 +58,9 @@ jobs:
 
           conflicts=()
           while IFS=$'\t' read -r pr nodeid branch; do
+            # shellcheck disable=SC2016
+            # $id inside the query string is a GraphQL variable, not a
+            # shell expansion — single quotes are correct, not an oversight.
             response=$(gh api graphql \
               -f query='
                 mutation($id: ID!) {
