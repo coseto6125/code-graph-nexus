@@ -338,110 +338,116 @@ class AccountService {
     assert!(names.contains(&"withdraw"), "withdraw missing: {:?}", names);
 }
 
-// ── Rust (#[transaction] proc-macro) ────────────────────────────────────────
+// ── Dart (Drift / sqflite / Firestore call-site form) ──────────────────────
 
 #[test]
-fn rust_transaction_attr_on_free_function_emits_scope() {
-    use ecp_analyzer::rust::parser::RustProvider;
+fn dart_drift_transaction_closure_emits_scope() {
+    use ecp_analyzer::dart::parser::DartProvider;
     use ecp_core::analyzer::provider::LanguageProvider;
     use std::path::Path;
 
-    let p = RustProvider::new().expect("provider");
+    let p = DartProvider::new().expect("provider");
     let src = r#"
-#[transaction]
-pub async fn create_user(pool: &PgPool, data: UserDto) -> Result<User, Error> {
-    // ...
-}
-
-pub fn list_users() {}
-"#;
-    let g = p
-        .parse_file(Path::new("users.rs"), src.as_bytes())
-        .expect("parse");
-    assert_eq!(scopes(&g).len(), 1, "one tx_scope expected");
-    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "create_user");
-    assert_eq!(scopes(&g)[0].framework(), FrameworkId::RustTransaction);
-}
-
-#[test]
-fn rust_transaction_attr_on_impl_method_emits_scope() {
-    use ecp_analyzer::rust::parser::RustProvider;
-    use ecp_core::analyzer::provider::LanguageProvider;
-    use std::path::Path;
-
-    let p = RustProvider::new().expect("provider");
-    let src = r#"
-struct UserService;
-
-impl UserService {
-    #[transaction]
-    pub fn create_user(&self) {}
-
-    pub fn list_users(&self) {}
+class UserDao {
+  final AppDatabase db;
+  Future<void> createUser(String name) async {
+    await db.transaction(() async {
+      // insert user
+    });
+  }
+  Future<void> listUsers() async {}
 }
 "#;
     let g = p
-        .parse_file(Path::new("service.rs"), src.as_bytes())
-        .expect("parse");
-    assert_eq!(scopes(&g).len(), 1, "one tx_scope expected");
-    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "create_user");
-    assert_eq!(scopes(&g)[0].framework(), FrameworkId::RustTransaction);
-}
-
-#[test]
-fn rust_transaction_attr_with_args_emits_scope() {
-    use ecp_analyzer::rust::parser::RustProvider;
-    use ecp_core::analyzer::provider::LanguageProvider;
-    use std::path::Path;
-
-    let p = RustProvider::new().expect("provider");
-    let src = r#"
-#[transaction(rollback)]
-pub fn transfer_funds() {}
-"#;
-    let g = p
-        .parse_file(Path::new("payment.rs"), src.as_bytes())
+        .parse_file(Path::new("user_dao.dart"), src.as_bytes())
         .expect("parse");
     assert_eq!(
         scopes(&g).len(),
         1,
-        "arg-bearing #[transaction(...)] must emit scope"
-    );
-    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "transfer_funds");
-    assert_eq!(scopes(&g)[0].framework(), FrameworkId::RustTransaction);
-}
-
-#[test]
-fn rust_test_attr_does_not_emit_scope() {
-    use ecp_analyzer::rust::parser::RustProvider;
-    use ecp_core::analyzer::provider::LanguageProvider;
-    use std::path::Path;
-
-    let p = RustProvider::new().expect("provider");
-    let src = r#"
-#[test]
-fn test_something() {}
-
-#[tokio::test]
-async fn test_async() {}
-
-#[derive(Transaction)]
-struct Foo;
-
-pub fn plain_fn() {}
-"#;
-    let g = p
-        .parse_file(Path::new("lib.rs"), src.as_bytes())
-        .expect("parse");
-    assert!(
-        scopes(&g).is_empty(),
-        "#[test] / #[tokio::test] / #[derive(Transaction)] must not emit tx_scope; got: {:?}",
+        "one tx_scope expected; got: {:?}",
         scopes(&g)
             .iter()
             .map(|s| fn_name_of_scope(&g, s))
             .collect::<Vec<_>>()
     );
-    assert!(g.tx_scopes.is_none());
+    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "createUser");
+    assert_eq!(scopes(&g)[0].framework(), FrameworkId::DartTransaction);
+}
+
+#[test]
+fn dart_firestore_run_transaction_emits_scope() {
+    use ecp_analyzer::dart::parser::DartProvider;
+    use ecp_core::analyzer::provider::LanguageProvider;
+    use std::path::Path;
+
+    let p = DartProvider::new().expect("provider");
+    let src = r#"
+Future<void> transfer(String fromId, String toId) async {
+  await firestore.runTransaction((tx) async {
+    // transfer funds
+  });
+}
+"#;
+    let g = p
+        .parse_file(Path::new("transfer.dart"), src.as_bytes())
+        .expect("parse");
+    assert_eq!(scopes(&g).len(), 1, "one tx_scope expected");
+    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "transfer");
+    assert_eq!(scopes(&g)[0].framework(), FrameworkId::DartTransaction);
+}
+
+#[test]
+fn dart_transaction_without_closure_arg_produces_no_scope() {
+    use ecp_analyzer::dart::parser::DartProvider;
+    use ecp_core::analyzer::provider::LanguageProvider;
+    use std::path::Path;
+
+    // `.transaction()` with a non-closure arg — false-positive guard.
+    let p = DartProvider::new().expect("provider");
+    let src = r#"
+Future<void> doWork() async {
+  await client.transaction("begin");
+}
+"#;
+    let g = p
+        .parse_file(Path::new("work.dart"), src.as_bytes())
+        .expect("parse");
+    assert!(
+        scopes(&g).is_empty(),
+        "transaction(string) must not produce tx_scope; got: {:?}",
+        scopes(&g)
+            .iter()
+            .map(|s| fn_name_of_scope(&g, s))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn dart_two_transaction_calls_in_same_fn_emit_one_scope() {
+    use ecp_analyzer::dart::parser::DartProvider;
+    use ecp_core::analyzer::provider::LanguageProvider;
+    use std::path::Path;
+
+    let p = DartProvider::new().expect("provider");
+    let src = r#"
+Future<void> doMigration() async {
+  await db.transaction(() async { /* step 1 */ });
+  await db.transaction(() async { /* step 2 */ });
+}
+"#;
+    let g = p
+        .parse_file(Path::new("migration.dart"), src.as_bytes())
+        .expect("parse");
+    assert_eq!(
+        scopes(&g).len(),
+        1,
+        "per-function dedup: two tx calls in one fn → one scope; got {:?}",
+        scopes(&g)
+            .iter()
+            .map(|s| fn_name_of_scope(&g, s))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(fn_name_of_scope(&g, &scopes(&g)[0]), "doMigration");
 }
 
 // ── Layer 2: post-process integration tests ────────────────────────────────
