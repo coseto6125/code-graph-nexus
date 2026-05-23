@@ -126,19 +126,10 @@ pull_request_rules:
       queue:
         name: main-default
 
-  # Mergify queue priority is integer; lower = merges first.
-  # Default queue priority = 2000. risk-low → 1000 (jump ahead),
-  # risk-high → 5000 (wait behind normal-risk PRs).
-  - name: high priority for low-risk
-    conditions:
-      - label=ecp:risk-low
-    actions:
-      queue:
-        priority: 1000
-
-  - name: low priority for high-risk
-    conditions:
-      - label=ecp:risk-high
-    actions:
-      queue:
-        priority: 5000
+  # Priority overrides removed in this PR.
+  # Modern Mergify exposes priority via `queue_rules.priority_rules` (per-queue
+  # nested rule list), not via `actions.queue.priority` on pull_request_rules.
+  # Implementing it cleanly requires duplicating priority_rules across all 5
+  # queue_rules (no shared anchor since Mergify YAML rejects nested-list
+  # splice). Tracked in FU-2026-05-23-037 — to be added when priority gets
+  # observed value (i.e. when same-area queue actually backs up).
