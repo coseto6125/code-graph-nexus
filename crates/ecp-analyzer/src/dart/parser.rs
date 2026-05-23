@@ -1,11 +1,27 @@
 use super::receiver_types::{collect_bindings, extract_dart_calls};
 use super::spec::DartSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
+use crate::framework_helpers::{
+    detect_ast_framework_patterns, push_blind_spot, FrameworkPatternSpec,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawImport, RawNode};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch
+/// in `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "dart-function-apply",
+        "Function.apply(<fn>, <args>) — reflective function invocation; target callable resolved at runtime via the Function reference",
+    ),
+    (
+        "dart-mirrors-import",
+        "import 'dart:mirrors' — file uses runtime reflection; downstream `reflect(...)` / `MirrorSystem` calls bind names to symbols at runtime",
+    ),
+];
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -82,6 +98,9 @@ struct DartCaptureIndices {
     var: Option<u32>,
     var_name: Option<u32>,
     var_type: Option<u32>,
+    // BlindSpot captures (FU-001 P6b).
+    blind_function_apply: Option<u32>,
+    blind_mirrors_import: Option<u32>,
 }
 
 impl DartProvider {
@@ -115,6 +134,8 @@ impl DartProvider {
             var: query.capture_index_for_name("var"),
             var_name: query.capture_index_for_name("var.name"),
             var_type: query.capture_index_for_name("var.type"),
+            blind_function_apply: query.capture_index_for_name("blind.function_apply"),
+            blind_mirrors_import: query.capture_index_for_name("blind.mirrors_import"),
         };
         Ok(Self {
             query,
@@ -139,6 +160,8 @@ impl LanguageProvider for DartProvider {
 
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         // CI-L #2: capture indices pre-resolved in `new()`.
         let idx = &self.indices;
@@ -162,6 +185,8 @@ impl LanguageProvider for DartProvider {
         let idx_var = idx.var;
         let idx_var_name = idx.var_name;
         let idx_var_type = idx.var_type;
+        let idx_blind_function_apply = idx.blind_function_apply;
+        let idx_blind_mirrors_import = idx.blind_mirrors_import;
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -219,6 +244,22 @@ impl LanguageProvider for DartProvider {
                     var_name = Some(cap.node);
                 } else if Some(cap_idx) == idx_var_type {
                     var_type = Some(cap.node);
+                } else if Some(cap_idx) == idx_blind_function_apply {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx_blind_mirrors_import {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
 
                 if Some(cap_idx) == idx_function
@@ -400,7 +441,7 @@ impl LanguageProvider for DartProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,

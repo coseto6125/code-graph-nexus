@@ -2,16 +2,31 @@ use super::receiver_types::extract_csharp_calls;
 use super::spec::CSharpSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    collect_dotnet_transactional_scopes, detect_ast_framework_patterns, FrameworkPatternSpec,
+    collect_dotnet_transactional_scopes, detect_ast_framework_patterns, push_blind_spot,
+    FrameworkPatternSpec,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch
+/// in `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "cs-activator-create-instance",
+        "Activator.CreateInstance(<expr>) — runtime type instantiation; created object's type/body is not statically determinable",
+    ),
+    (
+        "cs-method-invoke",
+        "<expr>.Invoke(...) — reflective method invocation; target method body resolved at runtime via MethodInfo",
+    ),
+];
 
 /// Per upstream `csharp.ts:153-187` `astFrameworkPatterns`. Substring scan of
 /// the file source; emits one `RawFrameworkRef` per detected framework.
@@ -79,6 +94,9 @@ struct CSharpCaptureIndices {
     enum_: Option<u32>,
     enum_member_node: Option<u32>,
     struct_: Option<u32>,
+    // BlindSpot captures (FU-001 P2c).
+    blind_activator_create: Option<u32>,
+    blind_method_invoke: Option<u32>,
 }
 
 pub struct CSharpProvider {
@@ -131,6 +149,8 @@ impl CSharpProvider {
             enum_: query.capture_index_for_name("enum"),
             enum_member_node: query.capture_index_for_name("enum_member_node"),
             struct_: query.capture_index_for_name("struct"),
+            blind_activator_create: query.capture_index_for_name("blind.activator_create"),
+            blind_method_invoke: query.capture_index_for_name("blind.method_invoke"),
         };
 
         Ok(Self {
@@ -159,6 +179,8 @@ impl LanguageProvider for CSharpProvider {
         let mut node_id_to_idx: rustc_hash::FxHashMap<usize, usize> =
             rustc_hash::FxHashMap::default();
         let mut imports = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         let idx = &self.indices;
         let idx_import_name = idx.import_name;
@@ -249,6 +271,22 @@ impl LanguageProvider for CSharpProvider {
                     }
                 } else if Some(cap_idx) == idx_override_marker {
                     decorators.push("__override__".to_string());
+                } else if Some(cap_idx) == idx.blind_activator_create {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx.blind_method_invoke {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if (Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_method
@@ -413,7 +451,7 @@ impl LanguageProvider for CSharpProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics: None,
             tx_scopes,

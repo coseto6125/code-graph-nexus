@@ -3,7 +3,7 @@ use super::spec::PythonSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
     enclosing_class, enclosing_function_name, enumerate_class_methods, has_import_from, node_span,
-    point_in_span, Span, MODULE_LEVEL_SOURCE,
+    point_in_span, push_blind_spot, Span, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_python_param_names, detect_python_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
@@ -553,7 +553,9 @@ impl LanguageProvider for PythonProvider {
         // filter. `is_test_path` matches `tests/` / `test_*.py` / `conftest.`
         // / `*_test.py` / `_spec.` and the rest of the FileCategory::Test
         // patterns. Production files keep their permissive emission rules.
-        let file_is_test = is_test_path(&path.to_string_lossy());
+        // Same value drives the BlindSpot record's `is_test` field below
+        // (introduced by FU-001 is_test-field); compute once.
+        let is_test_file = is_test_path(&path.to_string_lossy());
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, tree.root_node(), source);
@@ -755,13 +757,8 @@ impl LanguageProvider for PythonProvider {
                     } else {
                         None
                     };
-                    if let Some((kind, hint)) = blind_match {
-                        blind_spots.push(BlindSpot {
-                            kind: kind.to_string(),
-                            file_path: path.to_path_buf(),
-                            span: node_span(&cap.node),
-                            hint: hint.to_string(),
-                        });
+                    if let Some(spec) = blind_match {
+                        push_blind_spot(&mut blind_spots, spec, &cap.node, path, is_test_file);
                     }
                 }
             }
@@ -939,7 +936,7 @@ impl LanguageProvider for PythonProvider {
                 // route registrations. Production files keep emitting on
                 // these names because there `client = Blueprint(...)`
                 // / `client = APIRouter()` is legitimate.
-                if file_is_test && is_test_file_direct_receiver_call(call_node, source) {
+                if is_test_file && is_test_file_direct_receiver_call(call_node, source) {
                     continue;
                 }
             }
@@ -1096,7 +1093,7 @@ impl LanguageProvider for PythonProvider {
             .file_name()
             .map(|n| n.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        let is_py_test_file = file_is_test
+        let is_py_test_file = is_test_file
             || basename.starts_with("test_")
             || basename.ends_with("_test.py")
             || basename == "conftest.py";

@@ -1,11 +1,27 @@
 use super::receiver_types::{collect_bindings, extract_swift_calls};
 use super::spec::SwiftSpec;
 use crate::framework_confidence;
-use crate::framework_helpers::{detect_ast_framework_patterns, FrameworkPatternSpec};
+use crate::framework_helpers::{
+    detect_ast_framework_patterns, push_blind_spot, FrameworkPatternSpec,
+};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawImport, RawNode};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawImport, RawNode};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch
+/// in `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "swift-nsclass-from-string",
+        "NSClassFromString(<expr>) — runtime Objective-C class load by name; resolved class body is not statically determinable",
+    ),
+    (
+        "swift-perform-selector",
+        "<expr>.perform(Selector(<name>)) — Objective-C selector dispatch; target method bound at runtime via selector lookup",
+    ),
+];
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -85,6 +101,9 @@ struct SwiftCaptureIndices {
     property: Option<u32>,
     property_name_pat: Option<u32>,
     constructor: Option<u32>,
+    // BlindSpot captures (FU-001 P6a).
+    blind_nsclass_from_string: Option<u32>,
+    blind_perform_selector: Option<u32>,
 }
 
 impl SwiftProvider {
@@ -115,6 +134,8 @@ impl SwiftProvider {
             property: query.capture_index_for_name("property"),
             property_name_pat: query.capture_index_for_name("property.name.pat"),
             constructor: query.capture_index_for_name("constructor"),
+            blind_nsclass_from_string: query.capture_index_for_name("blind.nsclass_from_string"),
+            blind_perform_selector: query.capture_index_for_name("blind.perform_selector"),
         };
         Ok(Self {
             query,
@@ -139,6 +160,8 @@ impl LanguageProvider for SwiftProvider {
 
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         // CI-L #2: capture indices pre-resolved in `new()`.
         let idx = &self.indices;
@@ -159,6 +182,8 @@ impl LanguageProvider for SwiftProvider {
         let idx_property = idx.property;
         let idx_property_name_pat = idx.property_name_pat;
         let idx_constructor = idx.constructor;
+        let idx_blind_nsclass = idx.blind_nsclass_from_string;
+        let idx_blind_perform = idx.blind_perform_selector;
 
         // Per (root, name-byte-offset) dedup. tree-sitter-swift fires the
         // same property_declaration match ~3-4× per declared name when the
@@ -253,6 +278,22 @@ impl LanguageProvider for SwiftProvider {
                     enum_case_root = Some(cap.node);
                 } else if Some(cap_idx) == idx_enum_case_name {
                     enum_case_names.push(cap.node);
+                } else if Some(cap_idx) == idx_blind_nsclass {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx_blind_perform {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 
@@ -539,7 +580,7 @@ impl LanguageProvider for SwiftProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics: None,
             tx_scopes: None,

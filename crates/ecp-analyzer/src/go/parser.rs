@@ -4,12 +4,13 @@ use super::receiver_types::{
 use super::spec::GoSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, node_span, push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -21,6 +22,19 @@ use tree_sitter::{Query, QueryCursor};
 /// `gitnexus/src/core/group/extractors/http-patterns/go.ts:23-39`.
 const GIN_REQUIRED: &[&str] = &["github.com/gin-gonic/gin"];
 const ECHO_REQUIRED: &[&str] = &["github.com/labstack/echo"];
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch
+/// in `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "go-reflect-method-by-name",
+        "x.MethodByName(name) — runtime method resolution by string; the subsequent .Call(...) is dispatch through an unknown target",
+    ),
+    (
+        "go-plugin-open",
+        "plugin.Open(...) — dynamic library load (.so/.dll); symbols obtained via subsequent .Lookup(...) are resolved at runtime",
+    ),
+];
 
 thread_local! {
     static PARSER: std::cell::RefCell<tree_sitter::Parser> = std::cell::RefCell::new({
@@ -145,6 +159,8 @@ impl LanguageProvider for GoProvider {
 
         let mut nodes = Vec::new();
         let mut imports = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         let idx_struct = self.query.capture_index_for_name("struct");
         let idx_interface = self.query.capture_index_for_name("interface");
@@ -163,6 +179,11 @@ impl LanguageProvider for GoProvider {
         let idx_route_method = self.query.capture_index_for_name("route.method");
         let idx_route_path = self.query.capture_index_for_name("route.path");
         let idx_route_handler = self.query.capture_index_for_name("route.handler");
+
+        let idx_blind_method_by_name = self
+            .query
+            .capture_index_for_name("blind.reflect_method_by_name");
+        let idx_blind_plugin_open = self.query.capture_index_for_name("blind.plugin_open");
 
         // Pending framework refs for gin / echo. Collected during the
         // match loop; only emitted after we confirm an import gate match
@@ -330,6 +351,22 @@ impl LanguageProvider for GoProvider {
                     {
                         local_name_nodes.push(cap.node);
                     }
+                } else if cap_idx == idx_blind_method_by_name {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if cap_idx == idx_blind_plugin_open {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 }
             }
 
@@ -734,7 +771,7 @@ impl LanguageProvider for GoProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics,
             tx_scopes: None,

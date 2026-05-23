@@ -2,17 +2,43 @@ use super::receiver_types::{collect_local_types, extract_ts_calls};
 use super::spec::TypeScriptSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, js_ts_first_arg_is_literal_string, node_span,
+    push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
+use ecp_core::analyzer::types::{
+    BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute,
+};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index lookup in
+/// `parse_file` (eval / Function-ctor / dynamic-import / dynamic-require)
+/// so the dispatch reads as a flat table.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "ts-eval",
+        "eval(arg) — runtime JS execution; argument expression is not statically determinable as a callee",
+    ),
+    (
+        "ts-function-ctor",
+        "Function(arg) / new Function(arg) — runtime function compilation; body source is not statically determinable",
+    ),
+    (
+        "ts-dynamic-import",
+        "import(<expr>) with non-literal specifier — dynamic module loading; target module depends on runtime value",
+    ),
+    (
+        "ts-dynamic-require",
+        "require(<expr>) with non-literal specifier — dynamic CommonJS load; target module depends on runtime value",
+    ),
+];
 
 pub struct TypeScriptProvider {
     query: Query,
@@ -69,6 +95,11 @@ struct TypeScriptCaptureIndices {
     /// string literal is a route, gated by `has_nestjs` import presence).
     nestjs_decorator_verb: Option<u32>,
     nestjs_decorator_path: Option<u32>,
+    // BlindSpot captures (FU-001 P1).
+    blind_eval: Option<u32>,
+    blind_function_ctor: Option<u32>,
+    blind_dynamic_import: Option<u32>,
+    blind_dynamic_require: Option<u32>,
 }
 
 impl TypeScriptProvider {
@@ -110,6 +141,10 @@ impl TypeScriptProvider {
             nestjs_method: query.capture_index_for_name("nestjs.method.name"),
             nestjs_decorator_verb: query.capture_index_for_name("nestjs.decorator.verb"),
             nestjs_decorator_path: query.capture_index_for_name("nestjs.decorator.path"),
+            blind_eval: query.capture_index_for_name("blind.eval"),
+            blind_function_ctor: query.capture_index_for_name("blind.function_ctor"),
+            blind_dynamic_import: query.capture_index_for_name("blind.dynamic_import"),
+            blind_dynamic_require: query.capture_index_for_name("blind.dynamic_require"),
         };
 
         // Pre-resolve capture-name → NodeKind from the spec table so the
@@ -159,6 +194,8 @@ impl LanguageProvider for TypeScriptProvider {
         // (HTTP_METHOD, raw_path_with_quotes_stripped_by_capture, decorator_span)
         type NestJsDecoratorRoute = (String, String, (u32, u32, u32, u32));
         let mut pending_nestjs_decorator_routes: Vec<NestJsDecoratorRoute> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         let idx = &self.indices;
 
@@ -255,6 +292,42 @@ impl LanguageProvider for TypeScriptProvider {
                     nestjs_decorator_verb_node = Some(cap.node);
                 } else if cap_idx == idx.nestjs_decorator_path {
                     nestjs_decorator_path_node = Some(cap.node);
+                } else if cap_idx == idx.blind_eval {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if cap_idx == idx.blind_function_ctor {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if cap_idx == idx.blind_dynamic_import {
+                    if !js_ts_first_arg_is_literal_string(&cap.node) {
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[2],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
+                    }
+                } else if cap_idx == idx.blind_dynamic_require {
+                    if !js_ts_first_arg_is_literal_string(&cap.node) {
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[3],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
+                    }
                 } else if cap_idx == idx.function
                     || cap_idx == idx.class
                     || cap_idx == idx.method
@@ -572,7 +645,7 @@ impl LanguageProvider for TypeScriptProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields,
             event_topics,
             tx_scopes: None,

@@ -2,12 +2,14 @@ use super::receiver_types::extract_kotlin_calls;
 use super::spec::KotlinSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    collect_jvm_transactional_scopes, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    collect_jvm_transactional_scopes, has_import_from, node_span, push_blind_spot,
+    MODULE_LEVEL_SOURCE,
 };
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode};
+use ecp_core::analyzer::types::{BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -15,6 +17,19 @@ use tree_sitter::{Query, QueryCursor};
 
 // Framework-presence gate: only emit Ktor refs when the file imports io.ktor.*.
 const KTOR_REQUIRED: &[&str] = &["io.ktor"];
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index dispatch in
+/// `parse_file`.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "kt-class-forname",
+        "Class.forName(<expr>) — runtime class loading via Java reflection bridge; loaded class body is not statically determinable",
+    ),
+    (
+        "kt-method-invoke",
+        "<expr>.invoke(...) — reflective method invocation; target method body resolved at runtime via Java Method handle or KCallable",
+    ),
+];
 
 /// Verb capture-index pairs. Indexed in lockstep with the per-verb captures in
 /// `frameworks.scm` so the dispatch reads as a flat table — no alternation regex.
@@ -41,6 +56,9 @@ struct KotlinCaptureIndices {
     class: Option<u32>,
     function: Option<u32>,
     enum_entry: Option<u32>,
+    // BlindSpot captures (FU-001 P2b).
+    blind_class_forname: Option<u32>,
+    blind_method_invoke: Option<u32>,
 }
 
 thread_local! {
@@ -162,6 +180,8 @@ impl KotlinProvider {
             class: query.capture_index_for_name("class"),
             function: query.capture_index_for_name("function"),
             enum_entry: query.capture_index_for_name("enum_entry"),
+            blind_class_forname: query.capture_index_for_name("blind.class_forname"),
+            blind_method_invoke: query.capture_index_for_name("blind.method_invoke"),
         };
 
         Ok(Self {
@@ -195,6 +215,8 @@ impl LanguageProvider for KotlinProvider {
         let mut node_id_to_idx: rustc_hash::FxHashMap<usize, usize> =
             rustc_hash::FxHashMap::default();
         let mut imports = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         // CI-L #2: capture indices pre-resolved in `new()`; this hot loop
         // borrows the cached struct instead of resolving ~10 strings per call.
@@ -295,6 +317,22 @@ impl LanguageProvider for KotlinProvider {
                     import_src = Some(cap.node);
                 } else if Some(cap_idx) == idx_alias {
                     import_alias = Some(cap.node);
+                } else if Some(cap_idx) == idx.blind_class_forname {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx.blind_method_invoke {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
                 } else if (Some(cap_idx) == idx_class
                     || Some(cap_idx) == idx_function
                     || Some(cap_idx) == self.idx_constructor
@@ -479,7 +517,7 @@ impl LanguageProvider for KotlinProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics,
             tx_scopes,

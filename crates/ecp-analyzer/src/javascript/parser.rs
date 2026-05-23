@@ -2,17 +2,42 @@ use super::receiver_types::extract_js_calls;
 use super::spec::JavaScriptSpec;
 use crate::framework_confidence;
 use crate::framework_helpers::{
-    enclosing_function_name, has_import_from, node_span, MODULE_LEVEL_SOURCE,
+    enclosing_function_name, has_import_from, js_ts_first_arg_is_literal_string, node_span,
+    push_blind_spot, MODULE_LEVEL_SOURCE,
 };
 use crate::indirect_dispatch::{collect_js_param_names, detect_js_ts_indirect};
 use crate::parse_budget::{parse_with_budget, ParseBudget};
+use ecp_core::algorithms::process_trace::is_test_path;
 use ecp_core::analyzer::lang_spec::LangSpec;
 use ecp_core::analyzer::provider::LanguageProvider;
-use ecp_core::analyzer::types::{LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute};
+use ecp_core::analyzer::types::{
+    BlindSpot, LocalGraph, RawFrameworkRef, RawImport, RawNode, RawRoute,
+};
 use ecp_core::graph::NodeKind;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Query, QueryCursor};
+
+/// Blind-spot kind/hint pairs. Order matches the capture-index lookup
+/// in `parse_file` so the dispatch reads as a flat table.
+const BLIND_SPEC: &[(&str, &str)] = &[
+    (
+        "js-eval",
+        "eval(arg) — runtime JS execution; argument expression is not statically determinable as a callee",
+    ),
+    (
+        "js-function-ctor",
+        "Function(arg) / new Function(arg) — runtime function compilation; body source is not statically determinable",
+    ),
+    (
+        "js-dynamic-import",
+        "import(<expr>) with non-literal specifier — dynamic module loading; target module depends on runtime value",
+    ),
+    (
+        "js-dynamic-require",
+        "require(<expr>) with non-literal specifier — dynamic CommonJS load; target module depends on runtime value",
+    ),
+];
 
 thread_local! {
     static PARSER: std::cell::RefCell<tree_sitter::Parser> = std::cell::RefCell::new({
@@ -117,11 +142,18 @@ impl LanguageProvider for JavaScriptProvider {
         let idx_express_handler = self.query.capture_index_for_name("express.route.handler");
         let idx_hapi_handler = self.query.capture_index_for_name("hapi.route.handler");
 
+        let idx_blind_eval = self.query.capture_index_for_name("blind.eval");
+        let idx_blind_function_ctor = self.query.capture_index_for_name("blind.function_ctor");
+        let idx_blind_dynamic_import = self.query.capture_index_for_name("blind.dynamic_import");
+        let idx_blind_dynamic_require = self.query.capture_index_for_name("blind.dynamic_require");
+
         // Pending framework-handler captures: (handler_name, capture_span).
         // Enclosing function is resolved after all nodes are collected so the
         // `enclosing_function_name` span search sees the full node set.
         let mut pending_express_handlers: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
         let mut pending_hapi_handlers: Vec<(String, (u32, u32, u32, u32))> = Vec::new();
+        let mut blind_spots: Vec<BlindSpot> = Vec::new();
+        let is_test_file = is_test_path(path.to_str().unwrap_or(""));
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -221,6 +253,42 @@ impl LanguageProvider for JavaScriptProvider {
                     {
                         pending_hapi_handlers
                             .push((handler_name.to_string(), node_span(&cap.node)));
+                    }
+                } else if Some(cap_idx) == idx_blind_eval {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[0],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx_blind_function_ctor {
+                    push_blind_spot(
+                        &mut blind_spots,
+                        BLIND_SPEC[1],
+                        &cap.node,
+                        path,
+                        is_test_file,
+                    );
+                } else if Some(cap_idx) == idx_blind_dynamic_import {
+                    if !js_ts_first_arg_is_literal_string(&cap.node) {
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[2],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
+                    }
+                } else if Some(cap_idx) == idx_blind_dynamic_require {
+                    if !js_ts_first_arg_is_literal_string(&cap.node) {
+                        push_blind_spot(
+                            &mut blind_spots,
+                            BLIND_SPEC[3],
+                            &cap.node,
+                            path,
+                            is_test_file,
+                        );
                     }
                 } else if Some(cap_idx) == idx_function
                     || Some(cap_idx) == idx_class
@@ -564,7 +632,7 @@ impl LanguageProvider for JavaScriptProvider {
             documents: vec![],
             framework_refs,
             fanout_refs: vec![],
-            blind_spots: vec![],
+            blind_spots,
             schema_fields: None,
             event_topics,
             tx_scopes: None,
