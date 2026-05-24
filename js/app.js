@@ -148,7 +148,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '「所有行動都應該從可驗證的結構事實出發，而不是從上下文幻覺出發。」',
         [K.VISION_P1]: '在 AI Agent 時代，開發速度不再是唯一瓶頸；真正的瓶頸是<strong>信任</strong>。人類害怕 Agent 改壞系統，Agent 也容易被自己的上下文誤導。Egent Code Plexus 試圖把信任建立在可驗證的結構事實上，讓 Agent 在每一次行動前，都能快速回到唯一真相：<strong>Source Code</strong>。',
         [K.VISION_P2]: '如果未來每個人、每個團隊、每間公司都會同時驅動更多 Agent、更多 Repo、更多變更，那真正重要的不是把更多內容塞進 context，而是擁有一個極快、可信、以結構感知為基礎的底層工具。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project. 所有片段節錄自 Native Design Deep Dive 訪談。'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 開發者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'zh-CN': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -164,6 +164,19 @@ const TRANSLATIONS = {
         [K.NAV_INTERVIEW]: '开发问答',
         [K.NAV_BENCHMARKS]: '性能实测',
         [K.NAV_VISION]: '未来愿景',
+        [K.H_PEERS_TITLE]: 'Agent Peers [BETA]',
+        [K.H_PEERS_DESC]: '突破单一 Session 的限制。让多个 Agent 互通脏数据 (Dirty Surface) 状态，在编写代码前就能避开语意冲突与重工，实现大规模 Agent 并行开发。',
+        [K.MAT_LEGEND]: '✓ 支持 | — 规划中 | n/a 语言无此特性',
+        [K.MAT_TH_LANG]: '语言',
+        [K.MAT_RATIONALE]: 'Per-cell rationale (详细解析逻辑)',
+        [K.SETUP_STEP1_TITLE]: '1. 启动 AI Onboarding Wizard',
+        [K.SETUP_STEP1_DESC]: '在您的 AI Agent (如 Claude Code) 中粘贴专属指令，唤醒交互式精灵，为您完成环境检测与自动安装。',
+        [K.SETUP_STEP2_TITLE]: '2. 建立索引 (非必要 / Auto-Index)',
+        [K.SETUP_STEP2_DESC]: 'ECP 内建 auto-ensure 机制，在您第一次查询时会自动建立图谱，因此手动执行索引通常是非必要的。',
+        [K.SETUP_STEP3_TITLE]: '3. 多项目群组 (Group)',
+        [K.SETUP_STEP3_DESC]: '如果是微服务或前后端分离架构，可建立群组以实现跨 Repo 查询。',
+        [K.SETUP_STEP4_TITLE]: '4. 确认 MCP 集成 (Verify)',
+        [K.SETUP_STEP4_DESC]: 'Onboarding 精灵会自动为 IDE 写入 MCP 配置。完成后，您可通过 CLI 确认已暴露给 Agent 的工具清单。',
         [K.H_BLINDSPOT_TITLE]: 'BlindSpot Awareness',
         [K.H_BLINDSPOT_DESC]: '“诚实的不知道”比“模糊的猜测”重要。明确标记图谱边界，防止 Agent 把“没有边”误认为“没有依赖”，从根本上解决 LLM 的闭世界幻觉。',
         [K.H_STATELESS_TITLE]: 'Stateless & mmap',
@@ -203,7 +216,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '“所有行动都应该从可验证的结构事实出发，而不是从上下文幻觉出发。”',
         [K.VISION_P1]: '在 AI Agent 时代，开发速度不再是唯一瓶颈；真正的瓶颈是<strong>信任</strong>。人类害怕 Agent 改坏系统，Agent 也容易被自己的上下文误导。Egent Code Plexus 试图把信任建立在可验证的结构事实上，让 Agent 在每一次行动前，都能快速回到唯一真相：<strong>Source Code</strong>。',
         [K.VISION_P2]: '如果未来每个人、每个团队、每间公司都会同时驱动更多 Agent、更多 Repo、更多变更，那真正重要的不是把更多内容塞进 context，而是拥有一个极快、可信、以结构感知为基础的底层工具。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project. 所有片段节录自 Native Design Deep Dive 访谈。'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 开发者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'en': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -219,6 +232,19 @@ const TRANSLATIONS = {
         [K.NAV_INTERVIEW]: 'Dev Q&A',
         [K.NAV_BENCHMARKS]: 'Benchmarks',
         [K.NAV_VISION]: 'Vision',
+        [K.H_PEERS_TITLE]: 'Agent Peers [BETA]',
+        [K.H_PEERS_DESC]: 'Break out of single-session limits. Multiple agents share Dirty Surface state so they sidestep semantic conflicts and rework before writing any code — enabling large-scale agent parallelism.',
+        [K.MAT_LEGEND]: '✓ supported | — planned | n/a not applicable to this language',
+        [K.MAT_TH_LANG]: 'Language',
+        [K.MAT_RATIONALE]: 'Per-cell rationale (detailed analysis logic)',
+        [K.SETUP_STEP1_TITLE]: '1. Launch the AI Onboarding Wizard',
+        [K.SETUP_STEP1_DESC]: 'Paste a single command into your AI Agent (e.g. Claude Code) to trigger an interactive wizard that detects your environment and installs ECP for you.',
+        [K.SETUP_STEP2_TITLE]: '2. Build the index (optional / Auto-Index)',
+        [K.SETUP_STEP2_DESC]: 'ECP ships with an auto-ensure mechanism that builds the graph on your first query, so manually indexing is usually unnecessary.',
+        [K.SETUP_STEP3_TITLE]: '3. Multi-project group',
+        [K.SETUP_STEP3_DESC]: 'For microservice or split frontend/backend layouts, create a group to enable cross-repo queries.',
+        [K.SETUP_STEP4_TITLE]: '4. Verify MCP integration',
+        [K.SETUP_STEP4_DESC]: 'The onboarding wizard writes the MCP config into your IDE automatically. Use the CLI afterwards to confirm which tools are exposed to the agent.',
         [K.H_BLINDSPOT_TITLE]: 'BlindSpot Awareness',
         [K.H_BLINDSPOT_DESC]: '"Honest ignorance" is better than "vague guessing." Explicitly marks graph boundaries to prevent Agents from mistaking "no edge" for "no dependency", solving closed-world hallucinations.',
         [K.H_STATELESS_TITLE]: 'Stateless & mmap',
@@ -258,7 +284,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"All actions should start from verifiable structural facts, not from context hallucinations."',
         [K.VISION_P1]: 'In the AI Agent era, development speed is no longer the bottleneck; the bottleneck is <strong>trust</strong>. Humans fear Agents breaking systems, and Agents are easily misled by their own context. Egent Code Plexus builds trust on structural facts, ensuring Agents always return to the only truth: <strong>Source Code</strong>.',
         [K.VISION_P2]: 'As every team and company drives more Agents and repos concurrently, what matters isn\'t stuffing more into the context window, but having a blazing fast, trustworthy, structure-aware foundational tool.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project. Segments extracted from the Native Design Deep Dive.'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · Developer <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'ja': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -274,6 +300,19 @@ const TRANSLATIONS = {
         [K.NAV_INTERVIEW]: '開発 Q&A',
         [K.NAV_BENCHMARKS]: 'ベンチマーク',
         [K.NAV_VISION]: 'ビジョン',
+        [K.H_PEERS_TITLE]: 'Agent Peers [BETA]',
+        [K.H_PEERS_DESC]: '単一セッションの制限を突破。複数の Agent が Dirty Surface 状態を共有することで、コードを書く前に意味的な衝突や手戻りを回避でき、大規模な Agent 並列開発を実現します。',
+        [K.MAT_LEGEND]: '✓ 対応 | — 予定 | n/a 言語にこの特性なし',
+        [K.MAT_TH_LANG]: '言語',
+        [K.MAT_RATIONALE]: 'Per-cell rationale (詳細な解析ロジック)',
+        [K.SETUP_STEP1_TITLE]: '1. AI Onboarding Wizard を起動',
+        [K.SETUP_STEP1_DESC]: 'AI Agent (Claude Code など) に専用コマンドを貼り付け、対話型ウィザードを起動して環境検出と自動インストールを実行します。',
+        [K.SETUP_STEP2_TITLE]: '2. インデックス作成 (任意 / Auto-Index)',
+        [K.SETUP_STEP2_DESC]: 'ECP は auto-ensure 機構を備えており、初回クエリ時にグラフを自動構築するため、手動でのインデックス実行は通常不要です。',
+        [K.SETUP_STEP3_TITLE]: '3. マルチプロジェクトグループ',
+        [K.SETUP_STEP3_DESC]: 'マイクロサービスやフロントエンド/バックエンド分離の構成では、グループを作成してリポジトリ横断クエリを有効にできます。',
+        [K.SETUP_STEP4_TITLE]: '4. MCP 統合の確認',
+        [K.SETUP_STEP4_DESC]: 'Onboarding ウィザードが IDE に MCP 設定を自動で書き込みます。完了後、CLI で Agent に公開されているツール一覧を確認できます。',
         [K.H_BLINDSPOT_TITLE]: 'BlindSpot の認識',
         [K.H_BLINDSPOT_DESC]: '「正直な無知」は「曖昧な推測」よりも重要です。グラフの境界を明示し、エージェントが「エッジなし」を「依存なし」と誤認するのを防ぎます。',
         [K.H_STATELESS_TITLE]: 'ステートレス & mmap',
@@ -313,7 +352,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '「すべてのアクションは、コンテキストのハルシネーションからではなく、検証可能な構造的事実から始まるべきです。」',
         [K.VISION_P1]: 'AIの時代、開発スピードはもはやボトルネックではありません。ボトルネックは<strong>信頼</strong>です。人間はエージェントを恐れ、エージェントは文脈に誤導されます。Egent Code Plexus は唯一の真実である<strong>ソースコード</strong>に根ざした信頼を構築します。',
         [K.VISION_P2]: '誰もがより多くのエージェントとリポジトリを同時に駆動する未来では、コンテキストを詰め込むことではなく、超高速で信頼できる構造認識ツールを持つことが重要です。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus プロジェクト。Native Design Deep Dive インタビューより抜粋。'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus プロジェクト · 開発者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'ko': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -329,6 +368,19 @@ const TRANSLATIONS = {
         [K.NAV_INTERVIEW]: '개발 Q&A',
         [K.NAV_BENCHMARKS]: '벤치마크',
         [K.NAV_VISION]: '비전',
+        [K.H_PEERS_TITLE]: 'Agent Peers [BETA]',
+        [K.H_PEERS_DESC]: '단일 세션의 한계를 돌파합니다. 여러 Agent가 Dirty Surface 상태를 공유함으로써, 코드를 작성하기 전에 의미적 충돌과 중복 작업을 피하고 대규모 Agent 병렬 개발을 실현합니다.',
+        [K.MAT_LEGEND]: '✓ 지원 | — 계획 중 | n/a 해당 언어에 없는 기능',
+        [K.MAT_TH_LANG]: '언어',
+        [K.MAT_RATIONALE]: 'Per-cell rationale (상세 분석 로직)',
+        [K.SETUP_STEP1_TITLE]: '1. AI Onboarding Wizard 시작',
+        [K.SETUP_STEP1_DESC]: 'AI Agent (예: Claude Code)에 전용 명령을 붙여넣어 대화형 마법사를 실행하면, 환경 감지와 자동 설치가 진행됩니다.',
+        [K.SETUP_STEP2_TITLE]: '2. 인덱스 빌드 (선택 / Auto-Index)',
+        [K.SETUP_STEP2_DESC]: 'ECP는 auto-ensure 메커니즘을 내장하고 있어 첫 쿼리 시 자동으로 그래프를 빌드하므로, 수동 인덱싱은 보통 필요하지 않습니다.',
+        [K.SETUP_STEP3_TITLE]: '3. 멀티 프로젝트 그룹',
+        [K.SETUP_STEP3_DESC]: '마이크로서비스나 프론트엔드/백엔드 분리 아키텍처라면, 그룹을 만들어 저장소 간 쿼리를 활성화할 수 있습니다.',
+        [K.SETUP_STEP4_TITLE]: '4. MCP 통합 확인',
+        [K.SETUP_STEP4_DESC]: 'Onboarding 마법사가 IDE에 MCP 설정을 자동으로 기록합니다. 완료 후 CLI로 Agent에 노출된 도구 목록을 확인할 수 있습니다.',
         [K.H_BLINDSPOT_TITLE]: 'BlindSpot 인식',
         [K.H_BLINDSPOT_DESC]: '"솔직한 모름"이 "모호한 추측"보다 중요합니다. 그래프 경계를 명시하여 에이전트가 의존성이 없다고 착각하는 것을 방지합니다.',
         [K.H_STATELESS_TITLE]: '상태 비저장 & mmap',
@@ -368,7 +420,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"모든 행동은 컨텍스트의 환각이 아닌 검증 가능한 구조적 사실에서 출발해야 합니다."',
         [K.VISION_P1]: 'AI 에이전트 시대에 진정한 병목 현상은 <strong>신뢰</strong>입니다. 인간은 에이전트를 두려워하고 에이전트는 문맥에 현혹됩니다. Egent Code Plexus는 항상 <strong>소스 코드</strong>로 돌아가도록 신뢰를 구축합니다.',
         [K.VISION_P2]: '모두가 더 많은 에이전트를 동시에 구동하는 미래에는 컨텍스트를 채우는 것보다 초고속의 신뢰할 수 있는 구조 인식 도구를 갖는 것이 중요합니다.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus 프로젝트. Native Design Deep Dive에서 발췌.'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus 프로젝트 · 개발자 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'es': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -384,6 +436,19 @@ const TRANSLATIONS = {
         [K.NAV_INTERVIEW]: 'Q&A de Desarrollo',
         [K.NAV_BENCHMARKS]: 'Métricas',
         [K.NAV_VISION]: 'Visión',
+        [K.H_PEERS_TITLE]: 'Agent Peers [BETA]',
+        [K.H_PEERS_DESC]: 'Supera los límites de una sola sesión. Permite que varios Agentes compartan el estado de Dirty Surface, evitando conflictos semánticos y retrabajo antes de escribir código — habilitando un paralelismo de Agentes a gran escala.',
+        [K.MAT_LEGEND]: '✓ soportado | — planificado | n/a no aplicable a este lenguaje',
+        [K.MAT_TH_LANG]: 'Lenguaje',
+        [K.MAT_RATIONALE]: 'Per-cell rationale (lógica de análisis detallada)',
+        [K.SETUP_STEP1_TITLE]: '1. Inicia el Asistente de Onboarding',
+        [K.SETUP_STEP1_DESC]: 'Pega un único comando en tu AI Agent (p. ej. Claude Code) para activar un asistente interactivo que detecta el entorno e instala ECP automáticamente.',
+        [K.SETUP_STEP2_TITLE]: '2. Construir el índice (opcional / Auto-Index)',
+        [K.SETUP_STEP2_DESC]: 'ECP incluye un mecanismo auto-ensure que construye el grafo en tu primera consulta, por lo que indexar manualmente normalmente no es necesario.',
+        [K.SETUP_STEP3_TITLE]: '3. Grupos multi-proyecto',
+        [K.SETUP_STEP3_DESC]: 'Para arquitecturas de microservicios o frontend/backend separados, crea un grupo para habilitar consultas entre repositorios.',
+        [K.SETUP_STEP4_TITLE]: '4. Verificar la integración MCP',
+        [K.SETUP_STEP4_DESC]: 'El asistente escribe automáticamente la configuración MCP en tu IDE. Después, usa la CLI para confirmar qué herramientas están expuestas al Agent.',
         [K.H_BLINDSPOT_TITLE]: 'Conciencia de BlindSpot',
         [K.H_BLINDSPOT_DESC]: 'La "ignorancia honesta" es mejor que las "conjeturas vagas". Marca límites del grafo para evitar que los Agentes asuman falsas dependencias.',
         [K.H_STATELESS_TITLE]: 'Sin estado & mmap',
@@ -423,7 +488,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"Todas las acciones deben partir de hechos estructurales verificables, no de alucinaciones de contexto."',
         [K.VISION_P1]: 'En la era de la IA, el cuello de botella es la <strong>confianza</strong>. Egent Code Plexus asegura que los Agentes siempre regresen a la única verdad: <strong>el Código Fuente</strong>.',
         [K.VISION_P2]: 'A medida que impulsamos más Agentes y repositorios, lo que importa no es llenar la ventana de contexto, sino tener una herramienta fundacional ultra rápida y consciente de la estructura.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Proyecto Egent Code Plexus.'
+        [K.FOOTER_TEXT]: '&copy; 2026 Proyecto Egent Code Plexus · Desarrollador <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     }
 };
 
