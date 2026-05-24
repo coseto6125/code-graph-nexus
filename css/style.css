@@ -300,7 +300,9 @@ body {
 .footer-inner { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
 .footer-brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.1rem; }
 .logo-icon.small { width: 16px; height: 16px; border-radius: 3px; }
-.footer-copy { color: var(--text-secondary); font-size: 0.85rem; }
+.footer-copy { color: var(--text-secondary); font-size: 0.85rem; text-align: center; }
+.footer-copy a { color: var(--text-primary); text-decoration: none; border-bottom: 1px dashed var(--border-hover); transition: color 0.15s ease, border-color 0.15s ease; }
+.footer-copy a:hover { color: var(--accent-color); border-bottom-color: var(--accent-color); }
 
 /* Toast */
 .toast {

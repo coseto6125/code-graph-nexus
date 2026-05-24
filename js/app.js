@@ -148,7 +148,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '「所有行動都應該從可驗證的結構事實出發，而不是從上下文幻覺出發。」',
         [K.VISION_P1]: '在 AI Agent 時代，開發速度不再是唯一瓶頸；真正的瓶頸是<strong>信任</strong>。人類害怕 Agent 改壞系統，Agent 也容易被自己的上下文誤導。Egent Code Plexus 試圖把信任建立在可驗證的結構事實上，讓 Agent 在每一次行動前，都能快速回到唯一真相：<strong>Source Code</strong>。',
         [K.VISION_P2]: '如果未來每個人、每個團隊、每間公司都會同時驅動更多 Agent、更多 Repo、更多變更，那真正重要的不是把更多內容塞進 context，而是擁有一個極快、可信、以結構感知為基礎的底層工具。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 開發者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 開發者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'zh-CN': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -216,7 +216,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '“所有行动都应该从可验证的结构事实出发，而不是从上下文幻觉出发。”',
         [K.VISION_P1]: '在 AI Agent 时代，开发速度不再是唯一瓶颈；真正的瓶颈是<strong>信任</strong>。人类害怕 Agent 改坏系统，Agent 也容易被自己的上下文误导。Egent Code Plexus 试图把信任建立在可验证的结构事实上，让 Agent 在每一次行动前，都能快速回到唯一真相：<strong>Source Code</strong>。',
         [K.VISION_P2]: '如果未来每个人、每个团队、每间公司都会同时驱动更多 Agent、更多 Repo、更多变更，那真正重要的不是把更多内容塞进 context，而是拥有一个极快、可信、以结构感知为基础的底层工具。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 开发者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · 开发者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'en': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -284,7 +284,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"All actions should start from verifiable structural facts, not from context hallucinations."',
         [K.VISION_P1]: 'In the AI Agent era, development speed is no longer the bottleneck; the bottleneck is <strong>trust</strong>. Humans fear Agents breaking systems, and Agents are easily misled by their own context. Egent Code Plexus builds trust on structural facts, ensuring Agents always return to the only truth: <strong>Source Code</strong>.',
         [K.VISION_P2]: 'As every team and company drives more Agents and repos concurrently, what matters isn\'t stuffing more into the context window, but having a blazing fast, trustworthy, structure-aware foundational tool.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · Developer <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus Project · Developer <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'ja': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -352,7 +352,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '「すべてのアクションは、コンテキストのハルシネーションからではなく、検証可能な構造的事実から始まるべきです。」',
         [K.VISION_P1]: 'AIの時代、開発スピードはもはやボトルネックではありません。ボトルネックは<strong>信頼</strong>です。人間はエージェントを恐れ、エージェントは文脈に誤導されます。Egent Code Plexus は唯一の真実である<strong>ソースコード</strong>に根ざした信頼を構築します。',
         [K.VISION_P2]: '誰もがより多くのエージェントとリポジトリを同時に駆動する未来では、コンテキストを詰め込むことではなく、超高速で信頼できる構造認識ツールを持つことが重要です。',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus プロジェクト · 開発者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus プロジェクト · 開発者 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'ko': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -420,7 +420,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"모든 행동은 컨텍스트의 환각이 아닌 검증 가능한 구조적 사실에서 출발해야 합니다."',
         [K.VISION_P1]: 'AI 에이전트 시대에 진정한 병목 현상은 <strong>신뢰</strong>입니다. 인간은 에이전트를 두려워하고 에이전트는 문맥에 현혹됩니다. Egent Code Plexus는 항상 <strong>소스 코드</strong>로 돌아가도록 신뢰를 구축합니다.',
         [K.VISION_P2]: '모두가 더 많은 에이전트를 동시에 구동하는 미래에는 컨텍스트를 채우는 것보다 초고속의 신뢰할 수 있는 구조 인식 도구를 갖는 것이 중요합니다.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus 프로젝트 · 개발자 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Egent Code Plexus 프로젝트 · 개발자 <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     },
     'es': {
         [K.META_TITLE]: 'Egent Code Plexus',
@@ -488,7 +488,7 @@ const TRANSLATIONS = {
         [K.VISION_QUOTE]: '"Todas las acciones deben partir de hechos estructurales verificables, no de alucinaciones de contexto."',
         [K.VISION_P1]: 'En la era de la IA, el cuello de botella es la <strong>confianza</strong>. Egent Code Plexus asegura que los Agentes siempre regresen a la única verdad: <strong>el Código Fuente</strong>.',
         [K.VISION_P2]: 'A medida que impulsamos más Agentes y repositorios, lo que importa no es llenar la ventana de contexto, sino tener una herramienta fundacional ultra rápida y consciente de la estructura.',
-        [K.FOOTER_TEXT]: '&copy; 2026 Proyecto Egent Code Plexus · Desarrollador <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NOR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
+        [K.FOOTER_TEXT]: '&copy; 2026 Proyecto Egent Code Plexus · Desarrollador <a href="https://github.com/coseto6125" target="_blank" rel="noopener noreferrer">@coseto6125</a> (E-NoR) · <a href="mailto:cosetoenor@gmail.com">cosetoenor@gmail.com</a>'
     }
 };
 
