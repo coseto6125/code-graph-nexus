@@ -2,18 +2,61 @@ use crate::cypher::ast::*;
 use crate::cypher::error::CypherError;
 use crate::cypher::value::{QueryResult, Value};
 use crate::graph::{ArchivedZeroCopyGraph, NodeKind, RelType};
+use compact_str::CompactString;
+use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+/// Small-N variable lookup. Replaces `HashMap<String, u32>` on the
+/// `Binding` fields cloned once per matched node in `exec_pattern`'s
+/// frontier expansion. Typical cypher queries bind <=4 vars, so the
+/// SmallVec inline storage never spills — clone is a fixed-size memcpy
+/// instead of a HashMap bucket allocation. `CompactString` keys inline
+/// up to 24 bytes (every realistic var name) so the per-key clone is
+/// also alloc-free. Linear scan over <=4 entries beats HashMap at this
+/// size because there is no hashing cost.
+#[derive(Debug, Clone, Default)]
+struct VarMap {
+    entries: SmallVec<[(CompactString, u32); 4]>,
+}
+
+impl VarMap {
+    #[inline]
+    fn get(&self, key: &str) -> Option<&u32> {
+        self.entries
+            .iter()
+            .find(|(k, _)| k.as_str() == key)
+            .map(|(_, v)| v)
+    }
+
+    #[inline]
+    fn contains_key(&self, key: &str) -> bool {
+        self.entries.iter().any(|(k, _)| k.as_str() == key)
+    }
+
+    #[inline]
+    fn insert(&mut self, key: &str, value: u32) {
+        for (k, v) in &mut self.entries {
+            if k.as_str() == key {
+                *v = value;
+                return;
+            }
+        }
+        self.entries.push((CompactString::from(key), value));
+    }
+}
 
 /// One row of intermediate bindings during pattern matching.
 #[derive(Debug, Clone, Default)]
 struct Binding {
     /// var_name -> node index into `graph.nodes`
-    node_vars: HashMap<String, u32>,
+    node_vars: VarMap,
     /// var_name -> edge index into `graph.edges`
-    edge_vars: HashMap<String, u32>,
+    edge_vars: VarMap,
     /// Values computed by a prior WITH clause. Checked before node_vars/edge_vars
-    /// in prop_value and project_item.
+    /// in prop_value and project_item. Stays as `HashMap` because it carries
+    /// `Value` (non-Copy, larger) and is only populated after WITH — frontier
+    /// expansion clones the empty default (cheap 56-byte memcpy).
     computed: HashMap<String, Value>,
 }
 
@@ -601,8 +644,8 @@ fn exec_with(
                 computed.insert(col.clone(), accum.finalize());
             }
             result.push(Binding {
-                node_vars: HashMap::new(),
-                edge_vars: HashMap::new(),
+                node_vars: VarMap::default(),
+                edge_vars: VarMap::default(),
                 computed,
             });
         }
@@ -933,7 +976,7 @@ fn exec_pattern(
                         continue;
                     }
                     let mut b = base.clone();
-                    b.node_vars.insert(var.clone(), idx);
+                    b.node_vars.insert(var, idx);
                     frontier.push((b, idx));
                 }
             }
@@ -943,7 +986,7 @@ fn exec_pattern(
                     continue;
                 }
                 let mut b = base.clone();
-                b.node_vars.insert(var.clone(), idx as u32);
+                b.node_vars.insert(var, idx as u32);
                 frontier.push((b, idx as u32));
             }
         }
@@ -987,11 +1030,11 @@ fn exec_pattern(
                         }
                         let mut nb = b.clone();
                         if let Some(var) = &next_np.var {
-                            nb.node_vars.insert(var.clone(), tgt_idx);
+                            nb.node_vars.insert(var, tgt_idx);
                         }
                         if let Some(var) = &rel.var {
                             if let Some(ei) = edge_idx_opt {
-                                nb.edge_vars.insert(var.clone(), ei);
+                                nb.edge_vars.insert(var, ei);
                             }
                         }
                         next_frontier.push((nb, tgt_idx));
@@ -1006,10 +1049,10 @@ fn exec_pattern(
                         }
                         let mut nb = b.clone();
                         if let Some(var) = &next_np.var {
-                            nb.node_vars.insert(var.clone(), tgt_idx);
+                            nb.node_vars.insert(var, tgt_idx);
                         }
                         if let Some(var) = &rel.var {
-                            nb.edge_vars.insert(var.clone(), edge_idx);
+                            nb.edge_vars.insert(var, edge_idx);
                         }
                         next_frontier.push((nb, tgt_idx));
                     });
