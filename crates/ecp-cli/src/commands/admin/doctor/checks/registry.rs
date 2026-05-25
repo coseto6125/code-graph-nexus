@@ -13,14 +13,15 @@ pub(crate) fn check(fix: bool) -> Vec<CheckResult> {
     };
 
     // Orphan index dirs are the one safely-removable category: their top-level
-    // repo dir isn't in the registry, so nothing references them and there's no
-    // lock contention — removing only reclaims space. Done before classify so
-    // the reported fix_applied reflects the actual deletion.
+    // repo dir isn't in the registry, so nothing references them. Retire via the
+    // same `retire_dir_async` primitive `admin prune` uses (atomic rename +
+    // background delete) rather than a bare remove_dir_all — one retire path for
+    // the whole tool. Done before classify so fix_applied reflects the outcome.
     let orphan_fix = fix.then(|| {
         let removed = health
             .orphan_index_dirs
             .iter()
-            .filter(|p| std::fs::remove_dir_all(p).is_ok())
+            .filter(|p| ecp_core::registry::retire_dir_async(p).is_ok())
             .count();
         removed == health.orphan_index_dirs.len()
     });
