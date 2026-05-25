@@ -272,6 +272,7 @@ const RELTYPES: &[RelTypeEntry] = &[
     RelTypeEntry { name: "Overrides", utility: "A", heuristic: false, note: "Method-level override (Java @Override, Kotlin override fun, C# override, C++ virtual-match). Distinct from class-level Extends." },
     RelTypeEntry { name: "Decorates", utility: "A", heuristic: false, note: "Decorator/attribute → decorated symbol (Python @decorator, Java/Kotlin @annotation, C# attribute, Rust attribute macro). 10-language emission." },
     RelTypeEntry { name: "UsesPathLiteral", utility: "A", heuristic: false, note: "Function/Method → PathLiteral. Drives `ecp impact --literal <value>` to find every read/write site touching a filesystem path or config key. 14-language emission." },
+    RelTypeEntry { name: "CompensatedBy", utility: "C", heuristic: true, note: "Heuristic Saga compensation: compensator → operation it rolls back. reason encodes evidence (saga:calls-back 0.8 / saga:name-only 0.6). Shown by default in heuristic_callers; --no-heuristic suppresses." },
 ];
 
 fn reltypes(args: FormatArgs) -> Result<(), EcpError> {
@@ -472,13 +473,14 @@ mod tests {
 
     #[test]
     fn reltypes_inventory_count_matches_repr_u8_enum() {
-        // RelType currently has 20 variants (post-merge: `Decorates` from
-        // #365 + `UsesPathLiteral` from #367). If a new variant lands,
-        // bump this number AND append the entry to RELTYPES. RelType has
-        // no VARIANT_COUNT constant like NodeKind does — manual sync.
+        // RelType currently has 21 variants (post-merge: `Decorates` from
+        // #365 + `UsesPathLiteral` from #367 + `CompensatedBy` from FU-008).
+        // If a new variant lands, bump this number AND append the entry to
+        // RELTYPES. RelType has no VARIANT_COUNT constant like NodeKind does —
+        // manual sync.
         assert_eq!(
             RELTYPES.len(),
-            20,
+            21,
             "reltypes inventory drifted from RelType enum"
         );
     }
@@ -497,15 +499,18 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_reltypes_are_the_two_documented_ones() {
+    fn heuristic_reltypes_are_the_documented_ones() {
         let heuristics: Vec<&str> = RELTYPES
             .iter()
             .filter(|r| r.heuristic)
             .map(|r| r.name)
             .collect();
-        // RelType::is_heuristic is hard-coded for MirrorsField + EventTopicMirror;
-        // pin the schema-cmd output to the same pair so drift surfaces.
-        assert_eq!(heuristics, vec!["MirrorsField", "EventTopicMirror"]);
+        // RelType::is_heuristic is hard-coded for MirrorsField + EventTopicMirror
+        // + CompensatedBy; pin the schema-cmd output to the same set so drift surfaces.
+        assert_eq!(
+            heuristics,
+            vec!["MirrorsField", "EventTopicMirror", "CompensatedBy"]
+        );
     }
 
     // ── node-kinds invariants ───────────────────────────────────────────
