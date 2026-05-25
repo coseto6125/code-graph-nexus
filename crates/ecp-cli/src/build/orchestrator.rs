@@ -259,6 +259,10 @@ pub(crate) fn build_inside_locked(
         // Version sidecar lets `attach_latest_sibling_sha` skip the 10-50ms
         // mmap + rkyv::access validation on warm-attach. Same detached pattern.
         crate::auto_ensure::write_compatible_version_sidecar(&graph_bin);
+        // Builder-fingerprint sidecar lets `ensure_index` detect convention
+        // drift (analyzer / path-normalization change at the same HEAD) and
+        // force a full rebuild instead of serving stale nodes. FU-2026-05-25-005.
+        crate::auto_ensure::write_builder_fingerprint_sidecar(&graph_bin);
 
         Ok(BuildResult {
             commit_dir: publish_dir,
@@ -303,6 +307,11 @@ pub(crate) fn attach_if_fingerprint_matches(commit_dir: &Path) -> Option<BuildRe
     // Back-fill the HEAD-SHA sidecar for graphs published by binaries that
     // pre-date the auto_ensure shortcut. One-shot until the next rebuild.
     crate::auto_ensure::write_head_sha_sidecar_with_sha(&commit_dir.join("graph.bin"), &meta.sha);
+    // Back-fill the fingerprint sidecar too: this attach only happens when the
+    // meta.json fingerprint already matches the current binary, so the sidecar
+    // can record the current fingerprint and let `ensure_index` skip the
+    // meta.json read on subsequent queries.
+    crate::auto_ensure::write_builder_fingerprint_sidecar(&commit_dir.join("graph.bin"));
     Some(BuildResult {
         commit_dir: commit_dir.to_path_buf(),
         sha_hex: meta.sha,

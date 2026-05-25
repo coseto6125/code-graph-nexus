@@ -9,7 +9,7 @@ use crate::commit_lookup::CommitIndex;
 use crate::repo_identity::repo_dir_name_for_cwd;
 use crate::session::state::classify_with_index;
 use ecp_core::registry::{resolve_home_ecp, retire_dir_async, SourceType};
-use ecp_core::session::SessionState;
+use ecp_core::session::{SessionState, StaleReason};
 use fs2::FileExt;
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -22,6 +22,12 @@ pub struct InvalidateReport {
     pub kept: usize,
     pub invalidated: usize,
     pub stale_skipped: usize,
+    /// `MetaUnreadable` sessions reaped on sight: no `session_meta.json` means
+    /// no `base_sha`, so they can never serve a query nor be rebuilt — keeping
+    /// them only grows `~/.ecp` unbounded across binary upgrades. Distinct from
+    /// `stale_skipped` (corrupt-but-recoverable) and `invalidated` (live, this
+    /// SHA).
+    pub meta_reaped: usize,
 }
 
 /// Rename each `sessions/<sid>/` whose `SessionState` is `AugmentedReference`
@@ -64,6 +70,18 @@ pub fn invalidate_matching_l1(repo_root: &Path, target_sha: &str) -> io::Result<
                 ecp_core::registry::rename_with_retry(&path, &stale_path)?;
                 spawn_delayed_rm_rf(stale_path, Duration::from_secs(2));
                 report.invalidated += 1;
+            }
+            // MetaUnreadable is unrecoverable: no session_meta.json ⇒ no
+            // base_sha ⇒ never serveable, never rebuildable, unrelated to any
+            // target SHA. Reap on sight (no sha-hint gate) instead of warning
+            // forever. See FU-2026-05-25-006.
+            SessionState::Stale {
+                reason: StaleReason::MetaUnreadable,
+            } => {
+                let dead_path = sessions_dir.join(format!("{name}.dead"));
+                ecp_core::registry::rename_with_retry(&path, &dead_path)?;
+                spawn_delayed_rm_rf(dead_path, Duration::from_secs(2));
+                report.meta_reaped += 1;
             }
             SessionState::Stale { reason } if matches_sha_hint(repo_root, name, target_sha) => {
                 tracing::warn!(

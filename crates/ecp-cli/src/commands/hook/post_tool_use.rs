@@ -75,7 +75,7 @@ fn maybe_reindex_notice(input: &HookInput) -> Option<String> {
 
     let result = ensure_index(&graph_path, repo_root).unwrap_or(EnsureResult::Missing);
     let age = match result {
-        EnsureResult::Stale { age_seconds } => age_seconds,
+        EnsureResult::Stale { age_seconds, .. } => age_seconds,
         _ => return None,
     };
 
