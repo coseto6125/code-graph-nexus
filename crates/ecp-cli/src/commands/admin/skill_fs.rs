@@ -120,7 +120,13 @@ pub(crate) fn skill_diff(
     for rel in rels {
         let src_file = src.join(&rel);
         let dst_file = dst.join(&rel);
-        let rel_path = rel.to_string_lossy().into_owned();
+        // Normalize to forward slashes so rel_path is stable across platforms
+        // (Windows PathBuf renders `\`, breaking diff headers and lookups).
+        let rel_path = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
         let status = match (src_file.is_file(), dst_file.is_file()) {
             (true, false) => FileStatus::Added,
             (false, true) => FileStatus::Removed,
