@@ -47,10 +47,10 @@ session_start hook
 
 ### 新增 `gc::sweep_stale_generations(repo_root: &Path) -> SweepStats`（gc.rs）
 
-- 掃 `<repo>/commits/`，對每個目錄名去除 `.gen.<ts>.<pid>.<n>` 後綴解析出 `branch_X__<SHA>` 鍵。
-- 同鍵分組，保留最新 mtime 一份，其餘 `.gen.*` 重複世代加入待刪清單。
-- 排除：mtime 在 10s 內，或同 commit 鍵存在 `.building/` 目錄者。
-- 保留策略：**同 SHA 只留最新一份**（同 SHA → 冪等同圖，舊世代零價值）。
+- 掃 `<repo>/commits/`，**重用既有 `registry::CommitDirName::parse(name)`** 解析每個目錄名為 `{ sha: [u8;20], generation: Option<Generation> }`（不手寫字串切割——DRY）。
+- 同 `sha` 分組，組內用 `Generation` 既有的 `Ord` 取最大者保留（doc 保證：base dir `None < Some(_)`；generations 間按 `timestamp_ms.pid.counter` lex 排序）。其餘加入待刪清單。
+- 排除：mtime 在 10s 內，或同 commit 鍵存在 `.building/` 目錄者（避免刪別的 session 正在 ingest 的圖）。
+- 保留策略：**同 SHA 只留 `Generation` 最大一份**（同 SHA → 冪等同圖，舊世代零價值）。比 mtime 比較更可靠——`Generation` Ord 本就是 producer 的確定性排序鍵。
 
 ### 新增 `gc::sweep_retired_repos(home_ecp: &Path) -> SweepStats`（gc.rs）
 
