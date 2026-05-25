@@ -72,19 +72,30 @@ list; `heuristic_edges` was never a stable MCP surface.
 
 ### Decision 3 — text shape (human-debug path)
 
-```
-impact: bookFlight  (upstream)
-[deterministic callers]
-  reserveSeat        services/booking.rs:88
-  checkoutHandler    api/checkout.rs:142
+**Implementation reality (verified):** `impact` emits via the generic
+`emit(&payload, format)` (`impact.rs:411`). For a payload keyed `"impact"`
+(not `"results"`), `OutputFormat::Text` falls to `to_string_pretty` — i.e.
+impact's "text" format is pretty-printed JSON, not a hand-rolled table
+(`output.rs:58-68`). json and toon render from the same `Value`.
 
-heuristic_callers[1] (requires_verification):
-  cancelFlight  EventTopicMirror  conf=0.85  services/booking.rs:201
+Therefore the "two buckets" requirement reduces to **two distinct top-level
+keys in the payload `Value`**: `impact` and `heuristic_callers`. text
+(pretty-JSON), json, and toon all render them as separate sections for free —
+no hand-rolled text renderer needed. A consumer (human or LLM) sees:
+
+```jsonc
+{
+  "target": "bookFlight",
+  "direction": "upstream",
+  "impact": [ /* deterministic callers */ ],
+  "heuristic_callers": [
+    { "name": "cancelFlight", "rel_type": "EventTopicMirror",
+      "confidence": 0.85, "requires_verification": true, "reason": "..." }
+  ]
+}
 ```
 
-The `heuristic_callers[N] (requires_verification)` header preserves the
-count + verification signal even at a glance. When N=0 the header is omitted
-(no empty-section noise in the human path).
+`heuristic_callers` is always present (empty array when none).
 
 ### Decision 4 — flag inversion
 
