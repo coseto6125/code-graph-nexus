@@ -41,7 +41,7 @@
 
 ## 資料流
 
-`saga_pairs::emit_edges(local_graphs, symbol_table, string_pool, nodes, edges)` 在 builder 已組好 `nodes`（owner_class resolved）+ `edges`（`Calls` 已建）後執行：
+`saga_pairs::emit_edges(nodes, string_pool, edges)` 在 builder 已組好 `nodes`（owner_class resolved）+ `edges`（`Calls` 已建）後執行（不需 `symbol_table`——`owner_class` 已在 `Node` 上、calls-back 證據從 `edges` buffer 線性掃，CSR offsets 此時尚未建）：
 
 1. 掃 `&[Node]`，依 `owner_class` 分組 Method/Function 節點。
 2. 每組內建 `name → node_idx` map (O(1) lookup)。
