@@ -255,19 +255,22 @@ pub fn write_builder_fingerprint_sidecar(graph_path: &Path) {
 /// treated as "cannot prove drift", deferring to the existing mtime walk so a
 /// transient read error never forces a spurious full rebuild.
 fn fingerprint_drifted(graph_path: &Path) -> bool {
-    let stored = fs::read_to_string(builder_fingerprint_sidecar_path(graph_path))
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            let meta =
-                ecp_core::registry::CommitBuildMeta::read(&graph_path.with_file_name("meta.json"))
-                    .ok()?;
-            meta.builder_fingerprint
-        });
-    match stored {
-        Some(fp) => fp != ecp_core::registry::BUILDER_FINGERPRINT,
-        None => false,
+    // Sidecar fast path: compare the trimmed file contents directly without
+    // allocating an owned String — this runs on every ensure_index call.
+    if let Ok(raw) = fs::read_to_string(builder_fingerprint_sidecar_path(graph_path)) {
+        let stored = raw.trim();
+        if !stored.is_empty() {
+            return stored != ecp_core::registry::BUILDER_FINGERPRINT;
+        }
+    }
+    // Sidecar miss (graph built by a pre-sidecar binary): fall back to the
+    // commit meta.json. A missing fingerprint there too ⇒ "cannot prove drift",
+    // so defer to the mtime walk rather than forcing a spurious rebuild.
+    match ecp_core::registry::CommitBuildMeta::read(&graph_path.with_file_name("meta.json")) {
+        Ok(meta) => meta
+            .builder_fingerprint
+            .is_some_and(|fp| fp != ecp_core::registry::BUILDER_FINGERPRINT),
+        Err(_) => false,
     }
 }
 
