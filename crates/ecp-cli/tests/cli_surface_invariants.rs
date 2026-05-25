@@ -66,6 +66,7 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "routes",
     "contracts",
     "diff",
+    "doctor",
     "shape-check",
     "tool-map",
     "peers",

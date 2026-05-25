@@ -104,7 +104,10 @@ fn no_old_top_level_commands() {
         "analyze",
         "context",
         "query",
-        "doctor",
+        // NOTE: `doctor` was an old name (framework-coverage report, folded into
+        // `coverage`/`summary` in e41ebb1d). The name was later re-introduced for
+        // the environment health-check command — a genuinely different feature —
+        // so it is NOT in this old-command denylist.
         "status",
         "list",
         "summarize",

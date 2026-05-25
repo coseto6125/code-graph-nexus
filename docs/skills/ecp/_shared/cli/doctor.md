@@ -7,30 +7,50 @@ single command instead of failing silently mid-workflow.
 ## Usage
 
 ```bash
-ecp doctor          # read-only report
-ecp doctor --fix    # also reinstall stale skills + rebuild a stale index
+ecp doctor                  # all checks, read-only report
+ecp doctor --fix            # all checks + fix everything fixable
+ecp doctor registry         # run only the registry check
+ecp doctor registry --fix   # run only registry + fix it (single-target fix)
+ecp doctor --format json    # structured output for CI / tooling
 ```
+
+`[check]` is one of: `skills` `index` `host` `config` `registry` `version`.
+Omit it to run every check.
 
 ## Checks
 
 | Check | Pass | Warn / Fail |
 |---|---|---|
-| `skill:<name>` | installed copy matches repo source | stale (source differs) → Warn; not installed → Warn |
+| `skill:<name>` | installed copy matches repo source | stale / not installed → Warn |
 | `index` | graph fresher than working tree | stale → Warn; missing → Fail |
 | `host:<tool>` | integrated, or optional and absent | config outdated → Warn |
-| `config:ecp-home` / `config:claude-dir` | path exists and writable | missing / read-only → Warn |
+| `config:git` | git on PATH | absent → **Fail** (core features need it) |
+| `config:ecp-home` / `config:claude-dir` | exists / writable | missing / read-only → Warn |
+| `registry:*` | no orphans / corruption | orphan dirs, missing graph/meta, corrupt meta → Warn |
+| `version` | local == latest tag (via `git ls-remote`) | newer tag available → Warn; offline → Warn |
 
-Exit code is non-zero when any check is **Fail** (e.g. missing index), so CI can
-gate on `ecp doctor`. Warnings alone do not fail the run.
+Exit code is non-zero when any check is **Fail**, so CI can gate on `ecp doctor`.
+Warnings alone do not fail the run.
 
 ## `--fix`
 
-Reruns the remediation for fixable checks in place:
-- **skills**: equivalent to `ecp admin claude install skills <name>`.
-- **index**: equivalent to `ecp admin index --repo .`.
+Reruns the remediation for the selected check(s) in place:
+- **skills**: `ecp admin claude install skills <name>`.
+- **index**: `ecp admin index --repo .`.
+- **registry**: removes orphan index dirs (missing/corrupt graph & meta stay
+  report-only — a rebuild, not a delete, is the safe fix).
+- **host**: reinstalls *scripted* hosts (claude / gemini mcp+native, codex mcp).
+  Interactive-only or stub hosts stay report-only.
 
-Host-integration and config findings are **report-only** — they print a
-remediation hint but `--fix` never rewrites user-owned host configs.
+`config` and `version` are always report-only — `--fix` never rewrites
+user-owned host configs, deletes user data, or triggers a multi-minute rebuild
+of the binary.
+
+## Related: install diff
+
+`ecp admin claude install skills <target>` always prints a diff of what it
+changes. `--dry-run` prints that diff without writing — the same engine
+`doctor`'s skill check uses to detect staleness.
 
 ## Related: install diff
 

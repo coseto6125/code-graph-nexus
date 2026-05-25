@@ -2,12 +2,13 @@
 //! dir exists; the Claude skills parent dir exists.
 
 use crate::commands::doctor::CheckResult;
+use crate::git::safe_exec;
 use ecp_core::registry::resolve_home_ecp;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn check() -> Vec<CheckResult> {
     let home_ecp = resolve_home_ecp();
-    let mut out = vec![ecp_home_check(&home_ecp)];
+    let mut out = vec![git_check(), ecp_home_check(&home_ecp)];
 
     let claude_skills = claude_home().join("skills");
     out.push(if claude_skills.is_dir() {
@@ -27,6 +28,20 @@ pub(crate) fn check() -> Vec<CheckResult> {
     });
 
     out
+}
+
+/// git is a hard prerequisite — index freshness, review diffs, and the version
+/// check all shell out to it. Absent git is a Fail (not Warn): core features
+/// silently degrade without it.
+fn git_check() -> CheckResult {
+    match safe_exec::git().arg("--version").output() {
+        Ok(o) if o.status.success() => {
+            let v = String::from_utf8_lossy(&o.stdout);
+            CheckResult::ok("config:git", v.trim().to_string())
+        }
+        _ => CheckResult::fail("config:git", "git not found on PATH")
+            .with_remediation("install git (https://git-scm.com/downloads)"),
+    }
 }
 
 /// ECP_HOME must resolve to an existing, writable dir. A write-probe failure
