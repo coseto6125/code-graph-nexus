@@ -8,7 +8,7 @@
 use crate::git::safe_exec;
 use ecp_core::registry::{CommitBuildMeta, CommitDirName};
 use ecp_core::session::SessionMeta;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -210,6 +210,76 @@ pub fn sweep_sessions(repo_root: &Path) -> io::Result<SweepStats> {
         }
     }
     Ok(SweepStats { marked, removed })
+}
+
+/// Converge same-SHA generation dirs under `<repo_root>/commits/`: for each SHA,
+/// keep only the dir with the greatest `Generation` (a base dir with no `.gen`
+/// suffix has `generation == None`, ordering below any `Some(_)`), remove the
+/// rest. Same SHA → identical graph (ingest is idempotent), so older generations
+/// are pure waste. Skips dirs whose mtime is < 10s old or that have a sibling
+/// `.building` marker (another session may be mid-ingest). Reuses
+/// `CommitDirName::parse` rather than hand-rolling the name grammar.
+pub fn sweep_stale_generations(repo_root: &Path) -> io::Result<SweepStats> {
+    let commits = repo_root.join("commits");
+    let mut removed = 0usize;
+    let Ok(it) = fs::read_dir(&commits) else {
+        return Ok(SweepStats { marked: 0, removed });
+    };
+
+    let mut by_sha: FxHashMap<[u8; 20], Vec<(CommitDirName, std::path::PathBuf)>> =
+        FxHashMap::default();
+    let now = std::time::SystemTime::now();
+    for entry in it.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name.contains(".building") {
+            continue;
+        }
+        let Ok(parsed) = CommitDirName::parse(&name) else {
+            continue;
+        };
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if now
+                    .duration_since(modified)
+                    .map(|d| d.as_secs() < 10)
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+            }
+        }
+        by_sha.entry(parsed.sha).or_default().push((parsed, path));
+    }
+
+    for (_sha, mut group) in by_sha {
+        if group.len() < 2 {
+            continue;
+        }
+        group.sort_by_key(|(parsed, _)| parsed.generation);
+        let keep_idx = group.len() - 1;
+        for (i, (_, path)) in group.iter().enumerate() {
+            if i == keep_idx {
+                continue;
+            }
+            let building = path.with_extension("building");
+            if building.exists() {
+                continue;
+            }
+            match fs::remove_dir_all(path) {
+                Ok(()) => removed += 1,
+                Err(e) => eprintln!(
+                    "gc: failed to remove stale generation {}: {e}",
+                    path.display()
+                ),
+            }
+        }
+    }
+
+    Ok(SweepStats { marked: 0, removed })
 }
 
 fn dir_size(dir: &Path) -> io::Result<u64> {

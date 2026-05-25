@@ -1,4 +1,4 @@
-use ecp_cli::admin::gc::{enforce_quota, reachability, sweep_sessions};
+use ecp_cli::admin::gc::{enforce_quota, reachability, sweep_sessions, sweep_stale_generations};
 use ecp_core::registry::{CommitBuildMeta, EmbeddingStatus, SourceType};
 use ecp_core::session::SessionMeta;
 use std::process::Command;
@@ -247,4 +247,43 @@ fn sweep_sessions_removes_already_marked_dead() {
     let stats = sweep_sessions(repo_root).unwrap();
     assert_eq!(stats.removed, 1);
     assert!(!dead_dir.exists());
+}
+
+/// Create a commit dir with an explicit on-disk name (supports `.gen.<...>` suffixes).
+/// Backdates mtime so the impl's fresh-guard (<10s) does not skip it.
+fn make_named_commit_dir(commits: &std::path::Path, dir_name: &str) {
+    let dir = commits.join(dir_name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("graph.bin"), vec![0u8; 16]).unwrap();
+    // Backdate so the impl's fresh-guard (<10s) doesn't skip it.
+    filetime::set_file_mtime(&dir, filetime::FileTime::from_unix_time(1_000_000_000, 0)).unwrap();
+}
+
+#[test]
+fn sweep_stale_generations_keeps_newest_per_sha() {
+    let tmp = tempfile::tempdir().unwrap();
+    let commits = tmp.path().join("commits");
+    std::fs::create_dir_all(&commits).unwrap();
+    let sha_a = "a".repeat(40);
+    let sha_b = "b".repeat(40);
+    make_named_commit_dir(&commits, &format!("branch_main__{sha_a}.gen.1000.10.0"));
+    make_named_commit_dir(&commits, &format!("branch_main__{sha_a}.gen.2000.20.0"));
+    make_named_commit_dir(&commits, &format!("branch_main__{sha_a}.gen.3000.30.0"));
+    make_named_commit_dir(&commits, &format!("branch_main__{sha_b}.gen.1500.15.0"));
+
+    let stats = sweep_stale_generations(tmp.path()).unwrap();
+
+    assert_eq!(stats.removed, 2, "two older same-SHA generations removed");
+    assert!(commits
+        .join(format!("branch_main__{sha_a}.gen.3000.30.0"))
+        .exists());
+    assert!(!commits
+        .join(format!("branch_main__{sha_a}.gen.1000.10.0"))
+        .exists());
+    assert!(!commits
+        .join(format!("branch_main__{sha_a}.gen.2000.20.0"))
+        .exists());
+    assert!(commits
+        .join(format!("branch_main__{sha_b}.gen.1500.15.0"))
+        .exists());
 }
