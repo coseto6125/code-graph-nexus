@@ -75,6 +75,14 @@
   key: [(property_identifier) (string (string_fragment))] @name.function
   value: [(function_expression) (arrow_function)] @function)
 
+;; Anonymous callbacks passed as call arguments (DOM listeners, setTimeout,
+;; array methods, promise chains). Without a node here their body's calls are
+;; dropped by attach_to_enclosing when no named enclosing scope exists — filter
+;; (A) callback registration. parser.rs only emits a node when the body
+;; contains a call, so empty callbacks add no bloat.
+(arguments
+  [(arrow_function) (function_expression)] @function.anonymous)
+
 ;; Methods
 (method_definition
   name: (property_identifier) @name.method) @method

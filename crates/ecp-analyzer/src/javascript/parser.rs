@@ -53,6 +53,23 @@ fn is_object_freeze_enum(node: &tree_sitter::Node) -> bool {
     check_object_freeze_enum(node).unwrap_or(false)
 }
 
+/// Whether `node`'s subtree contains a `call_expression`. Gates emission of
+/// `<anonymous>` callback nodes so empty callbacks (e.g. `arr.map(x => x * 2)`)
+/// stay out of the graph.
+fn body_has_call(node: tree_sitter::Node) -> bool {
+    let mut stack = vec![node];
+    while let Some(n) = stack.pop() {
+        if n.kind() == "call_expression" {
+            return true;
+        }
+        let mut c = n.walk();
+        for child in n.children(&mut c) {
+            stack.push(child);
+        }
+    }
+    false
+}
+
 fn check_object_freeze_enum(node: &tree_sitter::Node) -> Option<bool> {
     // Walk: declaration → variable_declarator → call_expression → arguments → object
     let declarator = (0..node.child_count())
@@ -178,6 +195,7 @@ impl LanguageProvider for JavaScriptProvider {
         let idx_function = self.query.capture_index_for_name("function");
         let idx_class = self.query.capture_index_for_name("class");
         let idx_method = self.query.capture_index_for_name("method");
+        let idx_function_anonymous = self.query.capture_index_for_name("function.anonymous");
 
         // 14-lang-parity Variable captures — use cached indices.
         let idx_variable_name = self.idx_variable_name;
@@ -305,6 +323,30 @@ impl LanguageProvider for JavaScriptProvider {
                     {
                         pending_hapi_handlers
                             .push((handler_name.to_string(), node_span(&cap.node)));
+                    }
+                } else if Some(cap_idx) == idx_function_anonymous {
+                    // Anonymous callback (arg-position arrow / function expression).
+                    // Emit an `<anonymous>` Function node only when the body holds a
+                    // call, so attach_to_enclosing can host those calls instead of
+                    // dropping them; empty callbacks stay out of the graph.
+                    if body_has_call(cap.node) {
+                        let span = node_span(&cap.node);
+                        if emitted_spans.insert(span) {
+                            nodes.push(RawNode {
+                                decorators: Vec::new(),
+                                is_exported: false,
+                                heritage: Vec::new(),
+                                type_annotation: None,
+                                name: "<anonymous>".to_string(),
+                                kind: NodeKind::Function,
+                                span,
+                                calls: Vec::new(),
+                                owner_class: None,
+                                content_hash: ecp_core::uid::xxh3_64_bytes(
+                                    &source[cap.node.start_byte()..cap.node.end_byte()],
+                                ),
+                            });
+                        }
                     }
                 } else if Some(cap_idx) == idx_blind_eval {
                     push_blind_spot(
