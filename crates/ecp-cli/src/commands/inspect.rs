@@ -295,6 +295,22 @@ fn build_inspect_block(
         );
     }
 
+    // Field with zero recorded readers: disambiguate "no reader" from "this
+    // language doesn't model field reads yet" (JS class fields, Ruby attrs) so
+    // an LLM doesn't read empty incoming as "safe to change".
+    if matches!(node.kind, ecp_core::graph::ArchivedNodeKind::Property)
+        && !incoming.contains_key("reads_field")
+    {
+        block.as_object_mut().unwrap().insert(
+            "field_readers_note".to_string(),
+            serde_json::json!(
+                "no ReadsField edges — either unread, or this language doesn't \
+                 capture field reads yet (e.g. JS class fields, Ruby attrs); \
+                 grep before assuming no readers"
+            ),
+        );
+    }
+
     block
 }
 
@@ -620,6 +636,12 @@ pub fn run(args: InspectArgs, engine: &Engine, _graph_path: &Path) -> Result<(),
                 "heuristic_note".to_string(),
                 block["heuristic_note"].clone(),
             );
+        }
+        if let Some(note) = block.get("field_readers_note") {
+            result
+                .as_object_mut()
+                .unwrap()
+                .insert("field_readers_note".to_string(), note.clone());
         }
         if !omitted_kinds.is_empty() {
             let impl_n = omitted_kinds
