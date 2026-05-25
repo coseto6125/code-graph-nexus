@@ -59,29 +59,44 @@ if [[ -f "${DOCTEST_DEST}/doctest/doctest.h" ]]; then
     cp "${DOCTEST_DEST}/doctest/doctest.h" "${DOCTEST_DEST}/doctest.h"
 fi
 
+# Pinned to the commit captured in baselines.md so re-clones reproduce the
+# documented fixture instead of drifting with upstream master.
+
 clone_if_missing lua \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/kikito/middleclass.git
+git -C "${SAMPLE_DIR}/lua" checkout 359f0e2742f51ca77801b513ec91eb9029de8de4
 
 clone_if_missing solidity \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/OpenZeppelin/openzeppelin-contracts.git
+git -C "${SAMPLE_DIR}/solidity" checkout cd05883078060e0cd8a7bd36636944570dbe1722
 
 clone_if_missing bash \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/Bash-it/bash-it.git
+git -C "${SAMPLE_DIR}/bash" checkout 854c4ee02d033dbdd22183fb164ff84373c851aa
 
 clone_if_missing zig \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/karlseguin/http.zig.git
+git -C "${SAMPLE_DIR}/zig" checkout 569bba10f22afd4ea1815416b546a8065905f820
 
 clone_if_missing crystal \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/kemalcr/kemal.git
+git -C "${SAMPLE_DIR}/crystal" checkout 5023c21195cff9b0fca700bc582911b179c2add5
 
 clone_if_missing dockerfile \
-    --depth 1 \
+    --filter=blob:none \
+    --no-checkout \
     https://github.com/docker-library/postgres.git
+git -C "${SAMPLE_DIR}/dockerfile" checkout 2353f0380c24944616282f94544cec2d462e1e2a
 
 # Move (aptos-core is huge — sparse checkout, only aptos-move/framework/)
 MOVE_DEST="${SAMPLE_DIR}/move"
@@ -90,12 +105,13 @@ if [[ -d "${MOVE_DEST}/.git" ]]; then
 else
     log "move: sparse-cloning aptos-core (aptos-move/framework/ only) ..."
     git clone \
-        --depth 1 \
         --filter=blob:none \
         --sparse \
+        --no-checkout \
         https://github.com/aptos-labs/aptos-core.git \
         "${MOVE_DEST}"
     git -C "${MOVE_DEST}" sparse-checkout set aptos-move/framework
+    git -C "${MOVE_DEST}" checkout 47de220ebaa3e70bc5547911045971961395c233
     log "move: done"
 fi
 
