@@ -178,7 +178,7 @@ fn fetch_freshness(r: &crate::repo_selector::ResolvedRepo, detailed: bool) -> Va
 
     let mut out = match ensure_index(&graph_path, worktree) {
         Ok(EnsureResult::Ready) => json!({ "status": "ready" }),
-        Ok(EnsureResult::Stale { age_seconds }) => {
+        Ok(EnsureResult::Stale { age_seconds, .. }) => {
             json!({ "status": "stale", "age_seconds": age_seconds })
         }
         Ok(EnsureResult::Missing) => json!({ "status": "missing" }),

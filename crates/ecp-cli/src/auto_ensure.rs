@@ -80,7 +80,14 @@ pub enum EnsureResult {
     Missing,
     /// Graph exists but working tree has newer files.
     /// `age_seconds` = how long since graph was last built.
-    Stale { age_seconds: u64 },
+    /// `needs_full_rebuild`: true ⇒ the staleness is a convention/fingerprint
+    /// drift, not just dirty files — `ensure_fresh` must do a full `build_l2`
+    /// (which drops the old graph.bin) rather than an incremental L1 overlay,
+    /// because the overlay path leaves stale-convention nodes in place.
+    Stale {
+        age_seconds: u64,
+        needs_full_rebuild: bool,
+    },
 }
 
 /// Outcome returned by `ensure_fresh`, disambiguating the warm-attach fast
@@ -109,7 +116,26 @@ pub fn ensure_index(graph_path: &Path, worktree_root: &Path) -> io::Result<Ensur
     // schema break the same as a stale graph so ensure_fresh transparently
     // rebuilds.
     if !crate::engine::header_compatible(graph_path) {
-        return Ok(EnsureResult::Stale { age_seconds: 0 });
+        return Ok(EnsureResult::Stale {
+            age_seconds: 0,
+            needs_full_rebuild: true,
+        });
+    }
+
+    // Convention-drift gate (FU-2026-05-25-005). `header_compatible` only
+    // catches rkyv layout breaks; an analyzer / path-normalization change that
+    // alters which nodes are emitted (e.g. the `src/`-rooted path bug) keeps
+    // the format version but changes BUILDER_FINGERPRINT. Without this, the
+    // git_fingerprint_shortcut below returns Ready for an unchanged HEAD and
+    // the stale nodes survive every reindex until a human runs `--force`.
+    // Placed BEFORE the shortcut so a binary upgrade can never be short-
+    // circuited past. Stale ⇒ ensure_fresh rebuilds via the header-compatible
+    // or build_l2 branch.
+    if fingerprint_drifted(graph_path) {
+        return Ok(EnsureResult::Stale {
+            age_seconds: 0,
+            needs_full_rebuild: true,
+        });
     }
 
     // Fast path: if the working tree is a git repo, the indexed HEAD matches
@@ -125,7 +151,10 @@ pub fn ensure_index(graph_path: &Path, worktree_root: &Path) -> io::Result<Ensur
             .duration_since(graph_mtime)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        return Ok(EnsureResult::Stale { age_seconds: age });
+        return Ok(EnsureResult::Stale {
+            age_seconds: age,
+            needs_full_rebuild: false,
+        });
     }
     Ok(EnsureResult::Ready)
 }
@@ -191,6 +220,60 @@ fn read_compatible_version_sidecar(graph_path: &Path) -> Option<u32> {
     content.trim().parse::<u32>().ok()
 }
 
+/// Path of the builder-fingerprint sidecar next to `graph.bin`. One ASCII line
+/// holding the `BUILDER_FINGERPRINT` (`v<ver>+schema<n>`) that produced this
+/// graph. `GRAPH_FORMAT_VERSION` only bumps on rkyv layout breaks; an analyzer
+/// or path-normalization change that alters emitted nodes WITHOUT a layout
+/// break leaves the format version untouched, so `header_compatible` cannot
+/// see it. The fingerprint embeds the crate version and thus moves on every
+/// release — `ensure_index` compares it to force a rebuild when the running
+/// binary differs from the one that built the cached graph. See
+/// FU-2026-05-25-005.
+pub fn builder_fingerprint_sidecar_path(graph_path: &Path) -> PathBuf {
+    let mut p = graph_path.as_os_str().to_owned();
+    p.push(".builder_fingerprint");
+    PathBuf::from(p)
+}
+
+/// Write the current `BUILDER_FINGERPRINT` next to `graph_path`. Detached like
+/// the other sidecars; a write failure just means the next `ensure_index`
+/// falls back to the meta.json read in `fingerprint_drifted`.
+pub fn write_builder_fingerprint_sidecar(graph_path: &Path) {
+    let sidecar = builder_fingerprint_sidecar_path(graph_path);
+    let content = format!("{}\n", ecp_core::registry::BUILDER_FINGERPRINT);
+    std::thread::spawn(move || {
+        let _ = fs::write(&sidecar, content);
+    });
+}
+
+/// True when the cached graph's builder fingerprint differs from the running
+/// binary's — meaning analyzer / path-normalization conventions may have
+/// changed and the cached nodes are potentially stale. Reads the sidecar
+/// first (one page of IO); on a sidecar miss (graph built by a pre-sidecar
+/// binary) falls back to the sibling commit's `meta.json`. Returns `false`
+/// (no drift) when neither source is readable — a missing fingerprint is
+/// treated as "cannot prove drift", deferring to the existing mtime walk so a
+/// transient read error never forces a spurious full rebuild.
+fn fingerprint_drifted(graph_path: &Path) -> bool {
+    // Sidecar fast path: compare the trimmed file contents directly without
+    // allocating an owned String — this runs on every ensure_index call.
+    if let Ok(raw) = fs::read_to_string(builder_fingerprint_sidecar_path(graph_path)) {
+        let stored = raw.trim();
+        if !stored.is_empty() {
+            return stored != ecp_core::registry::BUILDER_FINGERPRINT;
+        }
+    }
+    // Sidecar miss (graph built by a pre-sidecar binary): fall back to the
+    // commit meta.json. A missing fingerprint there too ⇒ "cannot prove drift",
+    // so defer to the mtime walk rather than forcing a spurious rebuild.
+    match ecp_core::registry::CommitBuildMeta::read(&graph_path.with_file_name("meta.json")) {
+        Ok(meta) => meta
+            .builder_fingerprint
+            .is_some_and(|fp| fp != ecp_core::registry::BUILDER_FINGERPRINT),
+        Err(_) => false,
+    }
+}
+
 /// Try to decide Ready vs Stale via the cheap git fingerprint.
 /// - Returns `Some(Ready)` when HEAD matches the sidecar AND `git status
 ///   --porcelain -uno` is empty.
@@ -231,7 +314,10 @@ fn git_fingerprint_shortcut(
         .duration_since(graph_mtime)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    Some(EnsureResult::Stale { age_seconds: age })
+    Some(EnsureResult::Stale {
+        age_seconds: age,
+        needs_full_rebuild: false,
+    })
 }
 
 /// Ensure the graph exists and is fresher than the working tree.
@@ -270,10 +356,14 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<EnsureFre
             eprintln!("l2.built elapsed={:.2}s", start.elapsed().as_secs_f32());
             Ok(EnsureFreshOutcome::Ready)
         }
-        EnsureResult::Stale { .. } => {
-            if !crate::engine::header_compatible(graph_path) {
-                // Version-incompatible base: applying an overlay would silently
-                // corrupt graph.bin. Fully rebuild instead.
+        EnsureResult::Stale {
+            needs_full_rebuild, ..
+        } => {
+            if needs_full_rebuild || !crate::engine::header_compatible(graph_path) {
+                // Full-rebuild staleness: either a version-incompatible base
+                // (applying an overlay would silently corrupt graph.bin) or a
+                // builder-fingerprint drift (overlay leaves stale-convention
+                // nodes in place — FU-2026-05-25-005). Drop + rebuild.
                 // Invariant (T1-7 + OQ-5): this branch must NEVER call the overlay path.
                 // Counter is incremented before build_l2 so tests can assert branch
                 // dispatch even when build_l2 fails in a minimal tempdir fixture.
@@ -645,4 +735,81 @@ fn collect_dirty_files(
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod fingerprint_drift_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn write_sidecar(graph_path: &Path, fp: &str) {
+        fs::write(
+            builder_fingerprint_sidecar_path(graph_path),
+            format!("{fp}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn drift_detected_when_sidecar_fingerprint_differs() {
+        let dir = tempdir().unwrap();
+        let graph = dir.path().join("graph.bin");
+        write_sidecar(&graph, "v0.3.0+schema1");
+        assert!(
+            fingerprint_drifted(&graph),
+            "an older builder fingerprint must register as drifted"
+        );
+    }
+
+    #[test]
+    fn no_drift_when_sidecar_matches_current() {
+        let dir = tempdir().unwrap();
+        let graph = dir.path().join("graph.bin");
+        write_sidecar(&graph, ecp_core::registry::BUILDER_FINGERPRINT);
+        assert!(
+            !fingerprint_drifted(&graph),
+            "the current fingerprint must not register as drift"
+        );
+    }
+
+    #[test]
+    fn no_drift_when_fingerprint_unknown() {
+        // Neither sidecar nor meta.json present: cannot prove drift, so defer
+        // to the mtime walk rather than forcing a spurious full rebuild.
+        let dir = tempdir().unwrap();
+        let graph = dir.path().join("graph.bin");
+        assert!(
+            !fingerprint_drifted(&graph),
+            "a missing fingerprint must NOT force a rebuild"
+        );
+    }
+
+    #[test]
+    fn drift_falls_back_to_meta_json_when_sidecar_absent() {
+        // Graph built by a pre-sidecar binary: only meta.json carries the
+        // fingerprint. ensure_index must still detect drift from it.
+        let dir = tempdir().unwrap();
+        let graph = dir.path().join("graph.bin");
+        let meta = ecp_core::registry::CommitBuildMeta {
+            version: 1,
+            sha: "0".repeat(40),
+            source_type: ecp_core::registry::SourceType::Branch,
+            source_id: None,
+            built_from_worktree: String::new(),
+            built_at: String::new(),
+            parent_sha: None,
+            node_count: 0,
+            embedding_status: ecp_core::registry::EmbeddingStatus::None,
+            refs_at_build: vec![],
+            refs_seen_since: vec![],
+            builder_fingerprint: Some("v0.3.0+schema1".to_string()),
+            binary_commit_sha: None,
+        };
+        ecp_core::registry::CommitBuildMeta::write_atomic(&dir.path().join("meta.json"), &meta)
+            .unwrap();
+        assert!(
+            fingerprint_drifted(&graph),
+            "drift must be detected from meta.json when the sidecar is absent"
+        );
+    }
 }

@@ -290,3 +290,31 @@ fn invalidate_classifies_corrupt_session_as_stale_skipped() {
     assert_eq!(report.stale_skipped, 1);
     assert!(tmp.path().join("sessions/sid_corrupt").exists());
 }
+
+#[test]
+fn invalidate_reaps_meta_unreadable_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    setup_repo_with_l2(tmp.path());
+    // Session dir with NO session_meta.json ⇒ MetaUnreadable. Unrecoverable:
+    // no base_sha to rebuild from, so --force reaps it regardless of SHA.
+    let orphan = tmp.path().join("sessions/sid_no_meta/graph_overlay");
+    fs::create_dir_all(&orphan).unwrap();
+    let report = invalidate_matching_l1(tmp.path(), SHA).unwrap();
+    assert_eq!(report.meta_reaped, 1);
+    assert_eq!(report.stale_skipped, 0, "must not double-count as skipped");
+    assert!(
+        !tmp.path().join("sessions/sid_no_meta").exists(),
+        "live name must be vacated (renamed to .dead)"
+    );
+}
+
+#[test]
+fn invalidate_reaps_meta_unreadable_for_unrelated_sha() {
+    // base_sha is unreadable, so the reap cannot and must not depend on the
+    // target SHA — a MetaUnreadable session is reaped under any --force.
+    let tmp = tempfile::tempdir().unwrap();
+    setup_repo_with_l2(tmp.path());
+    fs::create_dir_all(tmp.path().join("sessions/sid_dead/graph_overlay")).unwrap();
+    let report = invalidate_matching_l1(tmp.path(), SHA2).unwrap();
+    assert_eq!(report.meta_reaped, 1);
+}
