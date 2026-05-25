@@ -287,6 +287,22 @@ fn dart_callee_name(call: Node<'_>, source: &[u8], bindings: &DartBindings) -> O
             }
             Some(method.to_string())
         }
+        "function_expression" => {
+            // tree-sitter-dart 0.2.0 mis-parses `(x) => f(x)` as the application
+            // `((x) => f)(x)`, so `call.function` is the closure itself and the
+            // real callee is its body's leading identifier. (A real IIFE wraps
+            // the closure in `parenthesized_expression`, never reaching here.)
+            // Non-identifier bodies (`(x) => a + f(x)`, ternary, cascade) are a
+            // known recovery gap — skip rather than emit a wrong callee.
+            let inner = function.child_by_field_name("body")?.named_child(0)?;
+            if inner.kind() == "identifier" {
+                std::str::from_utf8(&source[inner.start_byte()..inner.end_byte()])
+                    .ok()
+                    .map(str::to_string)
+            } else {
+                None
+            }
+        }
         _ => std::str::from_utf8(&source[function.start_byte()..function.end_byte()])
             .ok()
             .map(str::to_string),

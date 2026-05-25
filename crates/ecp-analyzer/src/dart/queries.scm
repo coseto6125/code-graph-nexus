@@ -190,6 +190,24 @@
 (arguments
   (function_expression) @function.anonymous)
 
+;; Arrow-closure mis-parse recovery. tree-sitter-dart 0.2.0 parses
+;; `xs.map((x) => f(x))` as the application `((x) => f)(x)`: the closure's
+;; `function_expression` becomes the bare `function:` of a call_expression
+;; (or its member-expression object for `(x) => o.m(x)`), and the trailing
+;; call binds OUTSIDE the closure. A real IIFE wraps the closure in
+;; `parenthesized_expression`, so a bare function_expression here is
+;; unambiguously the mis-parse — emit unconditionally (parser.rs) and recover
+;; the callee (receiver_types.rs). Bodies that are not a single direct/method
+;; call (e.g. `(x) => a + f(x)`) keep the node but the call edge is a known gap.
+(arguments
+  (call_expression
+    function: (function_expression) @function.anonymous.arrow))
+
+(arguments
+  (call_expression
+    function: (member_expression
+      object: (function_expression) @function.anonymous.arrow)))
+
 ;; ---- BlindSpot patterns (FU-001 P6b) ----
 ;; import 'dart:mirrors' — file uses runtime reflection; downstream
 ;; reflect/MirrorSystem calls bind names at runtime. Anchored at the

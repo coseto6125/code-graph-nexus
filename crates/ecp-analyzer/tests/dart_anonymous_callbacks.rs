@@ -39,18 +39,41 @@ fn block_closure_callback_attaches_call_to_anonymous_node() {
 }
 
 #[test]
-fn arrow_closure_with_call_body_is_a_grammar_limitation() {
-    // tree-sitter-dart 0.2.0 parses `(x) => transform(x)` as application
-    // `((x) => transform)(x)` — the closure body is just the identifier
-    // `transform`, and the call binds OUTSIDE the closure. So an arrow closure
-    // whose body is a single call carries no inner call_expression and cannot
-    // host an <anonymous> call edge. Block-form closures (`(x) { f(x); }`) are
-    // unaffected and covered above. Pinned so a future grammar bump that fixes
-    // the parse flips this test and prompts re-enabling arrow support.
+fn arrow_closure_direct_call_body_is_recovered() {
+    // tree-sitter-dart 0.2.0 mis-parses `(x) => transform(x)` as the
+    // application `((x) => transform)(x)`. receiver_types recovers the callee
+    // (the closure body's leading identifier) and parser.rs emits the node
+    // unconditionally for the mis-parse shape.
     let g = parse("void main() {\n  items.map((x) =>\n      transform(x));\n}");
     assert!(
-        !anonymous_calls(&g).contains(&"transform"),
-        "grammar limitation changed — arrow closure now carries the call, re-enable arrow capture; nodes: {:?}",
+        anonymous_calls(&g).contains(&"transform"),
+        "expected transform recovered onto <anonymous>, nodes: {:?}",
+        g.nodes
+    );
+}
+
+#[test]
+fn arrow_closure_method_call_body_is_recovered() {
+    // `(x) => obj.method(x)` mis-parses as `((x) => obj).method(x)`; the member
+    // arm already yields `method` as callee.
+    let g = parse("void main() {\n  items.map((x) =>\n      obj.method(x));\n}");
+    assert!(
+        anonymous_calls(&g).contains(&"method"),
+        "expected method recovered onto <anonymous>, nodes: {:?}",
+        g.nodes
+    );
+}
+
+#[test]
+fn arrow_closure_binary_body_call_is_a_known_gap() {
+    // `(x) => a + f(x)` mis-parses with the call fused into an additive_expr;
+    // the callee is not a clean identifier so the call edge is not recovered.
+    // The <anonymous> node is still emitted. Pinned so a future grammar bump
+    // (or precedence-aware recovery) that surfaces the call flips this test.
+    let g = parse("void main() {\n  items.map((x) =>\n      a + f(x));\n}");
+    assert!(
+        !anonymous_calls(&g).contains(&"f"),
+        "binary-body arrow call now recovered — extend recovery / drop this pin; nodes: {:?}",
         g.nodes
     );
 }

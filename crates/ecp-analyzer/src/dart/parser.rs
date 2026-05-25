@@ -105,6 +105,7 @@ struct DartCaptureIndices {
     blind_function_apply: Option<u32>,
     blind_mirrors_import: Option<u32>,
     function_anonymous: Option<u32>,
+    function_anonymous_arrow: Option<u32>,
 }
 
 impl DartProvider {
@@ -141,6 +142,7 @@ impl DartProvider {
             blind_function_apply: query.capture_index_for_name("blind.function_apply"),
             blind_mirrors_import: query.capture_index_for_name("blind.mirrors_import"),
             function_anonymous: query.capture_index_for_name("function.anonymous"),
+            function_anonymous_arrow: query.capture_index_for_name("function.anonymous.arrow"),
         };
         Ok(Self {
             query,
@@ -210,6 +212,7 @@ impl LanguageProvider for DartProvider {
         let idx_blind_function_apply = idx.blind_function_apply;
         let idx_blind_mirrors_import = idx.blind_mirrors_import;
         let idx_function_anonymous = idx.function_anonymous;
+        let idx_function_anonymous_arrow = idx.function_anonymous_arrow;
 
         // Track spans of anonymous nodes already emitted to avoid duplicates
         // when the same closure node fires multiple query matches.
@@ -311,6 +314,30 @@ impl LanguageProvider for DartProvider {
                                 ),
                             });
                         }
+                    }
+                } else if Some(cap_idx) == idx_function_anonymous_arrow {
+                    // tree-sitter-dart 0.2.0 mis-parses `(x) => f(x)` as the
+                    // application `((x) => f)(x)`, so the closure body holds no
+                    // call_expression — body_has_call can't see it. The capture
+                    // shape (bare function_expression as a call's `function`,
+                    // never a parenthesized real IIFE) is itself the signal, so
+                    // emit unconditionally; receiver_types recovers the callee.
+                    let span = node_span(&cap.node);
+                    if emitted_anon_spans.insert(span) {
+                        nodes.push(RawNode {
+                            decorators: Vec::new(),
+                            is_exported: false,
+                            heritage: Vec::new(),
+                            type_annotation: None,
+                            name: format!("<anonymous:{}:{}>", span.0 + 1, span.1),
+                            kind: NodeKind::Function,
+                            span,
+                            calls: Vec::new(),
+                            owner_class: None,
+                            content_hash: ecp_core::uid::xxh3_64_bytes(
+                                &source[cap.node.start_byte()..cap.node.end_byte()],
+                            ),
+                        });
                     }
                 }
 
