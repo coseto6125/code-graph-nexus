@@ -161,20 +161,6 @@ fn uninstall_skills(target: ClaudeSkillTarget) -> Result<(), EcpError> {
     Ok(())
 }
 
-fn source_skill_dir(skill: ClaudeSkillTarget) -> Result<PathBuf, EcpError> {
-    let cwd = std::env::current_dir().map_err(|e| EcpError::Output(format!("current_dir: {e}")))?;
-    let path = source_skill_dir_at(skill, &cwd);
-    if path.join("SKILL.md").exists() {
-        Ok(path)
-    } else {
-        Err(EcpError::Output(format!(
-            "missing bundled Claude skill `{}` at {}",
-            skill.name(),
-            path.display()
-        )))
-    }
-}
-
 /// Path-resolution split out from `source_skill_dir` so unit tests can pin
 /// the skill → repo-subdir mapping without touching process-global cwd
 /// (`std::env::set_current_dir` races with parallel tests).
