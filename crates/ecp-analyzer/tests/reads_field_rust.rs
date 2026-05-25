@@ -71,3 +71,29 @@ fn read_timeout(c: &Config) -> u32 {
         "ReadsField target must be a Property node"
     );
 }
+
+/// A method call `c.compute()` is a Calls edge, not a ReadsField — `is_call_callee`
+/// must exclude the callee, and even if it slipped through, the resolver's
+/// is_property filter has no Property named `compute` to land on. Either way
+/// no ReadsField edge to a method should appear.
+#[test]
+fn rust_method_call_is_not_a_field_read() {
+    let src = r#"
+pub struct Config { pub timeout: u32 }
+impl Config {
+    pub fn compute(&self) -> u32 { self.timeout }
+}
+fn driver(c: &Config) -> u32 {
+    c.compute()
+}
+"#;
+    let g = build_graph("config.rs", src);
+    let bad = g
+        .edges
+        .iter()
+        .any(|e| e.rel_type == RelType::ReadsField && node_name(&g, e.target) == "compute");
+    assert!(
+        !bad,
+        "method call `compute` must not produce a ReadsField edge"
+    );
+}
