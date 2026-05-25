@@ -1,37 +1,48 @@
 # Wave 1 Language Baseline Stats
 
-Captured: 2026-05-14  
-ecp binary: `target/debug/ecp` (dev profile)  
-Command: `ecp admin index --repo .sample_repo/<lang>`
+> **Note:** The 2026-05-14 dev-profile numbers are superseded by this release-profile recapture against pinned commits.
+
+Captured: 2026-05-25  
+ecp binary: `target/release/ecp` (release profile)  
+Command: `ecp admin index --repo .sample_repo/<lang> --force`
+
+## Pinned Commits
+
+| Lang       | Pinned SHA                               |
+|------------|------------------------------------------|
+| lua        | 359f0e2742f51ca77801b513ec91eb9029de8de4 |
+| solidity   | cd05883078060e0cd8a7bd36636944570dbe1722 |
+| bash       | 854c4ee02d033dbdd22183fb164ff84373c851aa |
+| zig        | 569bba10f22afd4ea1815416b546a8065905f820 |
+| crystal    | 5023c21195cff9b0fca700bc582911b179c2add5 |
+| dockerfile | 2353f0380c24944616282f94544cec2d462e1e2a |
+| move       | 47de220ebaa3e70bc5547911045971961395c233 |
 
 ## Baseline Results
 
-| Lang       | Upstream Repo                              | Files Scanned | Nodes | Scan Time | Analyze Time | Total Time | Status  |
-|------------|--------------------------------------------|--------------|-------|-----------|--------------|------------|---------|
-| lua        | kikito/middleclass (depth=1)               | 15           | 148   | 3.5 ms    | 329 ms       | 433 ms     | OK      |
-| solidity   | OpenZeppelin/openzeppelin-contracts (d=1)  | 727          | 4862  | 17.9 ms   | 408 ms       | 765 ms     | OK      |
-| bash       | Bash-it/bash-it (depth=1)                  | 398          | 5595  | 18.1 ms   | 350 ms       | 560 ms     | OK      |
-| zig        | karlseguin/http.zig (depth=1)              | 1            | 0     | 3.7 ms    | 334 ms       | 370 ms     | PARTIAL |
-| crystal    | kemalcr/kemal (depth=1)                    | 80           | 423   | 5.2 ms    | 337 ms       | 459 ms     | OK      |
-| dockerfile | docker-library/postgres (depth=1)          | 68           | 1266  | 5.1 ms    | 352 ms       | 475 ms     | OK      |
-| move       | aptos-labs/aptos-core (sparse, d=1)        | 486          | 7743  | 16.2 ms   | 681 ms       | 1647 ms    | OK      |
+| Lang       | Upstream Repo                              | Files | Nodes | Scan | Analyze | Total  | Status |
+|------------|--------------------------------------------|-------|-------|------|---------|--------|--------|
+| lua        | kikito/middleclass (depth=1)               | 11    | 173   | N/A  | N/A     | 0.04s  | OK     |
+| solidity   | OpenZeppelin/openzeppelin-contracts (d=1)  | 702   | 7245  | N/A  | N/A     | 0.17s  | OK     |
+| bash       | Bash-it/bash-it (depth=1)                  | 344   | 5014  | N/A  | N/A     | 0.13s  | OK     |
+| zig        | karlseguin/http.zig (depth=1)              | 31    | 2654  | N/A  | N/A     | 0.06s  | OK     |
+| crystal    | kemalcr/kemal (depth=1)                    | 74    | 470   | N/A  | N/A     | 0.06s  | OK     |
+| dockerfile | docker-library/postgres (depth=1)          | 70    | 1187  | N/A  | N/A     | 0.05s  | OK     |
+| move       | aptos-labs/aptos-core (sparse, d=1)        | 458   | 9501  | N/A  | N/A     | 0.24s  | OK     |
+
+> Scan / Analyze columns are N/A: the release binary emits only aggregate `elapsed=Xs` (no sub-phase breakdown). The dev-profile binary emitted per-phase timings; the release binary does not.
 
 ## Notes
 
-### zig — PARTIAL (0 nodes)
+### zig — OK (2654 nodes, was PARTIAL in 2026-05-14)
 
-The `.zig` extension is not registered in `index.rs`'s file-extension match arm.
-Only `readme.md` from the http.zig repo was scanned (1 file, 0 Zig-specific nodes).
-The `admin index` command exited 0, but no Zig symbols were extracted.
-
-**Fix required:** Add `"zig"` to the extension match in
-`crates/ecp-cli/src/commands/admin/index.rs` and implement a `ZigProvider` in
-`crates/ecp-analyzer/src/zig/`.
+The zig parser has been implemented since the 2026-05-14 snapshot. All 31 `.zig` files from
+`karlseguin/http.zig` are now parsed with 2654 nodes extracted. The PARTIAL status is resolved.
 
 ### move — sparse checkout
 
 Aptos-core is ~3 GB total; sparse checkout of `aptos-move/framework/` reduces
-it to ~15 MB on disk. The 486 files include `.move` sources only from that
+it to ~15 MB on disk. The 458 files include `.move` sources only from that
 subtree.
 
 ### Disk usage (.sample_repo/wave-1 only)
