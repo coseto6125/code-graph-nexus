@@ -16,7 +16,7 @@ pub(crate) fn check(fix: bool) -> CheckResult {
     let remediation = "ecp admin index --repo .";
     let mut result = match ensure_index(&graph, &cwd) {
         Ok(EnsureResult::Ready) => return CheckResult::ok("index", "graph is fresh"),
-        Ok(EnsureResult::Stale { age_seconds }) => CheckResult::warn(
+        Ok(EnsureResult::Stale { age_seconds, .. }) => CheckResult::warn(
             "index",
             format!("stale — graph built {age_seconds}s before latest source change"),
         )
