@@ -66,7 +66,6 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "routes",
     "contracts",
     "diff",
-    "doctor",
     "shape-check",
     "tool-map",
     "peers",
@@ -123,6 +122,7 @@ const ADMIN_SUBCMDS: &[&str] = &[
     "codex",
     "gemini",
     "mcp",
+    "doctor",
 ];
 
 /// `ecp admin group <subcmd>` — management-only (no query verbs here).

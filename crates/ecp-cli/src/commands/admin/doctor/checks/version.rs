@@ -3,7 +3,7 @@
 //! git wrapper) and compares against the compiled-in version. Network failure
 //! degrades to a Warn rather than failing the run; never prompts or updates.
 
-use crate::commands::doctor::CheckResult;
+use crate::commands::admin::doctor::CheckResult;
 use crate::git::safe_exec;
 
 const REPO_URL: &str = "https://github.com/coseto6125/egent-code-plexus";

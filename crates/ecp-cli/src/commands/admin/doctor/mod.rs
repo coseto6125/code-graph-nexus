@@ -1,4 +1,4 @@
-//! `ecp doctor` — environment health check.
+//! `ecp admin doctor` — environment health check.
 //!
 //! Aggregates independent checks (installed skills freshness, graph index
 //! freshness, host-integration consistency, config/path sanity) into one

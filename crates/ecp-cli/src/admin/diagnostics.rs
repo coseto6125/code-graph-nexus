@@ -110,13 +110,13 @@ fn registry_health_report(home_ecp: &Path) -> Result<(), EcpError> {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct RegistryHealth {
-    root: PathBuf,
-    registry_path: PathBuf,
+    pub(crate) root: PathBuf,
+    pub(crate) registry_path: PathBuf,
     pub(crate) root_exists: bool,
     pub(crate) registry_exists: bool,
     pub(crate) repo_count: usize,
-    branch_count: usize,
-    missing_index_dirs: Vec<PathBuf>,
+    pub(crate) branch_count: usize,
+    pub(crate) missing_index_dirs: Vec<PathBuf>,
     pub(crate) missing_graphs: Vec<PathBuf>,
     pub(crate) missing_meta: Vec<PathBuf>,
     pub(crate) corrupt_meta: Vec<PathBuf>,

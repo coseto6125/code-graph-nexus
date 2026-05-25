@@ -1,4 +1,4 @@
-# ecp doctor
+# ecp admin doctor
 
 Environment health check. Aggregates independent checks into one report so a
 drifted setup (stale skills, stale graph, outdated host config) surfaces in a
@@ -7,11 +7,11 @@ single command instead of failing silently mid-workflow.
 ## Usage
 
 ```bash
-ecp doctor                  # all checks, read-only report
-ecp doctor --fix            # all checks + fix everything fixable
-ecp doctor registry         # run only the registry check
-ecp doctor registry --fix   # run only registry + fix it (single-target fix)
-ecp doctor --format json    # structured output for CI / tooling
+ecp admin doctor                  # all checks, read-only report
+ecp admin doctor --fix            # all checks + fix everything fixable
+ecp admin doctor registry         # run only the registry check
+ecp admin doctor registry --fix   # run only registry + fix it (single-target fix)
+ecp admin doctor --format json    # structured output for CI / tooling
 ```
 
 `[check]` is one of: `skills` `index` `host` `config` `registry` `version`.
@@ -29,7 +29,7 @@ Omit it to run every check.
 | `registry:*` | no orphans / corruption | orphan dirs, missing graph/meta, corrupt meta → Warn |
 | `version` | local == latest tag (via `git ls-remote`) | newer tag available → Warn; offline → Warn |
 
-Exit code is non-zero when any check is **Fail**, so CI can gate on `ecp doctor`.
+Exit code is non-zero when any check is **Fail**, so CI can gate on `ecp admin doctor`.
 Warnings alone do not fail the run.
 
 ## `--fix`

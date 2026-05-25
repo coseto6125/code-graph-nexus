@@ -1,8 +1,8 @@
 //! Graph index freshness, via the same staleness logic agent commands use.
 
 use crate::auto_ensure::{ensure_index, EnsureResult};
+use crate::commands::admin::doctor::CheckResult;
 use crate::commands::admin::index::{self, IndexArgs};
-use crate::commands::doctor::CheckResult;
 use crate::graph_path;
 use std::path::PathBuf;
 

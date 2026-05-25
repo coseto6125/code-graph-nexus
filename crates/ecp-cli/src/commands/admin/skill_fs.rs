@@ -30,7 +30,7 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), EcpError> {
     Ok(())
 }
 
-// ── skill diff engine (shared by install + `ecp doctor`) ──────────────────────
+// ── skill diff engine (shared by install + `ecp admin doctor`) ──────────────────────
 
 /// Per-file outcome of comparing a skill's repo source against its installed copy.
 #[derive(Debug, PartialEq, Eq)]

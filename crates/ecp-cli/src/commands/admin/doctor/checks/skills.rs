@@ -3,8 +3,8 @@
 use crate::commands::admin::claude::{
     claude_skill_dir, install_skills, source_skill_dir_at, ClaudeSkillTarget,
 };
+use crate::commands::admin::doctor::CheckResult;
 use crate::commands::admin::skill_fs::skill_diff;
-use crate::commands::doctor::CheckResult;
 
 pub(crate) fn check(fix: bool) -> Vec<CheckResult> {
     let cwd = match std::env::current_dir() {

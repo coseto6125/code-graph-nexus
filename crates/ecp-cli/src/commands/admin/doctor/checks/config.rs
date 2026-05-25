@@ -1,7 +1,7 @@
 //! Config / path sanity: ECP_HOME resolves and is writable; the registry
 //! dir exists; the Claude skills parent dir exists.
 
-use crate::commands::doctor::CheckResult;
+use crate::commands::admin::doctor::CheckResult;
 use crate::git::safe_exec;
 use ecp_core::registry::resolve_home_ecp;
 use std::path::{Path, PathBuf};

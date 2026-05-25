@@ -4,7 +4,7 @@
 
 use crate::admin::host_integration::{mcp, native};
 use crate::admin::status::HostStatus;
-use crate::commands::doctor::CheckResult;
+use crate::commands::admin::doctor::CheckResult;
 use ecp_core::EcpError;
 
 /// A host's fix entry point, when one can run non-interactively.
@@ -52,9 +52,9 @@ fn map_host(name: &str, status: HostStatus, fix: bool, fix_fn: Option<FixFn>) ->
         HostStatus::Missing => CheckResult::ok(name, "not integrated (optional)"),
         HostStatus::Outdated { reason } => {
             // All host checks share the `host` selector, so the single-target
-            // fix command is always `ecp doctor host --fix`.
+            // fix command is always `ecp admin doctor host --fix`.
             let mut r = CheckResult::warn(name, format!("outdated — {reason}"))
-                .with_remediation("ecp doctor host --fix");
+                .with_remediation("ecp admin doctor host --fix");
             if fix {
                 if let Some(f) = fix_fn {
                     r.fix_applied = Some(f().is_ok());
