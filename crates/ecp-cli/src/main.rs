@@ -72,6 +72,7 @@ fn main() {
         Commands::Dev { command } => run_no_graph!(commands::dev::run(command.clone(), &cli.graph)),
         Commands::Contracts(args) => run_no_graph!(commands::contracts::run(args.clone())),
         Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
+        Commands::Doctor(args) => run_no_graph!(commands::doctor::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
         Commands::Watch(args) => run_no_graph!(commands::watch::run(args.clone())),
         Commands::Peers(args) => run_no_graph!(commands::peers::run(args.clone())),
@@ -99,6 +100,7 @@ fn main() {
         Commands::Summary(_)
         | Commands::Contracts(_)
         | Commands::Diff(_)
+        | Commands::Doctor(_)
         | Commands::Admin { .. }
         | Commands::Dev { .. }
         | Commands::HookHandle(_)
@@ -178,6 +180,7 @@ fn main() {
         Commands::Summary(_)
         | Commands::Contracts(_)
         | Commands::Diff(_)
+        | Commands::Doctor(_)
         | Commands::Admin { .. }
         | Commands::Dev { .. }
         | Commands::HookHandle(_)

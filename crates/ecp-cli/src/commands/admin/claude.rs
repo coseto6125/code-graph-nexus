@@ -2,7 +2,7 @@
 
 use crate::admin::host_integration::mcp::claude_code as mcp_claude;
 use crate::commands::admin::claude_code as hooks;
-use crate::commands::admin::skill_fs::copy_dir_replace;
+use crate::commands::admin::skill_fs::{copy_dir_replace, skill_diff};
 use clap::Subcommand;
 use ecp_core::EcpError;
 use std::fs;
@@ -37,12 +37,16 @@ pub enum ClaudeComponent {
     McpServer,
     /// Skill packs that teach Claude when to use ecp beyond command help.
     Skills {
-        #[command(subcommand)]
+        /// Which skill(s) to install. Defaults to all.
+        #[arg(value_enum, default_value_t = ClaudeSkillTarget::All)]
         target: ClaudeSkillTarget,
+        /// Print the diff against the installed copy without writing anything.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
-#[derive(Subcommand, Debug, Clone, Copy)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub enum ClaudeSkillTarget {
     /// Install every bundled Claude skill.
     All,
@@ -68,7 +72,7 @@ pub(crate) fn install(component: ClaudeComponent) -> Result<(), EcpError> {
             hooks::run_install_claude_code(events.as_deref(), None)
         }
         ClaudeComponent::McpServer => mcp_claude::install_scripted(),
-        ClaudeComponent::Skills { target } => install_skills(target),
+        ClaudeComponent::Skills { target, dry_run } => install_skills(target, dry_run),
     }
 }
 
@@ -80,7 +84,7 @@ pub(crate) fn uninstall(component: ClaudeComponent) -> Result<(), EcpError> {
             settings_path: None,
         }),
         ClaudeComponent::McpServer => mcp_claude::uninstall_scripted(),
-        ClaudeComponent::Skills { target } => uninstall_skills(target),
+        ClaudeComponent::Skills { target, .. } => uninstall_skills(target),
     }
 }
 
@@ -102,16 +106,21 @@ pub(crate) fn print_status() -> Result<(), EcpError> {
     Ok(())
 }
 
-fn install_skills(target: ClaudeSkillTarget) -> Result<(), EcpError> {
+pub(crate) fn install_skills(target: ClaudeSkillTarget, dry_run: bool) -> Result<(), EcpError> {
     for &skill in target.expand() {
         let src = source_skill_dir(skill)?;
         let dst = claude_skill_dir(skill);
+
+        let dst_was_installed = dst.join("SKILL.md").exists();
+        println!("Claude Code skill `{}`:", skill.name());
+        skill_diff(&src, &dst, dst_was_installed)?.print();
+
+        if dry_run {
+            println!("  [dry-run] not written");
+            continue;
+        }
         copy_dir_replace(&src, &dst)?;
-        println!(
-            "Claude Code skill `{}` installed in {}",
-            skill.name(),
-            dst.display()
-        );
+        println!("  installed in {}", dst.display());
     }
     Ok(())
 }
@@ -152,14 +161,14 @@ fn source_skill_dir(skill: ClaudeSkillTarget) -> Result<PathBuf, EcpError> {
 /// `ecp` skill: canonical source is `docs/skills/ecp/` per
 /// `docs/skills/README.md` (single source-of-truth for runtime
 /// `~/.claude/skills/ecp/`). Others ship from `skill_sample/claude/`.
-fn source_skill_dir_at(skill: ClaudeSkillTarget, cwd: &std::path::Path) -> PathBuf {
+pub(crate) fn source_skill_dir_at(skill: ClaudeSkillTarget, cwd: &std::path::Path) -> PathBuf {
     match skill {
         ClaudeSkillTarget::Ecp => cwd.join("docs").join("skills").join("ecp"),
         _ => cwd.join("skill_sample").join("claude").join(skill.name()),
     }
 }
 
-fn claude_skill_dir(skill: ClaudeSkillTarget) -> PathBuf {
+pub(crate) fn claude_skill_dir(skill: ClaudeSkillTarget) -> PathBuf {
     claude_home().join("skills").join(skill.name())
 }
 
@@ -171,7 +180,7 @@ fn claude_home() -> PathBuf {
 }
 
 impl ClaudeSkillTarget {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             ClaudeSkillTarget::All => "all",
             ClaudeSkillTarget::Ecp => "ecp",
@@ -179,7 +188,7 @@ impl ClaudeSkillTarget {
         }
     }
 
-    fn expand(self) -> &'static [ClaudeSkillTarget] {
+    pub(crate) fn expand(self) -> &'static [ClaudeSkillTarget] {
         match self {
             ClaudeSkillTarget::All => &[ClaudeSkillTarget::Ecp, ClaudeSkillTarget::Simplify],
             ClaudeSkillTarget::Ecp => &[ClaudeSkillTarget::Ecp],

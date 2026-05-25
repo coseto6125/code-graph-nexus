@@ -40,6 +40,8 @@ pub enum Commands {
     Contracts(commands::contracts::ContractsArgs),
     /// Edge-level resolver delta — binding tier-degradation (silent break), route / contract changes. For symbol blast-radius, use `ecp impact`.
     Diff(commands::diff::DiffArgs),
+    /// Environment health check: installed-skill freshness, graph index staleness, host-integration consistency, config paths. `--fix` reinstalls stale skills + rebuilds a stale index.
+    Doctor(commands::doctor::DoctorArgs),
 
     /// Administrative operations. With no subcommand: launches the interactive
     /// TUI for host-integration management. With a subcommand: runs that
