@@ -240,10 +240,11 @@ pub fn builder_fingerprint_sidecar_path(graph_path: &Path) -> PathBuf {
 /// miss merely falls back to an mtime walk / `header_compatible` — a stale or
 /// missing fingerprint sidecar makes `fingerprint_drifted` report drift and
 /// triggers a full `build_l2` (the most expensive fallback, not a cheap one).
-/// So this write is synchronous: detaching a ~20-byte write to a spawned thread
-/// (whose creation costs more than the write) let a process exit before the
-/// flush landed, leaving the next invocation to rebuild a graph that was
-/// already current. On return the sidecar reflects the running binary.
+/// So this write is synchronous: on return the sidecar reflects the running
+/// binary and drift is cleared. Detaching the ~20-byte write to a spawned
+/// thread risks the process exiting before the flush lands — the next
+/// invocation would then rebuild an already-current graph — and the spawn
+/// itself costs more than the write it would defer.
 pub fn write_builder_fingerprint_sidecar(graph_path: &Path) {
     let sidecar = builder_fingerprint_sidecar_path(graph_path);
     let content = format!("{}\n", ecp_core::registry::BUILDER_FINGERPRINT);
