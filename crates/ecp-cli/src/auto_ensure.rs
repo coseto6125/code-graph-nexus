@@ -235,15 +235,20 @@ pub fn builder_fingerprint_sidecar_path(graph_path: &Path) -> PathBuf {
     PathBuf::from(p)
 }
 
-/// Write the current `BUILDER_FINGERPRINT` next to `graph_path`. Detached like
-/// the other sidecars; a write failure just means the next `ensure_index`
-/// falls back to the meta.json read in `fingerprint_drifted`.
+/// Write the current `BUILDER_FINGERPRINT` next to `graph_path`. Unlike the
+/// head-SHA and compatible-version sidecars — pure read-side perf hints whose
+/// miss merely falls back to an mtime walk / `header_compatible` — a stale or
+/// missing fingerprint sidecar makes `fingerprint_drifted` report drift and
+/// triggers a full `build_l2` (the most expensive fallback, not a cheap one).
+/// So this write is synchronous: on return the sidecar reflects the running
+/// binary and drift is cleared. Detaching the ~20-byte write to a spawned
+/// thread risks the process exiting before the flush lands — the next
+/// invocation would then rebuild an already-current graph — and the spawn
+/// itself costs more than the write it would defer.
 pub fn write_builder_fingerprint_sidecar(graph_path: &Path) {
     let sidecar = builder_fingerprint_sidecar_path(graph_path);
     let content = format!("{}\n", ecp_core::registry::BUILDER_FINGERPRINT);
-    std::thread::spawn(move || {
-        let _ = fs::write(&sidecar, content);
-    });
+    let _ = fs::write(&sidecar, content);
 }
 
 /// True when the cached graph's builder fingerprint differs from the running
@@ -414,6 +419,37 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<EnsureFre
                 write_head_sha_sidecar(graph_path, worktree_root);
             }
             Ok(EnsureFreshOutcome::Ready)
+        }
+    }
+}
+
+/// Version-checked graph load for every path that loads a graph by repo
+/// (find multi-repo, group, diff) rather than by explicit `--graph`.
+///
+/// Runs `ensure_fresh` first so the two-tier staleness contract applies
+/// uniformly: a header/fingerprint drift forces a full `build_l2` before the
+/// load (else the caller would read nodes a stale binary produced — e.g. a
+/// parser bug already fixed upstream), and a dirty working tree triggers the
+/// incremental path. On `WarmAttach` (current SHA has no graph yet) it loads
+/// the sibling graph and flags it stale so the caller can surface a note.
+///
+/// `--graph <path>` is the one documented opt-out and must NOT route through
+/// here: it loads the named graph verbatim via `Engine::load`, since the user
+/// is deliberately pointing at a specific graph (e.g. A/B graph comparison).
+pub fn load_ensured(
+    graph_path: &Path,
+    worktree_root: &Path,
+) -> Result<crate::engine::Engine, String> {
+    match ensure_fresh(graph_path, worktree_root)? {
+        EnsureFreshOutcome::Ready => crate::engine::Engine::load(graph_path)
+            .map_err(|e| format!("load graph {}: {e}", graph_path.display())),
+        EnsureFreshOutcome::WarmAttach { sibling_graph_path } => {
+            crate::engine::Engine::load_warm(&sibling_graph_path).map_err(|e| {
+                format!(
+                    "load warm-attach graph {}: {e}",
+                    sibling_graph_path.display()
+                )
+            })
         }
     }
 }
