@@ -337,6 +337,49 @@ pub fn sweep_retired_repos(home_ecp: &Path) -> io::Result<SweepStats> {
     Ok(SweepStats { marked: 0, removed })
 }
 
+/// Remove orphaned atomic-write temp siblings (`<name>.<pid>.<n>.tmp`) left in
+/// `home_ecp` when a writer's `tmp → fsync → rename` (registry/io.rs) was
+/// interrupted before the rename. The io.rs doc comment promises these "can be
+/// swept by cleanup tools" — this is that tool. Only files whose mtime is ≥10s
+/// old are removed, so a live writer mid-`rename` is never touched (same guard
+/// `sweep_stale_generations` uses against in-flight builds).
+pub fn sweep_orphan_tmp(home_ecp: &Path) -> io::Result<SweepStats> {
+    let mut removed = 0usize;
+    let Ok(it) = fs::read_dir(home_ecp) else {
+        return Ok(SweepStats { marked: 0, removed });
+    };
+    let now = std::time::SystemTime::now();
+    for entry in it.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".tmp") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if let Ok(modified) = meta.modified() {
+            if now
+                .duration_since(modified)
+                .map(|d| d.as_secs() < 10)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+        }
+        match fs::remove_file(entry.path()) {
+            Ok(()) => removed += 1,
+            Err(e) => eprintln!(
+                "gc: failed to remove orphan tmp {}: {e}",
+                entry.path().display()
+            ),
+        }
+    }
+    Ok(SweepStats { marked: 0, removed })
+}
+
 fn dir_size(dir: &Path) -> io::Result<u64> {
     let mut total = 0u64;
     for e in walkdir::WalkDir::new(dir)
@@ -348,4 +391,53 @@ fn dir_size(dir: &Path) -> io::Result<u64> {
         }
     }
     Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// Backdate a file's mtime past the 10s in-flight guard so the sweep
+    /// treats it as a settled orphan rather than a live writer's temp.
+    fn backdate(path: &Path, secs: u64) {
+        let when = SystemTime::now() - Duration::from_secs(secs);
+        let _ = filetime::set_file_mtime(path, filetime::FileTime::from_system_time(when));
+    }
+
+    #[test]
+    fn sweep_orphan_tmp_removes_settled_tmp_keeps_fresh_and_non_tmp() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+
+        let stale = home.join("registry.json.10143.0.tmp");
+        fs::write(&stale, b"{}").expect("write stale");
+        backdate(&stale, 30);
+
+        let fresh = home.join("registry.json.20000.0.tmp");
+        fs::write(&fresh, b"{}").expect("write fresh");
+
+        let keep = home.join("registry.json");
+        fs::write(&keep, b"{}").expect("write registry");
+
+        let stats = sweep_orphan_tmp(home).expect("sweep");
+
+        assert_eq!(stats.removed, 1, "only the settled .tmp is removed");
+        assert!(!stale.exists(), "settled orphan tmp deleted");
+        assert!(fresh.exists(), "fresh tmp (live writer) preserved");
+        assert!(keep.exists(), "non-tmp registry untouched");
+    }
+
+    #[test]
+    fn sweep_orphan_tmp_ignores_tmp_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        let tmp_dir = home.join("something.5.0.tmp");
+        fs::create_dir(&tmp_dir).expect("mkdir");
+        backdate(&tmp_dir, 30);
+
+        let stats = sweep_orphan_tmp(home).expect("sweep");
+        assert_eq!(stats.removed, 0, "dirs named *.tmp are not files; skipped");
+        assert!(tmp_dir.exists());
+    }
 }

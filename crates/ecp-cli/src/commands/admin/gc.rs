@@ -19,6 +19,16 @@ pub fn run(args: GcArgs) -> Result<(), ecp_core::EcpError> {
             Ok(s) => total_removed += s.removed,
             Err(e) => eprintln!("gc: sweep_retired_repos: {e}"),
         }
+        // Orphaned `<name>.<pid>.<n>.tmp` from interrupted atomic writes.
+        match crate::admin::gc::sweep_orphan_tmp(&home_ecp) {
+            Ok(s) => total_removed += s.removed,
+            Err(e) => eprintln!("gc: sweep_orphan_tmp: {e}"),
+        }
+        // Ghost registry entries: registered repo whose index dir is gone.
+        match ecp_core::registry::RegistryFile::prune_ghost_entries(&home_ecp) {
+            Ok(ghosts) => total_removed += ghosts.len(),
+            Err(e) => eprintln!("gc: prune_ghost_entries: {e}"),
+        }
     }
 
     // L2 + L3: per-repo generation convergence + session sweep.
