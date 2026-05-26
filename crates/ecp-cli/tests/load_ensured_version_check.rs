@@ -118,12 +118,30 @@ fn load_ensured_rebuilds_on_fingerprint_drift() {
         "rebuilt graph must contain the source symbol"
     );
     // Drift cleared: the rebuild rewrote the sidecar to the current fingerprint.
-    let fp = fs::read_to_string(&sidecar).unwrap_or_default();
-    assert_eq!(
-        fp.trim(),
-        ecp_core::registry::BUILDER_FINGERPRINT,
+    // The sidecar write is detached (`write_builder_fingerprint_sidecar` spawns
+    // a thread — a documented perf hint, not a blocking step), so poll with a
+    // bounded wait rather than reading once and racing the background flush.
+    assert!(
+        wait_for_sidecar(&sidecar, ecp_core::registry::BUILDER_FINGERPRINT),
         "rebuild must refresh the fingerprint sidecar to the running binary"
     );
+}
+
+/// Poll `sidecar` until its trimmed contents equal `expected`, up to a 2 s
+/// budget. The fingerprint sidecar is written from a detached thread, so a
+/// freshly-rebuilt graph clears the drift eventually, not on `load_ensured`'s
+/// return.
+fn wait_for_sidecar(sidecar: &Path, expected: &str) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if fs::read_to_string(sidecar).unwrap_or_default().trim() == expected {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 #[test]
