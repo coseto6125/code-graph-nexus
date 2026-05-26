@@ -88,9 +88,8 @@ pub fn run(args: ImpactArgs) -> Result<(), EcpError> {
             args.repo
         ))
     })?;
-    let worktree_root = std::path::Path::new(&resolved.common_dir)
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new(&resolved.common_dir));
+    let worktree_root =
+        crate::git_cache::worktree_root_from_common_dir(std::path::Path::new(&resolved.common_dir));
     let engine = crate::auto_ensure::load_ensured(&graph_path, worktree_root)
         .map_err(|e| EcpError::Io(std::io::Error::other(e)))?;
 

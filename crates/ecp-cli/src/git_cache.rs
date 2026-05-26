@@ -142,6 +142,14 @@ pub fn common_dir(cwd: &Path) -> io::Result<PathBuf> {
     to_return
 }
 
+/// Worktree root for a git `common_dir` (`<worktree>/.git`) — its parent.
+/// Falls back to `common_dir` itself when it has no parent (defensive: a
+/// bare-repo or root path). Used wherever a registry entry's `.git` common
+/// dir must be turned into the source tree `ensure_fresh` walks.
+pub fn worktree_root_from_common_dir(common_dir: &Path) -> &Path {
+    common_dir.parent().unwrap_or(common_dir)
+}
+
 fn read_common_dir(cwd: &Path) -> io::Result<PathBuf> {
     let out = safe_exec::git()
         .args(["rev-parse", "--git-common-dir"])

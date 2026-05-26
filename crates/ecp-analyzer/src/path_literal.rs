@@ -30,23 +30,18 @@ pub fn is_path_shaped(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    if s.chars().all(|c| c.is_ascii_whitespace()) {
-        return false;
-    }
-    // An interior space marks prose: error messages, CLI usage strings, and
-    // lint diagnostics that happen to embed a `/`-bearing path or URL. Real
-    // filesystem paths used as a read/write argument carry no unescaped space,
-    // so this rejects the dominant misclassification source (vscode: 8.8k of
-    // 146k PathLiteral nodes) without dropping a true path.
-    if s.contains(' ') {
+    // Any whitespace marks prose: error messages, CLI usage strings, and lint
+    // diagnostics that happen to embed a `/`-bearing path or URL. Real
+    // filesystem paths used as a read/write argument carry no unescaped
+    // whitespace, so this one scan rejects the dominant misclassification
+    // source (vscode: 8.8k of 146k PathLiteral nodes) and subsumes the old
+    // whitespace-only and interior-space checks without dropping a true path.
+    if s.contains(char::is_whitespace) {
         return false;
     }
     // A scheme can appear mid-string ("See https://…"), not just at the start;
-    // `contains("://")` catches embedded URLs the prefix check below misses.
+    // `contains("://")` subsumes the http/https/ws prefix checks too.
     if s.contains("://") {
-        return false;
-    }
-    if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("ws://") {
         return false;
     }
     if has_path_separator(s) {

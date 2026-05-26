@@ -161,19 +161,19 @@ fn run_bm25(args: FindArgs, engine: &Engine) -> Result<(), EcpError> {
     if targets.is_empty() {
         run_single(pattern, args.mode, args.kind, format, engine, None)
     } else if targets.len() == 1 {
-        let (repo_name, graph_path, worktree_root) = targets.into_iter().next().unwrap();
+        let target = targets.into_iter().next().unwrap();
         let local_engine = crate::auto_ensure::load_ensured(
-            std::path::Path::new(&graph_path),
-            std::path::Path::new(&worktree_root),
+            std::path::Path::new(&target.graph_path),
+            std::path::Path::new(&target.worktree_root),
         )
-        .map_err(|e| EcpError::Rkyv(format!("{repo_name}: {e}")))?;
+        .map_err(|e| EcpError::Rkyv(format!("{}: {e}", target.display_name)))?;
         run_single(
             pattern,
             args.mode,
             args.kind,
             format,
             &local_engine,
-            Some(repo_name),
+            Some(target.display_name),
         )
     } else {
         run_multi(pattern, args.mode, args.kind, format, targets)
@@ -411,13 +411,13 @@ fn run_batch(args: FindArgs, engine: &Engine) -> Result<(), EcpError> {
     }
 
     let single_repo_engine: Option<(String, Engine)> = if targets.len() == 1 {
-        let (repo_name, graph_path, worktree_root) = &targets[0];
+        let target = &targets[0];
         let eng = crate::auto_ensure::load_ensured(
-            std::path::Path::new(graph_path),
-            std::path::Path::new(worktree_root),
+            std::path::Path::new(&target.graph_path),
+            std::path::Path::new(&target.worktree_root),
         )
-        .map_err(|e| EcpError::InvalidArgument(format!("{repo_name}: {e}")))?;
-        Some((repo_name.clone(), eng))
+        .map_err(|e| EcpError::InvalidArgument(format!("{}: {e}", target.display_name)))?;
+        Some((target.display_name.clone(), eng))
     } else {
         None
     };
@@ -881,12 +881,12 @@ fn run_multi(
 pub fn load_engines_lossy(targets: &[RepoTarget]) -> Vec<(String, Result<Engine, String>)> {
     targets
         .iter()
-        .map(|(repo_name, graph_path, worktree_root)| {
+        .map(|target| {
             let result = crate::auto_ensure::load_ensured(
-                std::path::Path::new(graph_path),
-                std::path::Path::new(worktree_root),
+                std::path::Path::new(&target.graph_path),
+                std::path::Path::new(&target.worktree_root),
             );
-            (repo_name.clone(), result)
+            (target.display_name.clone(), result)
         })
         .collect()
 }
@@ -1048,18 +1048,18 @@ pub fn compute_hits(args: FindArgs, engine: &Engine) -> Result<Vec<Hit>, EcpErro
         compute_single(pattern, &args.mode, args.kind.as_deref(), engine, None)
             .map(|(hits, _truncated)| hits)
     } else if targets.len() == 1 {
-        let (repo_name, graph_path, worktree_root) = targets.into_iter().next().unwrap();
+        let target = targets.into_iter().next().unwrap();
         let local_engine = crate::auto_ensure::load_ensured(
-            std::path::Path::new(&graph_path),
-            std::path::Path::new(&worktree_root),
+            std::path::Path::new(&target.graph_path),
+            std::path::Path::new(&target.worktree_root),
         )
-        .map_err(|e| EcpError::Rkyv(format!("{repo_name}: {e}")))?;
+        .map_err(|e| EcpError::Rkyv(format!("{}: {e}", target.display_name)))?;
         compute_single(
             pattern,
             &args.mode,
             args.kind.as_deref(),
             &local_engine,
-            Some(repo_name),
+            Some(target.display_name),
         )
         .map(|(hits, _truncated)| hits)
     } else {
@@ -1070,11 +1070,17 @@ pub fn compute_hits(args: FindArgs, engine: &Engine) -> Result<Vec<Hit>, EcpErro
 
 // ── Repo selector resolution ─────────────────────────────────────────────────
 
-/// One `--repo`-resolved target: `(display_name, graph_path_str, worktree_root)`.
-/// `worktree_root` is passed to `ensure_fresh` so the per-repo load gets the
-/// same version (ecp-fingerprint → full rebuild) + freshness (git → incremental)
-/// checks the cwd graph gets in main.rs.
-type RepoTarget = (String, String, String);
+/// One `--repo`-resolved target. `graph_path` and `worktree_root` are both
+/// `String`; a struct (not a tuple) keeps them from being transposed at a
+/// load site, which would silently load the wrong graph. `worktree_root` is
+/// passed to `ensure_fresh` so the per-repo load gets the same version
+/// (ecp-fingerprint → full rebuild) + freshness (git → incremental) checks
+/// the cwd graph gets in main.rs.
+struct RepoTarget {
+    display_name: String,
+    graph_path: String,
+    worktree_root: String,
+}
 
 /// Resolve `--repo` to `Vec<RepoTarget>`.
 /// Returns empty Vec when the selector is absent (caller uses pre-loaded engine).
@@ -1143,15 +1149,16 @@ fn resolve_targets(selector: Option<&str>) -> Result<Vec<RepoTarget>, EcpError> 
         // worktree_root for ensure_fresh = the repo's source tree, i.e. the
         // parent of its `<worktree>/.git` common_dir. The fingerprint (ecp-
         // version) check ignores it; the incremental git-status check uses it.
-        let worktree_root = std::path::Path::new(&alias.common_dir)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| alias.common_dir.clone());
-        targets.push((
+        let worktree_root = crate::git_cache::worktree_root_from_common_dir(std::path::Path::new(
+            &alias.common_dir,
+        ))
+        .to_string_lossy()
+        .into_owned();
+        targets.push(RepoTarget {
             display_name,
-            graph_path.to_string_lossy().into_owned(),
+            graph_path: graph_path.to_string_lossy().into_owned(),
             worktree_root,
-        ));
+        });
     }
 
     Ok(targets)
