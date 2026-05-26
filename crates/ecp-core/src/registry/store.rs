@@ -100,6 +100,42 @@ impl RegistryFile {
         RegistryFile::write_atomic(&registry_path, &current)
     }
 
+    /// Lock-coupled removal of "ghost" entries: a repo registered in
+    /// `registry.json` whose index dir (`<home_ecp>/<dir_name>`) no longer
+    /// exists on disk. A build that published its registry entry but whose
+    /// index dir was later removed out-of-band (interrupted publish, manual
+    /// `rm`, a racing writer that clobbered a sibling's dir) leaves the
+    /// registry pointing at nothing — every query for that repo then fails to
+    /// load. This is the mirror of `prune --orphans` (which keys on a missing
+    /// *worktree* `common_dir`); here we key on the missing *index* dir.
+    ///
+    /// Holds the exclusive registry flock across read-modify-write so a
+    /// concurrent `upsert_repo_atomic` can't interleave. Returns the removed
+    /// `dir_name`s. Skips the write when nothing is ghosted.
+    pub fn prune_ghost_entries(home_ecp: &Path) -> io::Result<Vec<String>> {
+        let lock_path = home_ecp.join("registry.json.lock");
+        let _lock = super::FileLock::acquire_exclusive(&lock_path)?;
+
+        let registry_path = home_ecp.join("registry.json");
+        let mut current = RegistryFile::read_or_empty(&registry_path)?;
+
+        let ghosts: Vec<String> = current
+            .repos
+            .keys()
+            .filter(|dir_name| !home_ecp.join(dir_name).exists())
+            .cloned()
+            .collect();
+        if ghosts.is_empty() {
+            return Ok(ghosts);
+        }
+        current.repos.retain(|k, _| !ghosts.contains(k));
+        for group in &mut current.groups {
+            group.members.retain(|m| !ghosts.contains(m));
+        }
+        RegistryFile::write_atomic(&registry_path, &current)?;
+        Ok(ghosts)
+    }
+
     pub fn read_or_empty(path: &Path) -> io::Result<Self> {
         if !path.exists() {
             return Ok(RegistryFile::empty());
@@ -190,5 +226,78 @@ pub fn strip_credentials(url: &str) -> String {
             u.to_string()
         }
         Err(_) => url.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alias(dir_name: &str) -> RepoAlias {
+        RepoAlias {
+            dir_name: dir_name.into(),
+            common_dir: format!("/nonexistent/{dir_name}/.git"),
+            remote_url: None,
+            aliases: vec![],
+            last_touched: "2026-05-27T00:00:00Z".into(),
+            groups: vec!["g1".into()],
+        }
+    }
+
+    #[test]
+    fn prune_ghost_entries_removes_registered_repo_with_missing_index_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+
+        // `live` has an index dir on disk; `ghost` does not.
+        fs::create_dir(home.join("live__aaaa")).expect("mkdir live");
+        let mut repos = BTreeMap::new();
+        repos.insert("live__aaaa".into(), alias("live__aaaa"));
+        repos.insert("ghost__bbbb".into(), alias("ghost__bbbb"));
+        RegistryFile::write_atomic(
+            &home.join("registry.json"),
+            &RegistryFile {
+                version: CURRENT_VERSION,
+                repos,
+                groups: vec![GroupEntry {
+                    name: "g1".into(),
+                    members: vec!["live__aaaa".into(), "ghost__bbbb".into()],
+                }],
+            },
+        )
+        .expect("write");
+
+        let ghosts = RegistryFile::prune_ghost_entries(home).expect("prune");
+
+        assert_eq!(ghosts, vec!["ghost__bbbb".to_string()]);
+        let reg = RegistryFile::read_or_empty(&home.join("registry.json")).expect("read");
+        assert!(reg.repos.contains_key("live__aaaa"), "live entry kept");
+        assert!(!reg.repos.contains_key("ghost__bbbb"), "ghost removed");
+        assert_eq!(
+            reg.groups[0].members,
+            vec!["live__aaaa".to_string()],
+            "ghost also dropped from group membership"
+        );
+    }
+
+    #[test]
+    fn prune_ghost_entries_noop_when_all_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path();
+        fs::create_dir(home.join("live__aaaa")).expect("mkdir");
+        let mut repos = BTreeMap::new();
+        repos.insert("live__aaaa".into(), alias("live__aaaa"));
+        RegistryFile::write_atomic(
+            &home.join("registry.json"),
+            &RegistryFile {
+                version: CURRENT_VERSION,
+                repos,
+                groups: vec![],
+            },
+        )
+        .expect("write");
+
+        let ghosts = RegistryFile::prune_ghost_entries(home).expect("prune");
+        assert!(ghosts.is_empty(), "no ghosts when index dir exists");
     }
 }
