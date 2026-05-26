@@ -1,7 +1,11 @@
 //! Version freshness. Report-only: queries the latest published tag via
 //! `git ls-remote --tags` (no network-client dependency, reuses the hardened
 //! git wrapper) and compares against the compiled-in version. Network failure
-//! degrades to a Warn rather than failing the run; never prompts or updates.
+//! — including a restricted-network sandbox where the connect blocks instead of
+//! failing fast — degrades to a Warn rather than hanging or failing the run;
+//! never prompts or updates.
+
+use std::time::Duration;
 
 use crate::commands::admin::doctor::CheckResult;
 use crate::git::safe_exec;
@@ -10,6 +14,11 @@ const REPO_URL: &str = "https://github.com/coseto6125/egent-code-plexus";
 const INSTALL_CMD: &str =
     "cargo install --git https://github.com/coseto6125/egent-code-plexus egent-code-plexus --bin ecp --locked";
 
+/// Hard ceiling on the remote query. A sandboxed network can leave `git
+/// ls-remote` blocked in poll() well past any HTTP-layer timeout, so the
+/// subprocess is killed outright at this bound.
+const REMOTE_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub(crate) fn check() -> CheckResult {
     let local = env!("CARGO_PKG_VERSION");
     let local_parsed = match parse_semver(local) {
@@ -17,11 +26,23 @@ pub(crate) fn check() -> CheckResult {
         None => return CheckResult::ok("version", format!("local v{local} (no comparison)")),
     };
 
-    let output = safe_exec::git()
-        .args(["ls-remote", "--tags", "--refs", REPO_URL])
-        .output();
-    let stdout = match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+    // Fast path: in a network-restricted agent sandbox (Codex / Gemini) the
+    // remote connect would block until the timeout backstop fires, turning an
+    // instant report into a multi-second stall. Skip the query and report
+    // offline immediately.
+    if safe_exec::sandbox_network_restricted() {
+        return CheckResult::ok("version", format!("local v{local} (offline: sandbox)"));
+    }
+
+    let mut cmd = safe_exec::git();
+    // GIT_HTTP_LOW_SPEED_* makes git itself abort a stalled transfer; the
+    // output_with_timeout kill is the backstop for a connect that never even
+    // reaches the transfer phase (sandbox drops the SYN).
+    cmd.env("GIT_HTTP_LOW_SPEED_LIMIT", "1000")
+        .env("GIT_HTTP_LOW_SPEED_TIME", "5")
+        .args(["ls-remote", "--tags", "--refs", REPO_URL]);
+    let stdout = match safe_exec::output_with_timeout(cmd, REMOTE_TIMEOUT) {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
         _ => {
             return CheckResult::warn("version", format!("local v{local}; could not reach remote"))
         }
