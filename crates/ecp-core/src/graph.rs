@@ -927,9 +927,11 @@ pub struct ZeroCopyGraph {
     /// Replaces the v8 placeholder `Vec<u32>` that was never populated.
     pub name_index: Vec<NameIndexEntry>,
 
-    /// Boundary index: `nodes[process_start..]` are all `NodeKind::Process`.
-    /// For node_idx >= process_start, `process_k = node_idx - process_start`
-    /// and its trace lives in `traces_data[traces_offsets[k]..traces_offsets[k+1]]`.
+    /// Index of the first `NodeKind::Process` node. The Process block starts
+    /// here and spans `traces_offsets.len() - 1` nodes; do NOT assume it runs to
+    /// `nodes.len()` — later passes (PathLiteral promotion, File append) push
+    /// non-Process nodes after it. For the k-th process (node_idx =
+    /// process_start + k), its trace is `traces_data[traces_offsets[k]..traces_offsets[k+1]]`.
     pub process_start: u32,
     /// CSR-style boundary offsets — `traces_offsets[k+1]` is read for every
     /// process, so the vector must contain at least one element even when no

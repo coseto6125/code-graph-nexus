@@ -222,3 +222,135 @@ fn trace_no_match_returns_not_found() {
     let payload = parse_json_stdout(&out);
     assert_eq!(payload["status"], "not_found");
 }
+
+/// Build a graph where non-Process nodes (mimicking the PathLiteral / File
+/// nodes that later builder passes append) follow the single Process node.
+/// This breaks the "everything after process_start is a Process" assumption,
+/// which used to make `processes` index `traces_offsets[k+1]` out of bounds
+/// once the limit reached past the real process count (a small real repo:
+/// `total` was over-counted as `nodes.len() - process_start`, and listing
+/// with `--limit` ≥ that miscount panicked at `traces_offsets[k+1]`).
+fn build_graph_with_trailing_non_process_nodes() -> (TempDir, PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let mut pool = StringPool::new();
+    let file_path = pool.add("src/lib.rs");
+    let files = vec![File {
+        path: file_path,
+        mtime: 0,
+        content_hash: [0; 8],
+        category: FileCategory::Source,
+    }];
+
+    let member_names = ["entry", "middle", "terminal"];
+    let mut nodes: Vec<Node> = member_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| Node {
+            uid: ecp_core::uid::compute(NodeKind::Function, "src/lib.rs", None, name),
+            name: pool.add(name),
+            file_idx: 0,
+            kind: NodeKind::Function,
+            span: ((i * 10) as u32 + 1, 0, (i * 10) as u32 + 5, 0),
+            community_id: 1,
+            owner_class: StrRef::default(),
+            content_hash: 0,
+        })
+        .collect();
+
+    let process_start = nodes.len() as u32;
+    nodes.push(Node {
+        uid: ecp_core::uid::compute(NodeKind::Process, "src/lib.rs", None, "Entry → Terminal"),
+        name: pool.add("Entry → Terminal"),
+        file_idx: 0,
+        kind: NodeKind::Process,
+        span: (1, 0, 5, 0),
+        community_id: 1,
+        owner_class: StrRef::default(),
+        content_hash: 0,
+    });
+
+    // Trailing non-Process nodes after the single Process — the regression: a
+    // naive `nodes.len() - process_start` would count these as processes.
+    for i in 0..20 {
+        nodes.push(Node {
+            uid: ecp_core::uid::compute(
+                NodeKind::PathLiteral,
+                "src/lib.rs",
+                None,
+                &format!("p{i}"),
+            ),
+            name: pool.add(&format!("path/{i}")),
+            file_idx: 0,
+            kind: NodeKind::PathLiteral,
+            span: (1, 0, 1, 0),
+            community_id: 0,
+            owner_class: StrRef::default(),
+            content_hash: 0,
+        });
+    }
+
+    let n = nodes.len();
+    let traces_data: Vec<u32> = (0..member_names.len() as u32).collect();
+    let traces_offsets = vec![0u32, traces_data.len() as u32];
+
+    let graph = ZeroCopyGraph {
+        magic: GRAPH_MAGIC,
+        version: GRAPH_FORMAT_VERSION,
+        fingerprint: [0; 32],
+        string_pool: pool.bytes,
+        files,
+        nodes,
+        edges: Vec::new(),
+        out_offsets: vec![0u32; n + 1],
+        in_offsets: vec![0u32; n + 1],
+        in_edge_idx: Vec::new(),
+        name_index: Vec::new(),
+        process_start,
+        traces_offsets,
+        traces_data,
+        blind_spots: vec![],
+        route_shapes: vec![],
+        call_metas: vec![],
+        function_metas: vec![],
+        kind_offsets: vec![],
+        kind_node_idx: vec![],
+        node_flags: vec![],
+    };
+
+    let bytes = rkyv::to_bytes::<Error>(&graph).unwrap();
+    let graph_path = dir.path().join("graph.bin");
+    std::fs::write(&graph_path, &bytes).unwrap();
+    (dir, graph_path)
+}
+
+#[test]
+fn list_does_not_overcount_or_panic_with_trailing_non_process_nodes() {
+    let (_dir, graph) = build_graph_with_trailing_non_process_nodes();
+    // A limit far past the real process count (1) used to walk into the
+    // trailing PathLiteral nodes and panic at `traces_offsets[k+1]`.
+    let out = run_processes(&graph, &["--limit", "100"]);
+    assert!(
+        out.status.success(),
+        "ecp processes panicked on trailing non-Process nodes: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let payload = parse_json_stdout(&out);
+    assert_eq!(payload["status"], "success");
+    // total is the true process count (1), not nodes.len() - process_start (21).
+    assert_eq!(payload["total"], 1);
+    assert_eq!(payload["shown"], 1);
+}
+
+#[test]
+fn trace_does_not_panic_with_trailing_non_process_nodes() {
+    let (_dir, graph) = build_graph_with_trailing_non_process_nodes();
+    let out = run_processes(&graph, &["trace", "entry", "--limit", "100"]);
+    assert!(
+        out.status.success(),
+        "ecp processes trace panicked: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let payload = parse_json_stdout(&out);
+    assert_eq!(payload["status"], "success");
+    assert_eq!(payload["matched"], 1);
+}

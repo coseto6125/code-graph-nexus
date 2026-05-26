@@ -76,13 +76,18 @@ pub fn run(args: ProcessesArgs, engine: &Engine) -> Result<(), EcpError> {
 fn list_processes(graph: &ArchivedZeroCopyGraph, args: ProcessesArgs) -> Result<(), EcpError> {
     let fmt = OutputFormat::parse(args.format.as_deref());
     let process_start = graph.process_start.to_native();
-    let total_nodes = graph.nodes.len() as u32;
-    let total_processes = total_nodes.saturating_sub(process_start);
+    // The Process count is the number of CSR traces, NOT `nodes.len() -
+    // process_start`: later passes (PathLiteral promotion, File append) push
+    // non-Process nodes after the Process block, so the tail is no longer all
+    // Process. `traces_offsets` has one sentinel + one entry per trace, so
+    // `len - 1` is the trace/process count and bounds `[k+1]` reads safely.
+    let total_processes = graph.traces_offsets.len().saturating_sub(1) as u32;
+    let process_end = process_start + total_processes;
 
     let wanted_community = args.community.map(|c| c as u16);
     let mut results = Vec::new();
 
-    for idx in process_start..total_nodes {
+    for idx in process_start..process_end {
         let k = (idx - process_start) as usize;
         let node = &graph.nodes[idx as usize];
         let comm = node.community_id.to_native();
@@ -156,10 +161,13 @@ fn trace_processes(graph: &ArchivedZeroCopyGraph, args: TraceArgs) -> Result<(),
     let fmt = OutputFormat::parse(args.format.as_deref());
     let pattern_lower = args.pattern.to_lowercase();
     let process_start = graph.process_start.to_native();
-    let total_nodes = graph.nodes.len() as u32;
+    // See `list_processes`: bound by trace count, not the node tail, which holds
+    // non-Process nodes appended by later passes.
+    let total_processes = graph.traces_offsets.len().saturating_sub(1) as u32;
+    let process_end = process_start + total_processes;
 
     let mut matches = Vec::new();
-    for idx in process_start..total_nodes {
+    for idx in process_start..process_end {
         let k = (idx - process_start) as usize;
         let node = &graph.nodes[idx as usize];
         let label = node.name.resolve(&graph.string_pool);
