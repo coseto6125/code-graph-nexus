@@ -92,7 +92,10 @@ pub fn resolve_member_engines(
                 tracing::warn!("group: no graph.bin found for '{member}'");
                 None
             })?;
-            let engine = match Engine::load(&graph_path) {
+            let worktree_root = std::path::Path::new(&resolved.common_dir)
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(&resolved.common_dir));
+            let engine = match crate::auto_ensure::load_ensured(&graph_path, worktree_root) {
                 Ok(e) => e,
                 Err(e) => {
                     tracing::warn!("group: failed to load engine for '{member}': {e}");

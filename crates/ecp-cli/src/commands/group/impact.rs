@@ -11,7 +11,6 @@ use crate::commands::group::types::{ArchivedContractRegistry, ArchivedMatchType,
 use crate::commands::group::{lookup_member, storage};
 use crate::commands::impact as local_impact;
 use crate::commit_lookup::find_latest_by_mtime;
-use crate::engine::Engine;
 use crate::repo_selector::ResolvedRepo;
 
 #[derive(Args, Debug, Clone)]
@@ -89,8 +88,11 @@ pub fn run(args: ImpactArgs) -> Result<(), EcpError> {
             args.repo
         ))
     })?;
-    let engine = Engine::load(&graph_path)
-        .map_err(|e| EcpError::Io(std::io::Error::other(format!("engine load: {e}"))))?;
+    let worktree_root = std::path::Path::new(&resolved.common_dir)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new(&resolved.common_dir));
+    let engine = crate::auto_ensure::load_ensured(&graph_path, worktree_root)
+        .map_err(|e| EcpError::Io(std::io::Error::other(e)))?;
 
     // 4. Local impact.
     let local = local_impact::run_for_symbol(

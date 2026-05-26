@@ -418,6 +418,37 @@ pub fn ensure_fresh(graph_path: &Path, worktree_root: &Path) -> Result<EnsureFre
     }
 }
 
+/// Version-checked graph load for every path that loads a graph by repo
+/// (find multi-repo, group, diff) rather than by explicit `--graph`.
+///
+/// Runs `ensure_fresh` first so the two-tier staleness contract applies
+/// uniformly: a header/fingerprint drift forces a full `build_l2` before the
+/// load (else the caller would read nodes a stale binary produced — e.g. a
+/// parser bug already fixed upstream), and a dirty working tree triggers the
+/// incremental path. On `WarmAttach` (current SHA has no graph yet) it loads
+/// the sibling graph and flags it stale so the caller can surface a note.
+///
+/// `--graph <path>` is the one documented opt-out and must NOT route through
+/// here: it loads the named graph verbatim via `Engine::load`, since the user
+/// is deliberately pointing at a specific graph (e.g. A/B graph comparison).
+pub fn load_ensured(
+    graph_path: &Path,
+    worktree_root: &Path,
+) -> Result<crate::engine::Engine, String> {
+    match ensure_fresh(graph_path, worktree_root)? {
+        EnsureFreshOutcome::Ready => crate::engine::Engine::load(graph_path)
+            .map_err(|e| format!("load graph {}: {e}", graph_path.display())),
+        EnsureFreshOutcome::WarmAttach { sibling_graph_path } => {
+            crate::engine::Engine::load_warm(&sibling_graph_path).map_err(|e| {
+                format!(
+                    "load warm-attach graph {}: {e}",
+                    sibling_graph_path.display()
+                )
+            })
+        }
+    }
+}
+
 /// Process-lifetime cache for `attach_latest_sibling_sha` results, keyed by
 /// `worktree_root`. CLI processes call once per invocation so the cache is a
 /// no-op; long-lived MCP processes repeating ensure_fresh while a rebuild is
