@@ -614,16 +614,27 @@ fn drain_tantivy_if_inside_worktree(
     }
 }
 
+/// Resolve the L1 session overlay dir for `worktree_root`, matching exactly the
+/// path `apply_l1_overlay_updates` writes to: `<home_ecp>/<repo_dir>/sessions/
+/// <session_id>`. Returns `None` when the repo identity can't be resolved. The
+/// dir may not exist yet (no overlay written this session) — the caller checks.
+pub fn resolve_session_overlay_dir(worktree_root: &Path) -> Option<PathBuf> {
+    let session_id = crate::session::resolver::resolve_session_id(None);
+    let home_ecp = ecp_core::registry::resolve_home_ecp();
+    let repo_dir = crate::repo_identity::repo_dir_name_for_cwd(worktree_root).ok()?;
+    Some(home_ecp.join(&repo_dir).join("sessions").join(&session_id))
+}
+
 fn apply_l1_overlay_updates(
     worktree_root: &Path,
     fresh_graphs: &[ecp_core::analyzer::types::LocalGraph],
 ) -> io::Result<()> {
-    use crate::session::{overlay_writer, promotion, resolver};
+    use crate::session::{overlay_writer, promotion};
 
-    let session_id = resolver::resolve_session_id(None);
-    let home_ecp = ecp_core::registry::resolve_home_ecp();
-    let repo_dir = crate::repo_identity::repo_dir_name_for_cwd(worktree_root)?;
-    let session_dir = home_ecp.join(&repo_dir).join("sessions").join(&session_id);
+    // Same path the reader (`resolve_session_overlay_dir`) consults — kept in one
+    // place so writer and reader can never look at different session dirs.
+    let session_dir = resolve_session_overlay_dir(worktree_root)
+        .ok_or_else(|| io::Error::other("cannot resolve repo identity for session overlay dir"))?;
     fs::create_dir_all(&session_dir)?;
     ensure_session_meta(&session_dir, worktree_root)?;
 

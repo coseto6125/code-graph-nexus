@@ -95,10 +95,9 @@ impl Engine {
         }
     }
 
-    /// Attach an L1 session overlay dir (`~/.ecp/<repo>/sessions/<sid>/`)
-    /// to merge dirty graph fragments + tantivy delta over the L2 base.
-    /// Phase 3 lands the slot; Phase 5 wires the merge logic into query paths.
-    #[allow(dead_code)]
+    /// Attach an L1 session overlay dir (`~/.ecp/<repo>/sessions/<sid>/`) so
+    /// query paths can surface dirty graph fragments over the L2 base. Wired
+    /// from `main.rs` after the engine loads (when a session overlay resolves).
     pub fn with_overlay(mut self, dir: PathBuf) -> Self {
         self.overlay_dir = Some(dir);
         self.view = GraphView::L2WithOverlay;
@@ -129,7 +128,6 @@ impl Engine {
 
     /// Resolved L1 session overlay dir, set via `with_overlay`. None when
     /// no session is attached (e.g. queries without `--session-id`).
-    #[allow(dead_code)]
     pub fn overlay_dir(&self) -> Option<&Path> {
         self.overlay_dir.as_deref()
     }

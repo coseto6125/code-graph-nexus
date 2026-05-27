@@ -22,59 +22,108 @@ use std::path::Path;
 
 use super::overlay_writer::ArchivedFragment;
 
-/// Read all non-failed fragments from `session_dir` and materialise them as
-/// an `Overlay`. Returns `None` when `dirty_files.json` is absent or empty.
-pub fn load_overlay(session_dir: &Path) -> io::Result<Option<Overlay>> {
+/// A single overlay symbol with the source-relative path it came from.
+///
+/// `load_overlay` drops the rel_path (overlay `Node.file_idx` is a 0
+/// placeholder until T7-7 promotion), which is fine for uid-keyed merge but
+/// loses the file a `find` hit must display. This carries it through for the
+/// query-visibility path so `ecp find <new_symbol>` can surface an
+/// overlay-only symbol with its real file:line.
+pub struct OverlayHit {
+    pub uid: u64,
+    pub name: String,
+    pub kind: NodeKind,
+    pub rel_path: String,
+    /// 1-based start line (matches `Node::start_line` convention).
+    pub line: u32,
+}
+
+/// Visit every non-failed fragment under `session_dir`, calling `f` with the
+/// owning rel_path and the archived fragment. Returns `false` when there is no
+/// overlay (`dirty_files.json` absent or empty) so callers can short-circuit;
+/// `true` when the manifest was present (even if every fragment was skipped).
+/// Shared by `load_overlay` and `load_overlay_hits` so the manifest-walk +
+/// fragment-decode logic lives in exactly one place.
+fn for_each_fragment(
+    session_dir: &Path,
+    mut f: impl FnMut(&str, &ArchivedFragment),
+) -> io::Result<bool> {
     let manifest = session_dir.join("dirty_files.json");
     if !manifest.exists() {
-        return Ok(None);
+        return Ok(false);
     }
     let df = DirtyFiles::read(&manifest)?;
     if df.entries.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
-
     let overlay_dir = session_dir.join("graph_overlay");
-    let mut pool = StringPool::new();
-    let mut nodes: Vec<Node> = Vec::new();
-
     for (rel_path, entry) in &df.entries {
         if entry.parse_failed {
             continue;
         }
         let bin_path = overlay_dir.join(format!("{}.bin", entry.fragment_id));
-        let bytes = match fs::read(&bin_path) {
-            Ok(b) => b,
-            Err(_) => continue, // fragment file not written yet or already promoted
+        let Ok(bytes) = fs::read(&bin_path) else {
+            continue; // fragment not written yet or already promoted
         };
-        // Each bin is a rkyv-archived Vec<Fragment>.
-        let archived =
-            match rkyv::access::<rkyv::vec::ArchivedVec<ArchivedFragment>, RkyvError>(&bytes) {
-                Ok(a) => a,
-                Err(_) => continue, // corrupt fragment — skip
-            };
+        let Ok(archived) =
+            rkyv::access::<rkyv::vec::ArchivedVec<ArchivedFragment>, RkyvError>(&bytes)
+        else {
+            continue; // corrupt fragment — skip
+        };
         for frag in archived.iter() {
-            let name_str = frag.name.as_str();
-            let kind = NodeKind::from(&frag.kind);
-            let uid = ecp_core::uid::compute(kind, rel_path, None, name_str);
-            let name_ref: StrRef = pool.add(name_str);
-            nodes.push(Node {
-                uid,
-                name: name_ref,
-                file_idx: 0,
-                kind,
-                span: (
-                    frag.span.0.to_native(),
-                    frag.span.1.to_native(),
-                    frag.span.2.to_native(),
-                    frag.span.3.to_native(),
-                ),
-                community_id: 0,
-                owner_class: StrRef::default(),
-                content_hash: 0,
-            });
+            f(rel_path, frag);
         }
     }
+    Ok(true)
+}
+
+/// Read all non-failed overlay fragments as `OverlayHit`s, preserving each
+/// symbol's rel_path. Returns an empty Vec when there is no overlay — callers
+/// on the query hot path pay nothing on a clean working tree.
+pub fn load_overlay_hits(session_dir: &Path) -> io::Result<Vec<OverlayHit>> {
+    let mut hits = Vec::new();
+    for_each_fragment(session_dir, |rel_path, frag| {
+        let name = frag.name.as_str().to_string();
+        let kind = NodeKind::from(&frag.kind);
+        let uid = ecp_core::uid::compute(kind, rel_path, None, &name);
+        hits.push(OverlayHit {
+            uid,
+            name,
+            kind,
+            rel_path: rel_path.to_string(),
+            // span.0 is the 0-based start row; +1 to match start_line().
+            line: frag.span.0.to_native() + 1,
+        });
+    })?;
+    Ok(hits)
+}
+
+/// Read all non-failed fragments from `session_dir` and materialise them as
+/// an `Overlay`. Returns `None` when `dirty_files.json` is absent or empty.
+pub fn load_overlay(session_dir: &Path) -> io::Result<Option<Overlay>> {
+    let mut pool = StringPool::new();
+    let mut nodes: Vec<Node> = Vec::new();
+    for_each_fragment(session_dir, |rel_path, frag| {
+        let name_str = frag.name.as_str();
+        let kind = NodeKind::from(&frag.kind);
+        let uid = ecp_core::uid::compute(kind, rel_path, None, name_str);
+        let name_ref: StrRef = pool.add(name_str);
+        nodes.push(Node {
+            uid,
+            name: name_ref,
+            file_idx: 0,
+            kind,
+            span: (
+                frag.span.0.to_native(),
+                frag.span.1.to_native(),
+                frag.span.2.to_native(),
+                frag.span.3.to_native(),
+            ),
+            community_id: 0,
+            owner_class: StrRef::default(),
+            content_hash: 0,
+        });
+    })?;
 
     if nodes.is_empty() {
         return Ok(None);
