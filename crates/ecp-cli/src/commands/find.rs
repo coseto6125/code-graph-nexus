@@ -245,6 +245,95 @@ fn count_incoming(graph: &ArchivedZeroCopyGraph, node_idx: usize) -> u32 {
     (in_end - in_start) as u32
 }
 
+/// Sort priority for an overlay-only hit, derived from its path alone (no base
+/// file entry exists). Test paths rank with `Test`; everything else is treated
+/// as `Source` — the common case for a working-tree edit. A finer category
+/// split waits for T7-7 promotion (which gives overlay nodes a real file entry).
+fn category_priority_for_path(rel_path: &str) -> u8 {
+    if ecp_core::algorithms::process_trace::is_test_path(rel_path) {
+        category_priority(&ArchivedFileCategory::Test)
+    } else {
+        category_priority(&ArchivedFileCategory::Source)
+    }
+}
+
+/// Collect overlay-only symbols (present in the L1 session overlay but NOT in
+/// the base graph) matching `pattern`/`mode`/`kind_filter`, as ready-to-rank
+/// `FindMatch`es.
+///
+/// Gating: returns immediately when no overlay dir is attached (the clean-tree
+/// common case), so the query hot path never builds the base-uid dedup set or
+/// touches `graph`. The set is built only after `load_overlay_hits` yields at
+/// least one matching hit.
+///
+/// Scope: `Method` symbols are NOT surfaced. The base graph keys a method's uid
+/// on its owning class (`uid::compute(kind, path, owner_class, name)`), but
+/// overlay fragments don't carry `owner_class`, so an overlay method's uid can
+/// never match its base counterpart — it would always look "new" and duplicate
+/// a method the base already has. Surfacing methods correctly needs `owner_class`
+/// in the fragment (T7-7). Free functions / structs / etc. have `owner_class =
+/// None` on both sides, so their uids match and dedup works.
+fn overlay_only_matches(
+    engine: &Engine,
+    graph: &ArchivedZeroCopyGraph,
+    pattern: &str,
+    mode: FindMode,
+    kind_filter: Option<&[String]>,
+) -> Vec<FindMatch> {
+    use ecp_core::graph::NodeKind;
+    let Some(dir) = engine.overlay_dir() else {
+        return Vec::new();
+    };
+    let Ok(hits) = crate::session::overlay_reader::load_overlay_hits(dir) else {
+        return Vec::new();
+    };
+    let matched: Vec<_> = hits
+        .into_iter()
+        .filter(|h| !matches!(h.kind, NodeKind::Method | NodeKind::Constructor))
+        .filter(|h| match mode {
+            FindMode::Exact => h.name == pattern,
+            FindMode::Fuzzy => h.name.contains(pattern),
+            FindMode::Bm25 => false,
+        })
+        .filter(|h| {
+            kind_filter.is_none_or(|kinds| {
+                let k = crate::commands::format::node_kind_to_str(&h.kind).to_ascii_lowercase();
+                kinds.iter().any(|want| want == &k)
+            })
+        })
+        .collect();
+    if matched.is_empty() {
+        return Vec::new();
+    }
+
+    // Dedup against the base graph: a symbol the base already carries (with its
+    // real edges) should not get a lower-fidelity overlay duplicate. Build the
+    // uid set only now that we know there's at least one candidate to check.
+    let base_uids: rustc_hash::FxHashSet<u64> =
+        graph.nodes.iter().map(|n| n.uid.to_native()).collect();
+
+    matched
+        .into_iter()
+        .filter(|h| !base_uids.contains(&h.uid))
+        .map(|h| {
+            let category = if ecp_core::algorithms::process_trace::is_test_path(&h.rel_path) {
+                "Test"
+            } else {
+                "Source"
+            };
+            FindMatch {
+                file: h.rel_path,
+                line: h.line,
+                name: h.name,
+                kind: crate::commands::format::node_kind_to_str(&h.kind).to_string(),
+                category: category.to_string(),
+                caller_count: 0,
+                signature: h.uid.to_string(),
+            }
+        })
+        .collect()
+}
+
 fn run_exact_or_fuzzy(args: FindArgs, engine: &Engine, mode: FindMode) -> Result<(), EcpError> {
     let graph = engine.graph().map_err(|e| EcpError::Rkyv(e.to_string()))?;
     let format = OutputFormat::parse(args.format.as_deref());
@@ -259,8 +348,16 @@ fn run_exact_or_fuzzy(args: FindArgs, engine: &Engine, mode: FindMode) -> Result
             .collect()
     });
 
+    // A ranked candidate. `src` is the base-graph node index, or an overlay-only
+    // symbol that has no base node. Tuple fields after it: caller_count, category
+    // priority, file path (the sort keys).
+    enum CandSrc {
+        Base(usize),
+        Overlay(FindMatch),
+    }
+
     let mut tests_excluded: u32 = 0;
-    let mut candidates: Vec<(usize, u32, u8, String)> = graph
+    let mut candidates: Vec<(CandSrc, u32, u8, String)> = graph
         .nodes
         .iter()
         .enumerate()
@@ -298,9 +395,20 @@ fn run_exact_or_fuzzy(args: FindArgs, engine: &Engine, mode: FindMode) -> Result
             let prio = category_priority(&file.category);
             let caller_count = count_incoming(graph, node_idx);
             let file_path = file.path.resolve(&graph.string_pool).to_string();
-            Some((node_idx, caller_count, prio, file_path))
+            Some((CandSrc::Base(node_idx), caller_count, prio, file_path))
         })
         .collect();
+
+    // Inject symbols that live ONLY in the L1 session overlay (a working-tree
+    // edit the L2 graph hasn't absorbed) so `find` reflects uncommitted changes.
+    // Costs nothing on a clean tree: `overlay_only_matches` short-circuits before
+    // touching the graph when no overlay dir is attached. Overlay nodes have no
+    // base file entry / edges, so caller_count is 0 and category is derived from
+    // the path; full edge/impact integration is the T7-7 promotion concern.
+    for m in overlay_only_matches(engine, graph, pattern, mode, kind_filter.as_deref()) {
+        let prio = category_priority_for_path(&m.file);
+        candidates.push((CandSrc::Overlay(m), 0, prio, String::new()));
+    }
 
     // Sort: category priority asc, caller_count desc, file path asc.
     candidates.sort_unstable_by(|a, b| {
@@ -318,17 +426,20 @@ fn run_exact_or_fuzzy(args: FindArgs, engine: &Engine, mode: FindMode) -> Result
 
     let matches: Vec<FindMatch> = selected
         .into_iter()
-        .map(|(node_idx, caller_count, _, _)| {
-            let node = &graph.nodes[node_idx];
-            let file = &graph.files[node.file_idx.to_native() as usize];
-            FindMatch {
-                file: file.path.resolve(&graph.string_pool).to_string(),
-                line: node.start_line(),
-                name: node.name.resolve(&graph.string_pool).to_string(),
-                kind: kind_to_str(&node.kind).to_string(),
-                category: category_to_str(&file.category).to_string(),
-                caller_count,
-                signature: node.uid.to_native().to_string(),
+        .map(|(src, caller_count, _, _)| match src {
+            CandSrc::Overlay(m) => m,
+            CandSrc::Base(node_idx) => {
+                let node = &graph.nodes[node_idx];
+                let file = &graph.files[node.file_idx.to_native() as usize];
+                FindMatch {
+                    file: file.path.resolve(&graph.string_pool).to_string(),
+                    line: node.start_line(),
+                    name: node.name.resolve(&graph.string_pool).to_string(),
+                    kind: kind_to_str(&node.kind).to_string(),
+                    category: category_to_str(&file.category).to_string(),
+                    caller_count,
+                    signature: node.uid.to_native().to_string(),
+                }
             }
         })
         .collect();

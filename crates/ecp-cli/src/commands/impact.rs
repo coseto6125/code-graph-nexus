@@ -1690,40 +1690,7 @@ fn collect_blind_spots(
         .collect()
 }
 
-/// Map `NodeKind` (live) to the same strings used in the graph.
-fn node_kind_to_str(kind: &NodeKind) -> &'static str {
-    match kind {
-        NodeKind::File => "File",
-        NodeKind::Function => "Function",
-        NodeKind::Class => "Class",
-        NodeKind::Method => "Method",
-        NodeKind::Interface => "Interface",
-        NodeKind::Constructor => "Constructor",
-        NodeKind::Property => "Property",
-        NodeKind::Variable => "Variable",
-        NodeKind::Const => "Const",
-        NodeKind::Import => "Import",
-        NodeKind::Route => "Route",
-        NodeKind::Process => "Process",
-        NodeKind::Document => "Document",
-        NodeKind::Section => "Section",
-        NodeKind::EntryPoint => "EntryPoint",
-        NodeKind::Struct => "Struct",
-        NodeKind::Enum => "Enum",
-        NodeKind::Typedef => "Typedef",
-        NodeKind::Namespace => "Namespace",
-        NodeKind::Module => "Module",
-        NodeKind::Macro => "Macro",
-        NodeKind::Annotation => "Annotation",
-        NodeKind::Trait => "Trait",
-        NodeKind::Impl => "Impl",
-        NodeKind::SchemaField => "SchemaField",
-        NodeKind::EventTopic => "EventTopic",
-        NodeKind::TransactionScope => "TransactionScope",
-        NodeKind::EnumVariant => "EnumVariant",
-        NodeKind::PathLiteral => "PathLiteral",
-    }
-}
+use crate::commands::format::node_kind_to_str;
 
 /// FNV-64 hash of the source lines spanning [start_row, end_row] (inclusive,
 /// 0-based). Normalises trailing whitespace so indent-only edits are stable.

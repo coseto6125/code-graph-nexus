@@ -1,7 +1,43 @@
 //! Shared formatting helpers for archived graph enums. Previously each
 //! command carried its own copy of `kind_to_str` / `rel_to_str`.
 
-use ecp_core::graph::{ArchivedNodeKind, ArchivedRelType};
+use ecp_core::graph::{ArchivedNodeKind, ArchivedRelType, NodeKind};
+
+/// Owned-`NodeKind` twin of [`kind_to_str`] — same strings, for code paths
+/// holding a live `NodeKind` (e.g. overlay hits) rather than an archived one.
+pub fn node_kind_to_str(kind: &NodeKind) -> &'static str {
+    match kind {
+        NodeKind::File => "File",
+        NodeKind::Function => "Function",
+        NodeKind::Class => "Class",
+        NodeKind::Method => "Method",
+        NodeKind::Interface => "Interface",
+        NodeKind::Constructor => "Constructor",
+        NodeKind::Property => "Property",
+        NodeKind::Variable => "Variable",
+        NodeKind::Const => "Const",
+        NodeKind::Import => "Import",
+        NodeKind::Route => "Route",
+        NodeKind::Process => "Process",
+        NodeKind::Document => "Document",
+        NodeKind::Section => "Section",
+        NodeKind::EntryPoint => "EntryPoint",
+        NodeKind::Struct => "Struct",
+        NodeKind::Enum => "Enum",
+        NodeKind::Typedef => "Typedef",
+        NodeKind::Namespace => "Namespace",
+        NodeKind::Module => "Module",
+        NodeKind::Macro => "Macro",
+        NodeKind::Annotation => "Annotation",
+        NodeKind::Trait => "Trait",
+        NodeKind::Impl => "Impl",
+        NodeKind::SchemaField => "SchemaField",
+        NodeKind::EventTopic => "EventTopic",
+        NodeKind::TransactionScope => "TransactionScope",
+        NodeKind::EnumVariant => "EnumVariant",
+        NodeKind::PathLiteral => "PathLiteral",
+    }
+}
 
 pub fn kind_to_str(kind: &ArchivedNodeKind) -> &'static str {
     match kind {

@@ -176,3 +176,105 @@ fn stale_path_emits_l1_fragments_per_dirty_file() {
         "dirty_files.json should reference main.rs; got: {dirty_content}"
     );
 }
+
+/// End-to-end: a brand-new symbol added to the working tree (never committed,
+/// not in the L2 graph) must be findable via `ecp find` through the L1 overlay,
+/// provided the session id is stable across the write and read invocations.
+#[test]
+fn find_surfaces_overlay_only_symbol() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let sid = "test-overlay-visible";
+
+    run(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init", "-q", "-b", "main"]),
+        "git init",
+    );
+    run(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["config", "user.email", "t@t"]),
+        "git config email",
+    );
+    run(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["config", "user.name", "t"]),
+        "git config name",
+    );
+    std::fs::write(repo.join("main.rs"), "fn original() {}\n").unwrap();
+    run(
+        Command::new("git").arg("-C").arg(&repo).args(["add", "."]),
+        "git add",
+    );
+    run(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["commit", "-qm", "init"]),
+        "git commit",
+    );
+
+    run(
+        Command::new(ecp_bin())
+            .args(["admin", "index", "--repo", repo.to_str().unwrap()])
+            .env("HOME", &home),
+        "ecp admin index",
+    );
+
+    // Add a brand-new symbol to the working tree without committing.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::fs::write(
+        repo.join("main.rs"),
+        "fn original() {}\nfn overlay_only_symbol_xyz() {}\n",
+    )
+    .unwrap();
+
+    // First query: triggers the incremental path → writes the overlay fragment
+    // under the stable session.
+    let _ = Command::new(ecp_bin())
+        .args(["find", "original", "--repo", repo.to_str().unwrap()])
+        .env("HOME", &home)
+        .env("CLAUDE_CODE_SESSION_ID", sid)
+        .output()
+        .expect("ecp find (warm) spawn failed");
+
+    // Second query: the new symbol exists only in the overlay; it must now be
+    // findable through the overlay merge on the same session.
+    let out = Command::new(ecp_bin())
+        .args([
+            "find",
+            "overlay_only_symbol_xyz",
+            "--repo",
+            repo.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .env("HOME", &home)
+        .env("CLAUDE_CODE_SESSION_ID", sid)
+        .output()
+        .expect("ecp find (overlay) spawn failed");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"found\":true") || stdout.contains("\"found\": true"),
+        "overlay-only symbol must be findable via find; got stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("overlay_only_symbol_xyz"),
+        "find result must name the overlay symbol; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("main.rs"),
+        "find result must carry the overlay symbol's file path; got:\n{stdout}"
+    );
+}

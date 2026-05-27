@@ -165,6 +165,17 @@ fn main() {
         }
     };
 
+    // Attach the session's L1 overlay dir (if one resolves) so query commands
+    // can surface uncommitted working-tree edits the L2 graph hasn't absorbed.
+    // The overlay is only meaningful when the session id is stable across the
+    // writer and reader processes (agent hosts inject ECP_SESSION_ID /
+    // CLAUDE_CODE_SESSION_ID); a bare CLI invocation gets a per-process id and
+    // simply sees no overlay. Empty/absent overlay = zero query-path cost.
+    let engine = match auto_ensure::resolve_session_overlay_dir(&cwd) {
+        Some(dir) if dir.is_dir() => engine.with_overlay(dir),
+        _ => engine,
+    };
+
     let result: Result<(), ecp_core::EcpError> = match cli.command {
         Commands::Inspect(args) => commands::inspect::run(args, &engine, &graph_path),
         Commands::Find(args) => commands::find::run(args, &engine),
