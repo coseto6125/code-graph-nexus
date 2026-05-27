@@ -34,6 +34,10 @@ pub struct UsageArgs {
     /// Force color off (also honored: NO_COLOR env, non-TTY stdout).
     #[arg(long)]
     pub no_color: bool,
+    /// Delete the CLI telemetry log (cli-calls.jsonl); MCP calls.jsonl is kept.
+    /// Honors -p to scope to the current repo; otherwise clears every repo.
+    #[arg(long)]
+    pub clear: bool,
     /// Hidden: read a single explicit telemetry dir (tests).
     #[arg(long, hide = true)]
     pub telemetry_dir: Option<PathBuf>,
@@ -50,6 +54,9 @@ pub struct Rec {
 }
 
 pub fn run(args: UsageArgs) -> Result<(), EcpError> {
+    if args.clear {
+        return run_clear(&args);
+    }
     let format = OutputFormat::parse(args.format.as_deref());
     let recs = collect_records(&args)?;
     if matches!(format, OutputFormat::Json) {
@@ -62,6 +69,27 @@ pub fn run(args: UsageArgs) -> Result<(), EcpError> {
         crate::commands::usage_render::render_dashboard(&recs, want_color, args.all)
     };
     println!("{text}");
+    Ok(())
+}
+
+/// Delete `cli-calls.jsonl` in each scanned telemetry dir. MCP `calls.jsonl`
+/// is left intact (it belongs to the MCP path / `ecp insight`). Reports how
+/// many logs were removed. No interactive confirmation — matches the
+/// non-interactive style of `ecp admin drop`; telemetry is cheap to re-accrue.
+fn run_clear(args: &UsageArgs) -> Result<(), EcpError> {
+    let mut removed = 0usize;
+    for dir in scan_dirs(args)? {
+        let log = dir.join("cli-calls.jsonl");
+        if log.exists() && std::fs::remove_file(&log).is_ok() {
+            removed += 1;
+        }
+    }
+    let scope = if args.project {
+        "current repo"
+    } else {
+        "all repos"
+    };
+    println!("cleared CLI telemetry: {removed} log(s) removed ({scope}); MCP calls.jsonl kept");
     Ok(())
 }
 
