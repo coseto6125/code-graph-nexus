@@ -1,7 +1,7 @@
-//! ASCII rendering for `ecp gain`. Sections: Usage → Performance → Errors.
+//! ASCII rendering for `ecp usage`. Sections: Usage → Performance → Errors.
 //! Color is opt-in and auto-disabled off a TTY / under NO_COLOR / for json.
 
-use super::gain::{by_command, errors_by_kind, percentile, GainArgs, Rec};
+use super::usage::{by_command, errors_by_kind, percentile, Rec, UsageArgs};
 use crate::output::OutputFormat;
 use ecp_core::time::unix_secs_to_rfc3339;
 use std::fmt::Write as _;
@@ -16,7 +16,7 @@ const YELLOW: &str = "\x1b[33m";
 const RESET: &str = "\x1b[0m";
 
 /// Three-state rule: --no-color/NO_COLOR off; non-text format off; non-TTY off; else on.
-pub fn color_enabled(args: &GainArgs, format: &OutputFormat) -> bool {
+pub fn color_enabled(args: &UsageArgs, format: &OutputFormat) -> bool {
     if args.no_color || std::env::var_os("NO_COLOR").is_some() {
         return false;
     }
@@ -160,7 +160,7 @@ pub fn render_dashboard(recs: &[Rec], color: bool, show_all: bool) -> String {
         }
         let _ = writeln!(
             o,
-            "  Tip: ecp gain --failures   for recent failing commands + messages"
+            "  Tip: ecp usage --failures   for recent failing commands + messages"
         );
     }
     let _ = writeln!(o, "{}", "─".repeat(76));

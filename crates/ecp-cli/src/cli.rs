@@ -125,5 +125,5 @@ pub enum Commands {
     /// latency, error rate, and per-kind error tallies. Reads
     /// `~/.ecp/telemetry/<repo>/{cli-calls,calls}.jsonl`. Default output is a
     /// terminal ASCII dashboard; `--format json` emits machine-readable stats.
-    Gain(commands::gain::GainArgs),
+    Usage(commands::usage::UsageArgs),
 }

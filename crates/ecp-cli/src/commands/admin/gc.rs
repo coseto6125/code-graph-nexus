@@ -49,7 +49,7 @@ pub fn run(args: GcArgs) -> Result<(), ecp_core::EcpError> {
                     if let Ok(subs) = std::fs::read_dir(&repo_root) {
                         for sub in subs.flatten() {
                             if sub.path().is_dir() {
-                                crate::commands::gain::prune_retention(&sub.path());
+                                crate::commands::usage::prune_retention(&sub.path());
                             }
                         }
                     }

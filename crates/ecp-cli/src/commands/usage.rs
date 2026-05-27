@@ -1,4 +1,4 @@
-//! `ecp gain` — human-facing usage dashboard over CLI + MCP telemetry.
+//! `ecp usage` — human-facing usage dashboard over CLI + MCP telemetry.
 //!
 //! Reads `cli-calls.jsonl` (+ MCP `calls.jsonl`) for a repo (or all repos),
 //! aggregates invocation counts, p50/p99 latency, error rate, and per-kind
@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 const BUDGET_MS: u64 = 30;
 
 #[derive(Args, Debug, Clone)]
-pub struct GainArgs {
+pub struct UsageArgs {
     /// Scope to the current repository only (default: all repos).
     #[arg(short = 'p', long)]
     pub project: bool,
@@ -49,23 +49,23 @@ pub struct Rec {
     pub raw: String,
 }
 
-pub fn run(args: GainArgs) -> Result<(), EcpError> {
+pub fn run(args: UsageArgs) -> Result<(), EcpError> {
     let format = OutputFormat::parse(args.format.as_deref());
     let recs = collect_records(&args)?;
     if matches!(format, OutputFormat::Json) {
         return emit(&build_json(&recs), format);
     }
-    let want_color = crate::commands::gain_render::color_enabled(&args, &format);
+    let want_color = crate::commands::usage_render::color_enabled(&args, &format);
     let text = if args.failures {
-        crate::commands::gain_render::render_failures(&recs, want_color)
+        crate::commands::usage_render::render_failures(&recs, want_color)
     } else {
-        crate::commands::gain_render::render_dashboard(&recs, want_color, args.all)
+        crate::commands::usage_render::render_dashboard(&recs, want_color, args.all)
     };
     println!("{text}");
     Ok(())
 }
 
-fn scan_dirs(args: &GainArgs) -> Result<Vec<PathBuf>, EcpError> {
+fn scan_dirs(args: &UsageArgs) -> Result<Vec<PathBuf>, EcpError> {
     if let Some(d) = &args.telemetry_dir {
         return Ok(vec![d.clone()]);
     }
@@ -88,7 +88,7 @@ fn scan_dirs(args: &GainArgs) -> Result<Vec<PathBuf>, EcpError> {
     Ok(dirs)
 }
 
-fn collect_records(args: &GainArgs) -> Result<Vec<Rec>, EcpError> {
+fn collect_records(args: &UsageArgs) -> Result<Vec<Rec>, EcpError> {
     let mut recs = Vec::new();
     for dir in scan_dirs(args)? {
         prune_retention(&dir);
@@ -100,7 +100,7 @@ fn collect_records(args: &GainArgs) -> Result<Vec<Rec>, EcpError> {
 }
 
 /// Rewrite `cli-calls.jsonl` dropping lines older than `retention_days`.
-/// Off the hot path: only `ecp gain` and `ecp admin gc` call this. Best-effort.
+/// Off the hot path: only `ecp usage` and `ecp admin gc` call this. Best-effort.
 /// MCP `calls.jsonl` is intentionally NOT touched.
 pub(crate) fn prune_retention(dir: &Path) {
     let days = retention_days();

@@ -6,7 +6,7 @@ fn ecp_bin() -> &'static str {
 
 #[test]
 fn invocation_appends_one_cli_telemetry_line() {
-    let tmp = std::env::temp_dir().join(format!("ecp-gain-it-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-it-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
     let out = Command::new(ecp_bin())
@@ -35,8 +35,8 @@ fn invocation_appends_one_cli_telemetry_line() {
 }
 
 #[test]
-fn gain_json_aggregates_a_fixture() {
-    let tmp = std::env::temp_dir().join(format!("ecp-gain-json-{}", std::process::id()));
+fn usage_json_aggregates_a_fixture() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-json-{}", std::process::id()));
     let tel = tmp.join(".ecp/telemetry/myrepo__deadbeef");
     std::fs::create_dir_all(&tel).unwrap();
     let lines = [
@@ -47,7 +47,7 @@ fn gain_json_aggregates_a_fixture() {
     std::fs::write(tel.join("cli-calls.jsonl"), lines).unwrap();
     let out = Command::new(ecp_bin())
         .args([
-            "gain",
+            "usage",
             "--format",
             "json",
             "--telemetry-dir",
@@ -65,8 +65,8 @@ fn gain_json_aggregates_a_fixture() {
 }
 
 #[test]
-fn gain_text_dashboard_is_plain_when_piped() {
-    let tmp = std::env::temp_dir().join(format!("ecp-gain-txt-{}", std::process::id()));
+fn usage_text_dashboard_is_plain_when_piped() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-txt-{}", std::process::id()));
     let tel = tmp.join(".ecp/telemetry/r__1");
     std::fs::create_dir_all(&tel).unwrap();
     std::fs::write(
@@ -74,7 +74,7 @@ fn gain_text_dashboard_is_plain_when_piped() {
         r#"{"ts":"2026-05-27T07:00:00Z","tool":"inspect","duration_ms":6,"ok":true,"source":"cli","error_kind":null}"#,
     ).unwrap();
     let out = Command::new(ecp_bin())
-        .args(["gain", "--telemetry-dir", tel.to_str().unwrap()])
+        .args(["usage", "--telemetry-dir", tel.to_str().unwrap()])
         .output()
         .unwrap();
     let s = String::from_utf8(out.stdout).unwrap();
@@ -85,8 +85,8 @@ fn gain_text_dashboard_is_plain_when_piped() {
 }
 
 #[test]
-fn gain_failures_lists_only_errors() {
-    let tmp = std::env::temp_dir().join(format!("ecp-gain-fail-{}", std::process::id()));
+fn usage_failures_lists_only_errors() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-fail-{}", std::process::id()));
     let tel = tmp.join(".ecp/telemetry/r__2");
     std::fs::create_dir_all(&tel).unwrap();
     let lines = [
@@ -96,7 +96,7 @@ fn gain_failures_lists_only_errors() {
     std::fs::write(tel.join("cli-calls.jsonl"), lines).unwrap();
     let out = Command::new(ecp_bin())
         .args([
-            "gain",
+            "usage",
             "--failures",
             "--telemetry-dir",
             tel.to_str().unwrap(),
@@ -113,8 +113,8 @@ fn gain_failures_lists_only_errors() {
 }
 
 #[test]
-fn gain_prunes_lines_older_than_retention() {
-    let tmp = std::env::temp_dir().join(format!("ecp-gain-prune-{}", std::process::id()));
+fn usage_prunes_lines_older_than_retention() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-prune-{}", std::process::id()));
     let tel = tmp.join(".ecp/telemetry/r__3");
     std::fs::create_dir_all(&tel).unwrap();
     let lines = [
@@ -125,7 +125,7 @@ fn gain_prunes_lines_older_than_retention() {
     std::fs::write(&f, lines).unwrap();
     let _ = Command::new(ecp_bin())
         .args([
-            "gain",
+            "usage",
             "--format",
             "json",
             "--telemetry-dir",
