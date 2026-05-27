@@ -60,6 +60,8 @@ impl EcpMcpServer {
             tool: name,
             duration_ms,
             ok,
+            source: "mcp",
+            error_kind: None,
         };
         crate::telemetry::append(&record);
         result
