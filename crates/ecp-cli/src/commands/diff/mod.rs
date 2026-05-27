@@ -187,15 +187,12 @@ pub fn build_payload(args: &DiffArgs) -> Result<DiffPayload, EcpError> {
         std::env::temp_dir().join(format!("ecp-diff-baseline-{baseline_sha}.jsonl"));
     let baseline_graph_tmp =
         std::env::temp_dir().join(format!("ecp-diff-graph-baseline-{baseline_sha}.bin"));
-    let legacy_default = std::path::Path::new(".ecp/graph.bin");
 
     bindings::dump(&repo_dir, &current_jsonl)?;
-    let current_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
     // Current side: full ensure (ecp-version fingerprint → rebuild; dirty
     // tree → incremental) so the diff's current snapshot can't be a stale-
     // binary graph that reports phantom adds/removes against the baseline.
-    crate::auto_ensure::ensure_fresh(&current_graph, &repo_dir)
-        .map_err(|e| EcpError::Output(format!("ensure current graph: {e}")))?;
+    let current_graph = ensure_graph_synchronously(&repo_dir, None, "current")?;
 
     {
         let _guard = git_guard::GitGuard::enter(&repo_dir, &baseline_sha)?;
@@ -204,12 +201,8 @@ pub fn build_payload(args: &DiffArgs) -> Result<DiffPayload, EcpError> {
         // snapshots are produced by the SAME ecp binary — a fingerprint drift
         // here means the cached baseline graph was built by an older ecp, which
         // would surface as a phantom diff. Rebuild it before the copy.
-        // Resolve the path AFTER ensure_fresh so the correct commit-indexed path
-        // is used if the graph was just created by build_l2.
-        let baseline_graph_for_ensure = crate::graph_path::resolve(legacy_default, &repo_dir);
-        crate::auto_ensure::ensure_fresh(&baseline_graph_for_ensure, &repo_dir)
-            .map_err(|e| EcpError::Output(format!("ensure baseline graph: {e}")))?;
-        let baseline_graph = crate::graph_path::resolve(legacy_default, &repo_dir);
+        let baseline_graph =
+            ensure_graph_synchronously(&repo_dir, Some(&baseline_sha), "baseline")?;
         std::fs::copy(&baseline_graph, &baseline_graph_tmp).map_err(|e| {
             EcpError::Output(format!(
                 "copy baseline graph {}: {e}",
@@ -257,4 +250,35 @@ pub fn build_payload(args: &DiffArgs) -> Result<DiffPayload, EcpError> {
         current_sha,
         verbose: args.verbose,
     })
+}
+
+/// Ensure the graph for the currently-checked-out tree is published and
+/// synchronously on disk, then return its resolved path.
+///
+/// `ensure_fresh` may return `WarmAttach` when the SHA has no published graph
+/// yet: it borrows a *sibling* SHA's graph and spawns a *detached background*
+/// rebuild. For diff that is wrong twice over — the sibling is a different SHA,
+/// and the correct graph is not on disk yet (a `routes::extract` / `fs::copy`
+/// would race the background writer). So on `WarmAttach` we force a foreground
+/// `build_l2` for this exact SHA. The graph path is resolved *after* the build
+/// so a freshly-published commit dir is picked up instead of falling back to
+/// the legacy `.ecp/graph.bin`. `sha` is `Some` for the baseline side (built
+/// under a GitGuard checkout) and `None` for the current side (HEAD).
+fn ensure_graph_synchronously(
+    repo_dir: &std::path::Path,
+    sha: Option<&str>,
+    label: &str,
+) -> Result<std::path::PathBuf, EcpError> {
+    let legacy_default = std::path::Path::new(".ecp/graph.bin");
+    let probe = crate::graph_path::resolve(legacy_default, repo_dir);
+    match crate::auto_ensure::ensure_fresh(&probe, repo_dir)
+        .map_err(|e| EcpError::Output(format!("ensure {label} graph: {e}")))?
+    {
+        crate::auto_ensure::EnsureFreshOutcome::Ready => {}
+        crate::auto_ensure::EnsureFreshOutcome::WarmAttach { .. } => {
+            crate::build::orchestrator::build_l2(repo_dir, sha)
+                .map_err(|e| EcpError::Output(format!("build {label} graph: {e}")))?;
+        }
+    }
+    Ok(crate::graph_path::resolve(legacy_default, repo_dir))
 }
