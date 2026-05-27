@@ -25,18 +25,7 @@ use std::sync::{Mutex, OnceLock};
 /// (server.rs::call_tool) keep working without importing `ecp_core::time`.
 pub use ecp_core::time::rfc3339_now;
 
-/// One record appended per `call_tool` invocation.
-#[derive(serde::Serialize)]
-pub struct CallRecord<'a> {
-    /// RFC3339 UTC timestamp of the call start.
-    pub ts: &'a str,
-    /// MCP tool name (e.g. `"ecp_inspect"`).
-    pub tool: &'a str,
-    /// Wall-clock duration of the `run_spawn` call in milliseconds.
-    pub duration_ms: u64,
-    /// `true` if the spawn returned `Ok(_)`, `false` on `Err(_)`.
-    pub ok: bool,
-}
+pub use ecp_core::telemetry::CallRecord;
 
 /// Per-process repo identity, set by `ecp-cli` at MCP server boot via
 /// `init_repo_id`. Format: `<basename>__<xxh3_hash>` (from

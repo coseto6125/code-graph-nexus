@@ -31,7 +31,60 @@ fn main() {
     maybe_spawn_background_gc();
 
     let cli = Cli::parse();
+    // `command_label` borrows `&cli.command` before `dispatch(cli)` consumes
+    // `cli`; keep label computed first so dispatch can take ownership.
+    let label = command_label(&cli.command);
+    let start = std::time::Instant::now();
+    let outcome = dispatch(cli);
+    let duration_ms = start.elapsed().as_millis() as u64;
+    ecp_cli::telemetry_cli::record(label, duration_ms, outcome.as_ref().err());
+    if let Err(e) = outcome {
+        eprintln!("Command failed: {e}");
+        std::process::exit(1);
+    }
+}
 
+/// Stable `ecp <verb>` label for every `Commands` variant. Used as the
+/// telemetry `tool` field; must stay exhaustive so a new variant forces a
+/// label decision at compile time.
+fn command_label(cmd: &Commands) -> &'static str {
+    match cmd {
+        Commands::Inspect(_) => "inspect",
+        Commands::Find(_) => "find",
+        Commands::Impact(_) => "impact",
+        Commands::Rename(_) => "rename",
+        Commands::Cypher(_) => "cypher",
+        Commands::Routes(_) => "routes",
+        Commands::ShapeCheck(_) => "shape-check",
+        Commands::ToolMap(_) => "tool-map",
+        Commands::Review(_) => "review",
+        Commands::FindTransactionPatterns(_) => "find-transaction-patterns",
+        Commands::FindSchemaBindings(_) => "find-schema-bindings",
+        Commands::FindEventMirrors(_) => "find-event-mirrors",
+        Commands::Processes(_) => "processes",
+        Commands::Summary(_) => "summary",
+        Commands::Contracts(_) => "contracts",
+        Commands::Diff(_) => "diff",
+        Commands::Admin { .. } => "admin",
+        Commands::Dev { .. } => "dev",
+        Commands::HookHandle(_) => "hook-handle",
+        Commands::HookWatcher(_) => "hook-watcher",
+        Commands::Hook(_) => "hook",
+        Commands::Watch(_) => "watch",
+        Commands::Peers(_) => "peers",
+        Commands::Group { .. } => "group",
+        Commands::Schema(_) => "schema",
+        Commands::Insight(_) => "insight",
+        Commands::Usage(_) => "usage",
+        Commands::Uninstall(_) => "uninstall",
+    }
+}
+
+/// Single recorded dispatch path: every command (graph-free or graph-loading)
+/// returns through here so `main` can time + record telemetry once and own the
+/// sole `exit(1)`. Graph-load failures that used to `eprintln!+exit` inline are
+/// now `Err(EcpError::InvalidArgument(..))` carrying the same message text.
+fn dispatch(cli: Cli) -> Result<(), ecp_core::EcpError> {
     // Gatekeeper: any top-level command with `--repo @<group>` exits early
     // with a migration hint pointing at `ecp group …`. Runs before all
     // dispatch so the message is identical regardless of graph-free vs
@@ -41,25 +94,16 @@ fn main() {
 
     // Admin: subcommand → run the admin operation; no subcommand → launch TUI.
     if let Commands::Admin { command } = cli.command {
-        let err = match command {
+        return match command {
             Some(cmd) => commands::admin::run(cmd, Cli::command()),
             None => admin::run(admin::AdminArgs {}),
         };
-        if let Err(e) = err {
-            eprintln!("Command failed: {e}");
-            std::process::exit(1);
-        }
-        return;
     }
 
     // Dispatch table for commands that don't need a graph loaded.
     macro_rules! run_no_graph {
         ($expr:expr) => {{
-            if let Err(e) = $expr {
-                eprintln!("Command failed: {e}");
-                std::process::exit(1);
-            }
-            return;
+            return $expr.map(|_| ());
         }};
     }
 
@@ -74,10 +118,13 @@ fn main() {
         Commands::Diff(args) => run_no_graph!(commands::diff::run(args.clone())),
         Commands::Hook(args) => run_no_graph!(commands::hook::run(args.clone())),
         Commands::Watch(args) => run_no_graph!(commands::watch::run(args.clone())),
-        Commands::Peers(args) => run_no_graph!(commands::peers::run(args.clone())),
+        Commands::Peers(args) => {
+            return commands::peers::run(args.clone()).map_err(ecp_core::EcpError::from)
+        }
         Commands::Group { cmd } => run_no_graph!(commands::group::run(cmd.clone())),
         Commands::Schema(args) => run_no_graph!(commands::schema::run(args.clone())),
         Commands::Insight(args) => run_no_graph!(commands::insight::run(args.clone())),
+        Commands::Usage(args) => run_no_graph!(commands::usage::run(args.clone())),
         Commands::Uninstall(args) => {
             run_no_graph!(commands::uninstall::run(args.clone()))
         }
@@ -112,6 +159,7 @@ fn main() {
         | Commands::Group { .. }
         | Commands::Schema(_)
         | Commands::Insight(_)
+        | Commands::Usage(_)
         | Commands::Uninstall(_) => None,
     };
     let cwd = repo_opt
@@ -124,17 +172,18 @@ fn main() {
     // error rather than warm-attaching to cwd's graph — answering a directed
     // query against the wrong graph is worse than an honest failure.
     if graph_path::is_custom(&cli.graph) && !graph_path.exists() {
-        eprintln!(
+        return Err(ecp_core::EcpError::InvalidArgument(format!(
             "Error: --graph path does not exist: {}",
             graph_path.display()
-        );
-        std::process::exit(1);
+        )));
     }
 
     let engine = match auto_ensure::ensure_fresh(&graph_path, &cwd) {
         Err(err) => {
-            eprintln!("Error preparing index for {}: {err}", cwd.display());
-            std::process::exit(1);
+            return Err(ecp_core::EcpError::InvalidArgument(format!(
+                "Error preparing index for {}: {err}",
+                cwd.display()
+            )));
         }
         Ok(auto_ensure::EnsureFreshOutcome::WarmAttach { sibling_graph_path }) => {
             // New HEAD has no published graph. Load the sibling SHA's graph
@@ -144,12 +193,11 @@ fn main() {
             match Engine::load_warm(&sibling_graph_path) {
                 Ok(e) => e,
                 Err(err) => {
-                    eprintln!(
+                    return Err(ecp_core::EcpError::InvalidArgument(format!(
                         "Error loading warm-attach graph from {}: {}",
                         sibling_graph_path.display(),
                         err
-                    );
-                    std::process::exit(1);
+                    )));
                 }
             }
         }
@@ -158,8 +206,11 @@ fn main() {
             match Engine::load(&graph_path) {
                 Ok(e) => e,
                 Err(err) => {
-                    eprintln!("Error loading graph from {}: {}", graph_path.display(), err);
-                    std::process::exit(1);
+                    return Err(ecp_core::EcpError::InvalidArgument(format!(
+                        "Error loading graph from {}: {}",
+                        graph_path.display(),
+                        err
+                    )));
                 }
             }
         }
@@ -203,12 +254,10 @@ fn main() {
         | Commands::Group { .. }
         | Commands::Schema(_)
         | Commands::Insight(_)
+        | Commands::Usage(_)
         | Commands::Uninstall(_) => unreachable!("handled before graph load"),
     };
-    if let Err(e) = result {
-        eprintln!("Command failed: {e}");
-        std::process::exit(1);
-    }
+    result
 }
 
 /// Top-level `--repo @<group>` rejection. The atom is meaningful only inside
