@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Not published to crates.io — distribution is GitHub Release binaries + npm + PyPI.
+# (Also lets release-plz skip `cargo package` verification, which would fail on the
+#  path-only vendored tree-sitter deps that have no crates.io version.)
+publish = false
 
 [dependencies]
 rkyv = "0.8.16"
