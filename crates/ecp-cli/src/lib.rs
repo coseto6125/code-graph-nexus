@@ -24,6 +24,7 @@ pub mod repo_selector;
 pub mod search;
 pub mod session;
 pub mod subprocess;
+pub mod telemetry_cli;
 pub mod walker_filter;
 
 pub(crate) const ECP_IGNORE_FILE: &str = ".ecpignore";
