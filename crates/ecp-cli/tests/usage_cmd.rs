@@ -138,3 +138,52 @@ fn usage_prunes_lines_older_than_retention() {
     assert!(body.contains("2099-01-01"), "fresh line must survive");
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn usage_clear_removes_cli_log_but_keeps_mcp() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-clear-{}", std::process::id()));
+    let tel = tmp.join(".ecp/telemetry/r__clear");
+    std::fs::create_dir_all(&tel).unwrap();
+    let cli = tel.join("cli-calls.jsonl");
+    let mcp = tel.join("calls.jsonl");
+    std::fs::write(
+        &cli,
+        r#"{"ts":"2026-05-27T07:00:00Z","tool":"inspect","duration_ms":6,"ok":true,"source":"cli","error_kind":null}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &mcp,
+        r#"{"ts":"2026-05-27T07:00:00Z","tool":"ecp_inspect","duration_ms":6,"ok":true}"#,
+    )
+    .unwrap();
+    let out = Command::new(ecp_bin())
+        .args(["usage", "--clear", "--telemetry-dir", tel.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "clear should exit 0");
+    assert!(!cli.exists(), "cli-calls.jsonl must be removed by --clear");
+    assert!(mcp.exists(), "MCP calls.jsonl must be preserved by --clear");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn usage_clear_reports_what_it_cleared() {
+    let tmp = std::env::temp_dir().join(format!("ecp-usage-clearrep-{}", std::process::id()));
+    let tel = tmp.join(".ecp/telemetry/r__rep");
+    std::fs::create_dir_all(&tel).unwrap();
+    std::fs::write(
+        tel.join("cli-calls.jsonl"),
+        r#"{"ts":"2026-05-27T07:00:00Z","tool":"find","duration_ms":4,"ok":true,"source":"cli","error_kind":null}"#,
+    )
+    .unwrap();
+    let out = Command::new(ecp_bin())
+        .args(["usage", "--clear", "--telemetry-dir", tel.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let s = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        s.to_lowercase().contains("clear"),
+        "should report what was cleared, got: {s}"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
