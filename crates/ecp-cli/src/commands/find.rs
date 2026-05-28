@@ -38,7 +38,7 @@ use ecp_core::registry::{resolve_home_ecp, Registry};
 use ecp_core::EcpError;
 use rayon::prelude::*;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 const TOP_K: usize = 20;
 
@@ -796,6 +796,29 @@ fn bm25_hits_from_graph(
     substring_hits(graph, pattern, kind_set, repo_label)
 }
 
+/// Build a `uid -> node_idx` map restricted to `wanted`, in a single pass over
+/// the node uids (yielded in graph order). Only the matched uids are inserted,
+/// so a query touching <=MULTI_CAP results skips the ~N inserts (and backing
+/// resize) a full-graph map would cost on a 500k-node graph. On a uid collision
+/// the last index in scan order wins, matching a naive full-insert pass.
+///
+/// Distinct from `ecp_core::graph_query::build_uid_index`, which materialises
+/// the *whole* graph's uid table for callers (e.g. BFS) that resolve arbitrary
+/// uids; here the lookup set is bounded by `scored`, so a subset map is cheaper.
+fn index_wanted_uids(
+    node_uids: impl Iterator<Item = u64>,
+    wanted: &rustc_hash::FxHashSet<u64>,
+) -> rustc_hash::FxHashMap<u64, usize> {
+    let mut uid_to_idx: rustc_hash::FxHashMap<u64, usize> =
+        rustc_hash::FxHashMap::with_capacity_and_hasher(wanted.len(), Default::default());
+    for (idx, uid) in node_uids.enumerate() {
+        if wanted.contains(&uid) {
+            uid_to_idx.insert(uid, idx);
+        }
+    }
+    uid_to_idx
+}
+
 /// Query the on-disk Tantivy BM25 index, map uids back to graph nodes,
 /// and materialise `Hit` rows. Returns an empty vec when the index opens
 /// but yields no matches; falls through to substring scan if the query
@@ -822,12 +845,14 @@ fn tantivy_hits(
         return (Vec::new(), 0);
     }
 
-    // uid → node_idx lookup over the whole graph. Tantivy stores uid as the
-    // decimal string of the u64 hash; parse back for O(1) lookup.
-    let mut uid_to_idx: HashMap<u64, usize> = HashMap::with_capacity(graph.nodes.len());
-    for (idx, node) in graph.nodes.iter().enumerate() {
-        uid_to_idx.insert(node.uid.to_native(), idx);
-    }
+    // Tantivy stores uid as the decimal string of the u64 hash; parse back for
+    // O(1) lookup. `scored` is capped at MULTI_CAP, so we only need a map of
+    // those entries rather than the whole graph (see `index_wanted_uids`).
+    let wanted: rustc_hash::FxHashSet<u64> = scored
+        .iter()
+        .filter_map(|(_, uid)| uid.parse::<u64>().ok())
+        .collect();
+    let uid_to_idx = index_wanted_uids(graph.nodes.iter().map(|n| n.uid.to_native()), &wanted);
 
     let mut hits = Vec::with_capacity(scored.len());
     for (score, uid) in scored {
@@ -1459,5 +1484,49 @@ mod tests {
     fn compute_hits_signature_check() {
         fn _check(_: fn(FindArgs, &Engine) -> Result<Vec<Hit>, EcpError>) {}
         _check(compute_hits);
+    }
+
+    // Reference: the pre-optimisation behaviour — insert every node into the
+    // map. `index_wanted_uids` must agree with this for the subset it keeps,
+    // including last-write-wins on a duplicate uid.
+    fn full_insert(node_uids: &[u64]) -> rustc_hash::FxHashMap<u64, usize> {
+        let mut m: rustc_hash::FxHashMap<u64, usize> = Default::default();
+        for (idx, &uid) in node_uids.iter().enumerate() {
+            m.insert(uid, idx);
+        }
+        m
+    }
+
+    #[test]
+    fn index_wanted_uids_matches_full_insert_for_wanted_subset() {
+        let nodes: [u64; 6] = [10, 20, 30, 20, 40, 10];
+        let full = full_insert(&nodes);
+        for wanted_uids in [
+            vec![],
+            vec![20u64],
+            vec![10, 40],
+            vec![10, 20, 30, 40, 99], // 99 absent — must be omitted, not panic
+        ] {
+            let wanted: rustc_hash::FxHashSet<u64> = wanted_uids.iter().copied().collect();
+            let got = index_wanted_uids(nodes.iter().copied(), &wanted);
+            // Same keys (intersection of wanted with present uids).
+            for &uid in &wanted_uids {
+                assert_eq!(got.get(&uid).copied(), full.get(&uid).copied(), "uid {uid}");
+            }
+            assert_eq!(
+                got.len(),
+                wanted_uids.iter().filter(|u| full.contains_key(u)).count()
+            );
+        }
+    }
+
+    #[test]
+    fn index_wanted_uids_duplicate_uid_keeps_last_index() {
+        // uid 7 appears at idx 0 and idx 3; both passes must keep the later 3.
+        let nodes: [u64; 4] = [7, 8, 9, 7];
+        let wanted: rustc_hash::FxHashSet<u64> = [7u64].into_iter().collect();
+        let got = index_wanted_uids(nodes.iter().copied(), &wanted);
+        assert_eq!(got.get(&7).copied(), Some(3));
+        assert_eq!(full_insert(&nodes).get(&7).copied(), Some(3));
     }
 }
