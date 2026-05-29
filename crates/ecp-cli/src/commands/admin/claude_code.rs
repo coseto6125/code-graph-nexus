@@ -146,10 +146,10 @@ fn resolve_settings_path(override_path: Option<&Path>) -> PathBuf {
     if let Some(p) = override_path {
         return p.to_path_buf();
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    home.join(".claude").join("settings.json")
+    ecp_core::registry::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/"))
+        .join(".claude")
+        .join("settings.json")
 }
 
 fn read_or_init(path: &Path) -> Result<Value, EcpError> {

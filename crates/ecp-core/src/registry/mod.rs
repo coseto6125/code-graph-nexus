@@ -20,7 +20,9 @@ pub use io::{atomic_write_bytes, atomic_write_bytes_no_fsync, atomic_write_json}
 /// Use only within ecp-core or in tests.
 #[doc(hidden)]
 pub use lock::FileLock;
-pub use path::{derive_repo_name, resolve_home_ecp, sanitize_segment, uid_path, PathError};
+pub use path::{
+    derive_repo_name, home_dir, resolve_home_ecp, sanitize_segment, uid_path, PathError,
+};
 pub use repo_meta::RepoMeta;
 pub use store::{strip_credentials, GroupEntry, RegistryFile, RepoAlias, CURRENT_VERSION};
 

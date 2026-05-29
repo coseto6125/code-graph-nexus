@@ -105,9 +105,7 @@ fn load_template(repo_root: &Path) -> Option<String> {
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+    ecp_core::registry::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
 
 fn read_stats(index_dir: &Path, repo_root: &Path) -> (String, String, String) {

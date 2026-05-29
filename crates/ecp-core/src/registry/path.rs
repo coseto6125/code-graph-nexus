@@ -120,6 +120,38 @@ fn fallback_home() -> PathBuf {
     std::env::temp_dir().join("ecp-fallback").join(".ecp")
 }
 
+/// The user's home directory, for resolving host config roots like
+/// `~/.claude`, `~/.codex`, `~/.config`. The single authority — host
+/// modules (`claude.rs`, `codex.rs`, hooks, telemetry) call this instead of
+/// reading `HOME` directly, so the platform rule lives in one place.
+///
+/// Unix reads `$HOME` (unchanged behaviour). Windows reads `$HOME` first so
+/// WSL / Git-Bash sessions keep working, then falls back to `$USERPROFILE`
+/// (the native home var, e.g. `C:\Users\<name>`). Returns `None` only when
+/// no home var is set on the platform.
+pub fn home_dir() -> Option<PathBuf> {
+    home_dir_from(
+        std::env::var_os("HOME"),
+        #[cfg(windows)]
+        std::env::var_os("USERPROFILE"),
+    )
+}
+
+/// Resolution logic for [`home_dir`] with env sources injected, so tests
+/// exercise the platform rule without mutating process-global env.
+#[cfg(unix)]
+fn home_dir_from(home: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    home.map(PathBuf::from)
+}
+
+#[cfg(windows)]
+fn home_dir_from(
+    home: Option<std::ffi::OsString>,
+    userprofile: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    home.or(userprofile).map(PathBuf::from)
+}
+
 fn probe_writable(dir: &Path) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
@@ -235,5 +267,41 @@ mod tests {
             Some(h) => std::env::set_var("ECP_HOME", h),
             None => std::env::remove_var("ECP_HOME"),
         }
+    }
+
+    // `home_dir_from` is env-injected and pure — no process-global mutation,
+    // so these run in parallel without the serial guard `resolve_home_ecp`
+    // needs. The `#[cfg]` arms below mirror the platform compiled in.
+
+    #[cfg(unix)]
+    #[test]
+    fn home_dir_from_unix_uses_home_and_none_when_unset() {
+        use std::ffi::OsString;
+        assert_eq!(
+            home_dir_from(Some(OsString::from("/home/u"))),
+            Some(PathBuf::from("/home/u"))
+        );
+        assert_eq!(home_dir_from(None), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn home_dir_from_windows_prefers_home_then_userprofile() {
+        use std::ffi::OsString;
+        // HOME wins (WSL / Git-Bash compatibility) when both are set.
+        assert_eq!(
+            home_dir_from(
+                Some(OsString::from(r"C:\wsl\home")),
+                Some(OsString::from(r"C:\Users\u"))
+            ),
+            Some(PathBuf::from(r"C:\wsl\home"))
+        );
+        // No HOME → fall back to USERPROFILE (native Windows shells).
+        assert_eq!(
+            home_dir_from(None, Some(OsString::from(r"C:\Users\u"))),
+            Some(PathBuf::from(r"C:\Users\u"))
+        );
+        // Neither set → None.
+        assert_eq!(home_dir_from(None, None), None);
     }
 }
