@@ -293,10 +293,9 @@ pub(crate) fn claude_skill_dir(skill: ClaudeSkillTarget) -> PathBuf {
 }
 
 fn claude_home() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".claude")
+    ecp_core::registry::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claude")
 }
 
 impl ClaudeSkillTarget {

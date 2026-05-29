@@ -108,7 +108,7 @@ fn resolve_fork_dir(explicit: Option<&Path>) -> PathBuf {
     }
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .or_else(|| ecp_core::registry::home_dir().map(|h| h.join(".config")))
         .unwrap_or_else(|| PathBuf::from(".config"));
     base.join("ecp").join("host-integration").join("codex-fork")
 }
@@ -243,10 +243,9 @@ fn codex_home() -> PathBuf {
     if let Some(home) = std::env::var_os("CODEX_HOME") {
         return PathBuf::from(home);
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".codex")
+    ecp_core::registry::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".codex")
 }
 
 impl SkillTarget {

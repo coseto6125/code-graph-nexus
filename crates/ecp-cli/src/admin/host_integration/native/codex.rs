@@ -97,10 +97,9 @@ fn config_root() -> PathBuf {
     if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
         return PathBuf::from(path);
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".config")
+    ecp_core::registry::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
 }
 
 // TODO(native-tools): revive this once `run_install` can also write the Codex

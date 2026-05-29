@@ -18,6 +18,7 @@ pub mod prune;
 pub mod sessions;
 pub(crate) mod skill_fs;
 pub(crate) mod skill_source;
+pub mod update_check;
 #[derive(Subcommand, Debug)]
 pub enum AdminCommands {
     /// Install git ref-transaction hook for branch tracking (or Claude Code hooks with --claude-code)
@@ -65,6 +66,8 @@ pub enum AdminCommands {
     Mcp(crate::commands::mcp::McpArgs),
     /// Environment health check: skills / index / host / config / registry / version. `--fix` repairs fixable items.
     Doctor(doctor::DoctorArgs),
+    /// Background-only: throttled daily probe for a newer ecp release. Spawned by the session_start hook; never run manually.
+    CheckUpdate,
 }
 
 pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), ecp_core::EcpError> {
@@ -86,5 +89,6 @@ pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), ecp_core::
         AdminCommands::Gemini { command } => gemini::run(command),
         AdminCommands::Mcp(args) => crate::commands::mcp::run(args, root_cmd),
         AdminCommands::Doctor(args) => doctor::run(args),
+        AdminCommands::CheckUpdate => update_check::run(),
     }
 }

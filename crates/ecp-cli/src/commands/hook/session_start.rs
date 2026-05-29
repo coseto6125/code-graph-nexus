@@ -51,6 +51,13 @@ pub fn handle(input: &HookInput) -> Result<(), EcpError> {
     // the sweep is plumbing, not something a user took action on.
     spawn_orphan_prune();
 
+    // Daily update probe: detached `ecp admin check-update`. The command
+    // self-throttles via its own state file (one network call per day, 8h
+    // backoff after a failure), so this spawns every session but rarely hits the
+    // network. Silent — a newer version surfaces via the `.update-available`
+    // marker, consumed by UserPromptSubmit. flock dedupes concurrent sessions.
+    spawn_update_check();
+
     // Auto-spawn peer watcher if opt-in marker present and the worktree is indexed
     // (un-indexed worktrees have nothing to watch). Fire-and-forget — failures
     // don't block session_start. `daemon::spawn_detached` calls setsid() so the
@@ -105,9 +112,7 @@ fn load_template(repo_root: &Path) -> Option<String> {
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+    ecp_core::registry::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
 
 fn read_stats(index_dir: &Path, repo_root: &Path) -> (String, String, String) {
@@ -203,5 +208,24 @@ fn spawn_orphan_prune() {
             failed: &failed,
         }),
         then_args: Some(&["admin", "gc"]),
+    });
+}
+
+/// Detached background `ecp admin check-update` under flock at
+/// `<home_ecp>/.update-check.lock`. One-shot, no retry here — the 8h
+/// post-failure backoff lives in the command's own state file, not in a
+/// blocking sleep that would hold the flock. Fire-and-forget: any
+/// notification surfaces later via the `.update-available` marker.
+fn spawn_update_check() {
+    let home_ecp = ecp_core::registry::resolve_home_ecp();
+    let lock = home_ecp.join(".update-check.lock");
+
+    let _ = spawn_bg(BgJob {
+        args: &["admin", "check-update"],
+        lock: &lock,
+        cwd: &home_ecp,
+        retry: (1, 0),
+        markers: None,
+        then_args: None,
     });
 }

@@ -1,6 +1,9 @@
-# Guide: Troubleshooting "Not Found"
+# Guide: Troubleshooting misses & untrustworthy results
 
-Use this guide if `ecp` cannot find a symbol that you know exists in the source.
+Use this guide when `ecp` can't find a symbol you know exists, or when a
+result looks wrong before you act on it. §1–3 resolve real misses; §4–7 are
+the resolution steps for the four tells named in @ECP.md §"Reading output" —
+the *what to do* once you've spotted one.
 
 ## 1. Check Index Freshness
 - `ecp` usually auto-refreshes. If it didn't, run [`ecp admin index --repo . --force`](../_shared/refs/indexing.md). `--repo` is required — pass `.` for cwd or an absolute path.
@@ -12,3 +15,18 @@ Use this guide if `ecp` cannot find a symbol that you know exists in the source.
 ## 3. Check Summary
 - Run [`ecp summary`](../_shared/cli/summary.md).
 - Look for `BlindSpots` or unparsed files. If a file is too large or uses unsupported syntax, it might be skipped.
+
+## 4. `found:false` with a `result` field → stale warm-attach
+- The tell (`result` field / `l2.warm-attach` on stderr) means HEAD has no published graph yet and a sibling commit's graph was attached; a symbol added since that sibling reads `found:false`.
+- **Do:** rerun (a background rebuild may have finished), or `ecp admin index --force --repo .`, then re-query for a definitive answer.
+
+## 5. `ecp impact` returned fewer callers than expected
+- The caller set is a lower bound — a bare call to a name with several same-named definitions is suppressed rather than mis-attributed.
+- **Do:** `grep` the call sites to confirm the blast radius before a refactor. Count same-named defs with `ecp cypher 'MATCH (n) WHERE n.name = "<name>" RETURN count(n)'`.
+
+## 6. A symbol-type ecp doesn't capture yet
+- Dead **by design**, not a freshness issue: function-body **locals** (intentionally dropped), Java `record`, PHP in-class `trait use` composition, C# `operator` / `event` / `indexer` / `destructor`.
+- **Do:** confirm coverage with `ecp summary` / `ecp schema blindspots`; for these, grep is the correct fallback.
+
+## 7. Surprising output — find the root cause before calling it a bug
+- **Do:** read the actual definition, run a fresh reindex, or grep to cross-check. doc-comment inference ≠ verification; a passing `parse_file` unit test ≠ the indexing pipeline uses that path. Confirm with a fresh query against a rebuilt graph.

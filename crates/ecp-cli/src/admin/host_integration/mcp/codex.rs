@@ -54,10 +54,10 @@ fn config_path() -> PathBuf {
     if let Some(home) = std::env::var_os("CODEX_HOME") {
         return PathBuf::from(home).join("config.toml");
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".codex").join("config.toml")
+    ecp_core::registry::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".codex")
+        .join("config.toml")
 }
 
 fn current_command() -> String {

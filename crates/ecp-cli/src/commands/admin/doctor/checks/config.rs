@@ -76,8 +76,7 @@ fn ecp_home_check(home_ecp: &Path) -> CheckResult {
 }
 
 fn claude_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
+    ecp_core::registry::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".claude")
 }
