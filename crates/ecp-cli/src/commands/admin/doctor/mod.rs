@@ -5,7 +5,7 @@
 //! report. Default is read-only; `--fix` reruns the fixable remediations
 //! (skill reinstall, index rebuild) in place.
 
-mod checks;
+pub(crate) mod checks;
 
 use crate::output::{emit, OutputFormat};
 use clap::{Args, ValueEnum};

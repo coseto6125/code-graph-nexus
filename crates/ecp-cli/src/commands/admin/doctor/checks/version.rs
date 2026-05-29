@@ -65,7 +65,7 @@ pub(crate) fn check() -> CheckResult {
 /// Release (`curl` → `releases/latest`), falling back to the highest `git
 /// ls-remote` tag when curl is missing. Both run under the kill-timeout so a
 /// blocked connect can't hang the check. `None` on any failure.
-fn latest_published_version() -> Option<(u32, u32, u32)> {
+pub(crate) fn latest_published_version() -> Option<(u32, u32, u32)> {
     if let Some(v) = latest_release_via_curl() {
         return Some(v);
     }
@@ -123,7 +123,7 @@ fn latest_tag_via_git() -> Option<(u32, u32, u32)> {
 }
 
 /// Parse `X.Y.Z` (leading `v` tolerated) into a comparable tuple.
-fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
+pub(crate) fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
     let s = s.strip_prefix('v').unwrap_or(s);
     let mut parts = s.split('.');
     let major = parts.next()?.parse().ok()?;

@@ -71,6 +71,7 @@ fn subcommand_label(cmd: &Commands) -> Option<&'static str> {
             commands::admin::AdminCommands::Gemini { .. } => "gemini",
             commands::admin::AdminCommands::Mcp(_) => "mcp",
             commands::admin::AdminCommands::Doctor(_) => "doctor",
+            commands::admin::AdminCommands::CheckUpdate => "check-update",
         }),
         Commands::Admin { command: None } => Some("tui"),
         Commands::Dev { command } => Some(match command {

@@ -50,10 +50,26 @@ pub fn handle(input: &HookInput) -> Result<(), EcpError> {
     if let Some(peer) = super::common::drain_and_render_peer_payload() {
         sections.push(peer);
     }
+    if let Some(update) = drain_update_notice() {
+        sections.push(update);
+    }
     if !sections.is_empty() {
         emit_additional_context("UserPromptSubmit", &sections.join("\n\n"));
     }
     Ok(())
+}
+
+/// Read and consume the global `<home_ecp>/.update-available` marker written by
+/// the background `admin check-update` probe. Returns its text (the upgrade
+/// notice) once, then unlinks it so the notice fires a single time. Missing
+/// marker → `None`. Lives at home_ecp (not the per-repo state dir) because the
+/// probe is repo-independent.
+fn drain_update_notice() -> Option<String> {
+    let marker = ecp_core::registry::resolve_home_ecp().join(".update-available");
+    let body = fs::read_to_string(&marker).ok()?;
+    let _ = fs::remove_file(&marker);
+    let trimmed = body.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// Read the last `lines` non-empty lines of `log` by seeking to the
