@@ -955,7 +955,7 @@ impl LanguageProvider for GoProvider {
         // `Type.Method` when `obj`'s type is locally known.
         let recv_map = build_receiver_map(tree.root_node(), source);
         let local_types = collect_local_types(tree.root_node(), source, &recv_map);
-        let raw_path_literals =
+        let (raw_path_literals, raw_sql_refs) =
             extract_go_calls_and_path_literals(tree.root_node(), source, &mut nodes, &local_types);
         crate::calls::extract_field_reads(
             tree.root_node(),
@@ -1048,7 +1048,7 @@ impl LanguageProvider for GoProvider {
             tx_scopes,
             path_literals: (!raw_path_literals.is_empty())
                 .then(|| raw_path_literals.into_boxed_slice()),
-            sql_refs: None,
+            sql_refs: (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice()),
             call_metas: vec![],
             raw_function_metas,
         })

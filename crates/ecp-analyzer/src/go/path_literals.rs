@@ -42,6 +42,12 @@ pub(super) fn build_raw_path_literal(str_node: Node<'_>, source: &[u8]) -> Optio
 /// Strip surrounding quotes from a Go string literal.
 /// `"foo"` → `foo` (interpreted_string_literal, C-style escapes)
 /// `` `foo` `` → `foo` (raw_string_literal, no escapes)
+///
+/// Re-exported as `strip_go_string_value` for use in receiver_types.
+pub(super) fn strip_go_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
 fn strip_quotes(raw: &str) -> Option<&str> {
     let bytes = raw.as_bytes();
     if bytes.first() == Some(&b'`') {
@@ -102,6 +108,15 @@ fn callee_name(function: Node<'_>, source: &[u8]) -> Option<String> {
 /// For methods, `receiver_type` is extracted from the receiver parameter list
 /// and used as `enclosing_owner` so `(Dog) name()` and `(Cat) name()` don't
 /// collide in the post-process pass.
+///
+/// Exposed as `enclosing_symbol_and_owner_pub` for use in receiver_types.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 fn enclosing_symbol_and_owner(
     str_node: Node<'_>,
     source: &[u8],
