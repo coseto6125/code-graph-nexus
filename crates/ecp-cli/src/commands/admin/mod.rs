@@ -1,7 +1,7 @@
 //! `ecp admin` subcommand namespace — registry / hooks / destructive ops.
 //! Hidden from top-level `ecp --help` per spec §4.
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 
 pub mod claude;
 pub mod claude_code;
@@ -68,6 +68,21 @@ pub enum AdminCommands {
     Doctor(doctor::DoctorArgs),
     /// Background-only: throttled daily probe for a newer ecp release. Spawned by the session_start hook; never run manually.
     CheckUpdate,
+    /// List indexed repos (alias for `ecp summary` registry overview; no `--repo` / `--detailed`).
+    ListRepos(ListReposArgs),
+}
+
+/// Args for `ecp admin list-repos` — narrowed alias of `ecp summary`.
+///
+/// Only the output `--format` is forwarded. The repo-selector and detailed
+/// flags are intentionally suppressed so the verb means exactly "list the
+/// registry overview"; for per-repo health, the user runs `ecp summary --repo …`.
+#[derive(Args, Debug, Clone)]
+pub struct ListReposArgs {
+    /// Output format. Same semantics as `ecp summary --format`
+    /// (default LLM-tuned toon; `toon` / `json` / `text` accepted).
+    #[arg(long)]
+    pub format: Option<String>,
 }
 
 pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), ecp_core::EcpError> {
@@ -90,5 +105,18 @@ pub fn run(cmd: AdminCommands, root_cmd: clap::Command) -> Result<(), ecp_core::
         AdminCommands::Mcp(args) => crate::commands::mcp::run(args, root_cmd),
         AdminCommands::Doctor(args) => doctor::run(args),
         AdminCommands::CheckUpdate => update_check::run(),
+        AdminCommands::ListRepos(args) => {
+            // Forward to `ecp summary` with `--repo` cleared so the alias
+            // always emits the registry-level overview, not per-repo health.
+            let summary_args = crate::commands::summary::SummaryArgs {
+                repo: None,
+                detailed: false,
+                format: args.format,
+            };
+            // `summary::run` ignores its graph arg when no `--repo` is given
+            // (registry overview path), so the default graph path is fine.
+            let default_graph = std::path::PathBuf::from(".ecp/graph.bin");
+            crate::commands::summary::run(summary_args, &default_graph)
+        }
     }
 }

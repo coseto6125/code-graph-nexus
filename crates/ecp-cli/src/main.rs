@@ -72,6 +72,7 @@ fn subcommand_label(cmd: &Commands) -> Option<&'static str> {
             commands::admin::AdminCommands::Mcp(_) => "mcp",
             commands::admin::AdminCommands::Doctor(_) => "doctor",
             commands::admin::AdminCommands::CheckUpdate => "check-update",
+            commands::admin::AdminCommands::ListRepos(_) => "list-repos",
         }),
         Commands::Admin { command: None } => Some("tui"),
         Commands::Dev { command } => Some(match command {
