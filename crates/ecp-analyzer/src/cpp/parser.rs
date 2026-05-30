@@ -602,7 +602,7 @@ impl LanguageProvider for CppProvider {
         // and typed-var `obj.method()` / `obj->method()` → `Type.method`.
         // Feeds the resolver's Tier 2.5 qualifier-scoped lookup.
         let bindings = collect_bindings(tree.root_node(), source);
-        let raw_path_literals =
+        let (raw_path_literals, raw_sql_refs) =
             extract_cpp_calls_and_path_literals(tree.root_node(), source, &mut nodes, &bindings);
         crate::calls::extract_field_reads(
             tree.root_node(),
@@ -660,7 +660,7 @@ impl LanguageProvider for CppProvider {
             tx_scopes: None,
             path_literals: (!raw_path_literals.is_empty())
                 .then(|| raw_path_literals.into_boxed_slice()),
-            sql_refs: None,
+            sql_refs: (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice()),
             call_metas,
             raw_function_metas,
         })

@@ -114,9 +114,49 @@ fn enclosing_callee(str_node: Node<'_>, source: &[u8]) -> Option<String> {
     None
 }
 
+/// Strip quotes from a Dart string literal raw text.
+///
+/// Re-exported as `strip_dart_string_value` for use in receiver_types.
+pub(super) fn strip_dart_string_value(raw: &str) -> Option<&str> {
+    strip_quotes_dart(raw)
+}
+
+/// Return `true` if the `string_literal` node (or any of its inner quote
+/// children) contains a `template_substitution` node — i.e. it is an
+/// interpolated string like `"SELECT * FROM $table"`.
+///
+/// tree-sitter-dart nests: `string_literal` → `string_literal_double_quotes`
+/// → `template_substitution`. We check two levels deep.
+///
+/// Re-exported for use in receiver_types SQL extraction to skip interpolated strings.
+pub(super) fn has_template_substitution(str_node: Node<'_>) -> bool {
+    let mut outer = str_node.walk();
+    for child in str_node.children(&mut outer) {
+        if child.kind() == "template_substitution" {
+            return true;
+        }
+        // Descend one level into the inner quote node.
+        let mut inner = child.walk();
+        for grandchild in child.children(&mut inner) {
+            if grandchild.kind() == "template_substitution" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Exposed as `enclosing_symbol_and_owner_pub` for use in receiver_types.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Climb the AST from a string literal to find the enclosing function and class.
 /// Dart grammar: functions are in `function_declaration`, methods in `method_declaration`,
-/// classes in `class_definition`.
+/// classes in `class_declaration`.
 fn enclosing_symbol_and_owner(
     str_node: Node<'_>,
     source: &[u8],
@@ -167,7 +207,7 @@ fn enclosing_symbol_and_owner(
                     }
                 }
             }
-            "class_definition" if owner.is_none() => {
+            "class_declaration" if owner.is_none() => {
                 if let Some(name_node) = n.child_by_field_name("name") {
                     owner =
                         std::str::from_utf8(&source[name_node.start_byte()..name_node.end_byte()])

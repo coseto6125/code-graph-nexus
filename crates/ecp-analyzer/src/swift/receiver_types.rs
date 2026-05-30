@@ -15,9 +15,11 @@
 //! tuple / function types are skipped — the call falls back to the bare
 //! member name as before.
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, strip_swift_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -315,8 +317,9 @@ pub fn extract_swift_calls_and_path_literals(
     source: &[u8],
     nodes: &mut [RawNode],
     bindings: &SwiftBindings,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -330,6 +333,29 @@ pub fn extract_swift_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                if let Some(value) = strip_swift_string_value(n, source) {
+                    if crate::sql_literal::is_sql_shaped(value) {
+                        let parsed = crate::sql_literal::parse_tables(value);
+                        let pos = n.start_position();
+                        let end = n.end_position();
+                        let span = (
+                            pos.row as u32,
+                            pos.column as u32,
+                            end.row as u32,
+                            end.column as u32,
+                        );
+                        let (enclosing_symbol, enclosing_owner) =
+                            enclosing_symbol_and_owner_pub(n, source);
+                        sql_refs.push(RawSqlRef {
+                            tables: parsed.tables,
+                            unresolved: parsed.unresolved,
+                            span,
+                            enclosing_symbol,
+                            enclosing_owner,
+                        });
+                    }
+                }
             }
             _ => {}
         }
@@ -338,7 +364,7 @@ pub fn extract_swift_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 fn swift_callee_name(call: Node<'_>, source: &[u8], bindings: &SwiftBindings) -> Option<String> {

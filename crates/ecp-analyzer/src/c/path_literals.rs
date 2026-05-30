@@ -90,6 +90,19 @@ pub(super) fn build_concatenated(concat_node: Node<'_>, source: &[u8]) -> Option
     })
 }
 
+/// Re-exported so `receiver_types` can strip C string quotes for SQL extraction.
+pub(super) fn strip_c_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
+/// Re-exported so `receiver_types` can resolve enclosing symbol for SQL refs.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Strip surrounding quotes from a C `string_literal` capture text.
 /// Handles `"foo"`, `L"foo"`, `u8"foo"`, `u"foo"`, `U"foo"`.
 /// All prefix forms are treated as plain strings (value is the inner bytes).

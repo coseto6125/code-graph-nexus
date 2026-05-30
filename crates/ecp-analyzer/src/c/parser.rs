@@ -729,7 +729,7 @@ impl LanguageProvider for CProvider {
         // resolver's Tier 2.5 qualifier-scoped lookup. Convention-driven,
         // not language-mandated — see `RECEIVER_NAMES` for the gate.
         let methods = collect_receiver_methods(tree.root_node(), source);
-        let raw_path_literals =
+        let (raw_path_literals, raw_sql_refs) =
             extract_c_calls_and_path_literals(tree.root_node(), source, &mut nodes, &methods);
         crate::calls::extract_field_reads(
             tree.root_node(),
@@ -800,7 +800,7 @@ impl LanguageProvider for CProvider {
             tx_scopes: None,
             path_literals: (!raw_path_literals.is_empty())
                 .then(|| raw_path_literals.into_boxed_slice()),
-            sql_refs: None,
+            sql_refs: (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice()),
             call_metas,
             raw_function_metas,
         })

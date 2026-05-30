@@ -911,7 +911,7 @@ impl LanguageProvider for RubyProvider {
         // Extract call sites with receiver-type binding.
         // Handles self.method → EnclosingClass.method, Constant.method → Constant.method.
         // Same DFS also collects path-shaped string literals.
-        let raw_path_literals =
+        let (raw_path_literals, raw_sql_refs) =
             extract_ruby_calls_and_path_literals(tree.root_node(), source, &mut nodes);
 
         let framework_refs = detect_ast_framework_patterns(source, RUBY_FRAMEWORKS);
@@ -968,7 +968,7 @@ impl LanguageProvider for RubyProvider {
             tx_scopes,
             path_literals: (!raw_path_literals.is_empty())
                 .then(|| raw_path_literals.into_boxed_slice()),
-            sql_refs: None,
+            sql_refs: (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice()),
             call_metas: vec![],
             raw_function_metas,
         })

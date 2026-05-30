@@ -76,6 +76,22 @@ fn extract_string_content<'a>(str_node: Node<'_>, source: &'a [u8]) -> Option<&'
     }
 }
 
+/// Re-exported for use in receiver_types SQL extraction.
+pub(super) fn strip_swift_string_value<'a>(
+    str_node: tree_sitter::Node<'_>,
+    source: &'a [u8],
+) -> Option<&'a str> {
+    extract_string_content(str_node, source)
+}
+
+/// Exposed as `enclosing_symbol_and_owner_pub` for use in receiver_types.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: tree_sitter::Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Strip surrounding quotes from a Swift `"..."` or `"""..."""` string literal.
 fn strip_quotes_swift(raw: &str) -> Option<&str> {
     // Multi-line: `"""..."""`

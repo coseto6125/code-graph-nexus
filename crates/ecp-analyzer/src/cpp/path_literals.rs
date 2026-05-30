@@ -86,7 +86,7 @@ pub(super) fn build_concatenated(concat_node: Node<'_>, source: &[u8]) -> Option
 
 /// Strip surrounding quotes from a C++ string literal capture.
 /// `is_raw=true` parses `R"delim(body)delim"`; otherwise standard / prefixed.
-fn strip_quotes(raw: &str, is_raw: bool) -> Option<&str> {
+pub(super) fn strip_quotes(raw: &str, is_raw: bool) -> Option<&str> {
     let bytes = raw.as_bytes();
     if is_raw {
         let r_pos = bytes.iter().position(|&b| b == b'R')?;
@@ -100,8 +100,10 @@ fn strip_quotes(raw: &str, is_raw: bool) -> Option<&str> {
             .position(|&b| b == b'(')
             .map(|p| body_start_paren + p)?;
         let delim = &bytes[body_start_paren..open_paren];
+        // close sequence: `)` + delim + `"` — total length = delim.len() + 2
+        // `)` is at position len - delim.len() - 2 = len - (delim.len() + 2)
         let close_pat_len = delim.len() + 2;
-        let close_start = bytes.len().checked_sub(close_pat_len + 1)?;
+        let close_start = bytes.len().checked_sub(close_pat_len)?;
         if bytes.last() != Some(&b'"') {
             return None;
         }
@@ -197,19 +199,21 @@ fn callee_name(function: Node<'_>, source: &[u8]) -> Option<String> {
 /// `function_definition` plus its owner class (when nested inside a
 /// `class_specifier` / `struct_specifier`, or when the declarator is
 /// `qualified_identifier` like `Foo::method`).
-fn enclosing_symbol_and_owner(
+pub(super) fn enclosing_symbol_and_owner(
     str_node: Node<'_>,
     source: &[u8],
 ) -> (Option<String>, Option<String>) {
     let mut cur = str_node.parent();
+    let mut fn_name: Option<String> = None;
+    let mut owner_from_qual: Option<String> = None;
     let mut owner_from_class: Option<String> = None;
 
     while let Some(n) = cur {
         match n.kind() {
-            "function_definition" => {
-                let (fn_name, owner_from_qual) = fn_definition_name_and_owner(n, source);
-                let owner = owner_from_qual.or(owner_from_class);
-                return (fn_name, owner);
+            "function_definition" if fn_name.is_none() => {
+                let (name, qual) = fn_definition_name_and_owner(n, source);
+                fn_name = name;
+                owner_from_qual = qual;
             }
             "class_specifier" | "struct_specifier" if owner_from_class.is_none() => {
                 if let Some(name_node) = n.child_by_field_name("name") {
@@ -223,7 +227,8 @@ fn enclosing_symbol_and_owner(
         }
         cur = n.parent();
     }
-    (None, owner_from_class)
+    let owner = owner_from_qual.or(owner_from_class);
+    (fn_name, owner)
 }
 
 /// Extract the function name and (for qualified declarators like
