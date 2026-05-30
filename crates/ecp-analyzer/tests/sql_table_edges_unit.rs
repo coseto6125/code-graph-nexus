@@ -103,7 +103,7 @@ fn test_emit_edges_cross_lang_produces_queries_table_edge() {
     let sql_lg = empty_lg("schema.sql", vec![raw_node("channels", NodeKind::Class)]);
 
     let local_graphs = vec![py_lg, sql_lg];
-    let (symbol_table, mut string_pool, mut nodes) = build_setup(&local_graphs);
+    let (symbol_table, mut string_pool, nodes) = build_setup(&local_graphs);
     let mut edges: Vec<Edge> = Vec::new();
 
     let count = sql_table_edges::emit_edges(
@@ -148,7 +148,7 @@ fn test_emit_edges_unresolved_skipped() {
 
     let sql_lg = empty_lg("schema.sql", vec![raw_node("channels", NodeKind::Class)]);
     let local_graphs = vec![py_lg, sql_lg];
-    let (symbol_table, mut string_pool, mut nodes) = build_setup(&local_graphs);
+    let (symbol_table, mut string_pool, nodes) = build_setup(&local_graphs);
     let mut edges: Vec<Edge> = Vec::new();
 
     let count = sql_table_edges::emit_edges(
@@ -179,7 +179,7 @@ fn test_emit_edges_unknown_table_dropped() {
 
     // No Class node for "nonexistent_table".
     let local_graphs = vec![py_lg];
-    let (symbol_table, mut string_pool, mut nodes) = build_setup(&local_graphs);
+    let (symbol_table, mut string_pool, nodes) = build_setup(&local_graphs);
     let mut edges: Vec<Edge> = Vec::new();
 
     let count = sql_table_edges::emit_edges(
@@ -210,7 +210,7 @@ fn test_emit_edges_write_verb_reason() {
 
     let sql_lg = empty_lg("schema.sql", vec![raw_node("users", NodeKind::Class)]);
     let local_graphs = vec![py_lg, sql_lg];
-    let (symbol_table, mut string_pool, mut nodes) = build_setup(&local_graphs);
+    let (symbol_table, mut string_pool, nodes) = build_setup(&local_graphs);
     let mut edges: Vec<Edge> = Vec::new();
 
     let count = sql_table_edges::emit_edges(
@@ -239,7 +239,7 @@ fn test_emit_edges_no_enclosing_symbol_skipped() {
 
     let sql_lg = empty_lg("schema.sql", vec![raw_node("migrations", NodeKind::Class)]);
     let local_graphs = vec![py_lg, sql_lg];
-    let (symbol_table, mut string_pool, mut nodes) = build_setup(&local_graphs);
+    let (symbol_table, mut string_pool, nodes) = build_setup(&local_graphs);
     let mut edges: Vec<Edge> = Vec::new();
 
     let count = sql_table_edges::emit_edges(
