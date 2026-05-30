@@ -518,7 +518,7 @@ impl LanguageProvider for RustProvider {
         // for the resolver's qualifier-scoped (Tier 2.5) lookup.
         let impl_map = build_impl_map(tree.root_node(), source);
         let local_types = collect_local_types(tree.root_node(), source, &impl_map);
-        let raw_path_literals = extract_rust_calls_and_path_literals(
+        let (raw_path_literals, raw_sql_refs) = extract_rust_calls_and_path_literals(
             tree.root_node(),
             source,
             &mut nodes,
@@ -648,6 +648,7 @@ impl LanguageProvider for RustProvider {
             event_topics,
             tx_scopes,
             path_literals,
+            sql_refs: (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice()),
             call_metas,
             raw_function_metas,
         })

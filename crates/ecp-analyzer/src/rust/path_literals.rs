@@ -41,6 +41,11 @@ pub(super) fn build_raw_path_literal(str_node: Node<'_>, source: &[u8]) -> Optio
     })
 }
 
+/// Re-exported as `strip_rust_string_value` for use in receiver_types.
+pub(super) fn strip_rust_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
 /// Raw (`r#...`) and byte-raw (`br#...`) variants need hash-count match for
 /// closing delim; plain `b"..."` / `"..."` take the simpler boundary path.
 fn strip_quotes(raw: &str) -> Option<&str> {
@@ -182,6 +187,14 @@ fn callee_name(function: Node<'_>, source: &[u8]) -> Option<String> {
         "scoped_identifier" | "generic_function" => Some(text.to_string()),
         _ => Some(text.to_string()),
     }
+}
+
+/// Re-exported for use in receiver_types.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
 }
 
 /// Climb the AST from a string literal to find the enclosing

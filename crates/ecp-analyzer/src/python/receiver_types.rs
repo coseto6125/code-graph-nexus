@@ -13,7 +13,8 @@
 
 use super::path_literals::build_raw_path_literal;
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use crate::framework_helpers::strip_python_string_quotes;
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -152,16 +153,18 @@ fn simple_name_and_type(
 /// (subscript, lambda, ...) emit no edge, matching the previous catch-all
 /// behavior's "last identifier segment" rule for those rare cases.
 ///
-/// Path literals: every `string` node is fed through
+/// Path literals and SQL refs: every `string` node is fed through
 /// `path_literals::build_raw_path_literal` (which itself filters out
-/// f-strings by checking for `interpolation` children).
+/// f-strings by checking for `interpolation` children) and through
+/// `sql_literal::is_sql_shaped`/`parse_tables` for SQL extraction.
 pub fn extract_python_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
     locals: &LocalTypes,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -175,6 +178,27 @@ pub fn extract_python_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                // Skip f-strings (they have `interpolation` children).
+                let has_interpolation = {
+                    let mut c = n.walk();
+                    let x = n.children(&mut c).any(|ch| ch.kind() == "interpolation");
+                    x
+                };
+                if !has_interpolation {
+                    let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                    if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                        if let Some(value) = strip_python_string_quotes(raw) {
+                            if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                                value,
+                                n,
+                                enclosing_symbol_and_owner(n, source),
+                            ) {
+                                sql_refs.push(sql_ref);
+                            }
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -183,7 +207,43 @@ pub fn extract_python_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
+}
+
+/// Climb from a string literal to find the innermost enclosing
+/// `function_definition` (free function or method) and `class_definition`
+/// (owner). Returns `(function_name, owner_class)`.
+fn enclosing_symbol_and_owner(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    let mut cur = str_node.parent();
+    let mut function_name: Option<String> = None;
+    let mut owner: Option<String> = None;
+
+    while let Some(n) = cur {
+        match n.kind() {
+            "function_definition" if function_name.is_none() => {
+                if let Some(name_node) = n.child_by_field_name("name") {
+                    function_name =
+                        std::str::from_utf8(&source[name_node.start_byte()..name_node.end_byte()])
+                            .ok()
+                            .map(str::to_string);
+                }
+            }
+            "class_definition" if owner.is_none() => {
+                if let Some(name_node) = n.child_by_field_name("name") {
+                    owner =
+                        std::str::from_utf8(&source[name_node.start_byte()..name_node.end_byte()])
+                            .ok()
+                            .map(str::to_string);
+                }
+            }
+            _ => {}
+        }
+        cur = n.parent();
+    }
+    (function_name, owner)
 }
 
 fn python_callee_name(call: Node<'_>, source: &[u8], locals: &LocalTypes) -> Option<String> {

@@ -9,15 +9,18 @@
 //! annotations we cannot commit to a type, per the spec's "only commit ✓ for cases
 //! that work without guessing" rule.
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, strip_js_string_value,
+};
 use crate::calls::attach_to_enclosing;
 use crate::framework_helpers::{enclosing_class, node_span};
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use tree_sitter::Node;
 
 /// Walk the JavaScript AST once, attaching callees to enclosing
-/// functions / methods (with `this`-based receiver-type binding) and
-/// collecting path-shaped string / template literals.
+/// functions / methods (with `this`-based receiver-type binding),
+/// collecting path-shaped string / template literals, and extracting
+/// SQL-shaped string literals as `RawSqlRef`s.
 ///
 /// Calls:
 /// - `this.method()` inside a class body → emits `ClassName.method`
@@ -27,8 +30,9 @@ pub fn extract_js_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -38,7 +42,25 @@ pub fn extract_js_calls_and_path_literals(
                     attach_to_enclosing(line, callee, nodes);
                 }
             }
-            "string" | "template_string" => {
+            "string" => {
+                if let Some(rpl) = build_raw_path_literal(n, source) {
+                    path_literals.push(rpl);
+                }
+                // SQL ref extraction: same string node, separate filter.
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    if let Some(value) = strip_js_string_value(raw) {
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
+                        }
+                    }
+                }
+            }
+            "template_string" => {
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
@@ -50,7 +72,7 @@ pub fn extract_js_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 fn js_callee_name(call: Node<'_>, source: &[u8], nodes: &[RawNode]) -> Option<String> {

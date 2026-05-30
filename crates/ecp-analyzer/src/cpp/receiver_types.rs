@@ -14,9 +14,11 @@
 //! depth, namespace-qualified types, `auto`, and operator-overloaded calls
 //! fall back to the bare member name.
 
-use super::path_literals::{build_concatenated, build_raw_path_literal};
+use super::path_literals::{
+    build_concatenated, build_raw_path_literal, enclosing_symbol_and_owner, strip_quotes,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use rustc_hash::FxHashMap;
 use tree_sitter::Node;
 
@@ -219,8 +221,9 @@ pub fn extract_cpp_calls_and_path_literals(
     source: &[u8],
     nodes: &mut [RawNode],
     bindings: &CppBindings,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -233,6 +236,20 @@ pub fn extract_cpp_calls_and_path_literals(
             "string_literal" | "raw_string_literal" => {
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
+                }
+                // SQL ref extraction: same string node, separate filter.
+                let is_raw = n.kind() == "raw_string_literal";
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    if let Some(value) = strip_quotes(raw, is_raw) {
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
+                        }
+                    }
                 }
             }
             "concatenated_string" => {
@@ -250,7 +267,7 @@ pub fn extract_cpp_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 fn cpp_callee_name(call: Node<'_>, source: &[u8], bindings: &CppBindings) -> Option<String> {

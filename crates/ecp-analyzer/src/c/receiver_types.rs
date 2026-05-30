@@ -18,9 +18,12 @@
 //!   receiver convention versus a regular parameter.
 //! - Free functions (no receiver-shaped first param) are left as bare names.
 
-use super::path_literals::{build_concatenated, build_raw_path_literal};
+use super::path_literals::{
+    build_concatenated, build_raw_path_literal, enclosing_symbol_and_owner_pub,
+    strip_c_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -128,14 +131,16 @@ fn find_function_declarator<'a>(mut node: Node<'a>) -> Option<Node<'a>> {
 
 /// Walk the C AST once, attaching call sites to enclosing functions
 /// (with receiver-convention rewriting to `Type.fn`) and collecting
-/// path-shaped `string_literal` / `concatenated_string` literals.
+/// path-shaped `string_literal` / `concatenated_string` literals and
+/// SQL-shaped string literals.
 pub fn extract_c_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
     methods: &CReceiverMap,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -148,6 +153,19 @@ pub fn extract_c_calls_and_path_literals(
             "string_literal" => {
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
+                }
+                // SQL ref extraction: same string node, separate filter.
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    if let Some(value) = strip_c_string_value(raw) {
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
+                        }
+                    }
                 }
             }
             "concatenated_string" => {
@@ -166,7 +184,7 @@ pub fn extract_c_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 fn c_callee_name(call: Node<'_>, source: &[u8], methods: &CReceiverMap) -> Option<String> {

@@ -70,6 +70,20 @@ fn emit(str_node: Node<'_>, value: &str, source: &[u8]) -> Option<RawPathLiteral
 }
 
 /// Strip surrounding single or double quotes from a JS `string` node.
+///
+/// Re-exported as `pub(super)` for use in receiver_types SQL extraction.
+pub(super) fn strip_js_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
+/// Re-exported as `pub(super)` for use in receiver_types SQL extraction.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: tree_sitter::Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 fn strip_quotes(raw: &str) -> Option<&str> {
     let bytes = raw.as_bytes();
     let quote_char = *bytes.first()?;

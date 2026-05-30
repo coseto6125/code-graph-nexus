@@ -46,6 +46,22 @@ pub(super) fn build_raw_path_literal(str_node: Node<'_>, source: &[u8]) -> Optio
     })
 }
 
+/// Re-exported for use in receiver_types SQL extraction.
+pub(super) fn extract_ruby_string_value<'a>(
+    str_node: Node<'_>,
+    source: &'a [u8],
+) -> Option<&'a str> {
+    extract_string_content(str_node, source)
+}
+
+/// Exposed for use in receiver_types SQL extraction.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Extract the content of a `string` node. Looks for `string_content` child;
 /// if absent, strips surrounding quotes from the raw node text.
 fn extract_string_content<'a>(str_node: Node<'_>, source: &'a [u8]) -> Option<&'a str> {

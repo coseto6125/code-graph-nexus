@@ -12,9 +12,11 @@
 //! All other `expr.method` calls fall back to the bare method name (existing
 //! behaviour via `extract_calls`).
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, extract_ruby_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use ecp_core::graph::NodeKind;
 use tree_sitter::Node;
 
@@ -51,15 +53,16 @@ impl ClassContext {
 
 /// Walk the Ruby AST once, attaching callees to enclosing nodes with
 /// receiver-type binding (`self.method` / `Constant.method`) and
-/// collecting path-shaped `string` literals. Interpolated strings are
-/// filtered inside `build_raw_path_literal`.
+/// collecting path-shaped `string` literals and SQL-shaped string literals.
+/// Interpolated strings are filtered inside `build_raw_path_literal`.
 pub fn extract_ruby_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let ctx = ClassContext::from_nodes(nodes);
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -73,6 +76,16 @@ pub fn extract_ruby_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                if let Some(value) = extract_ruby_string_value(n, source) {
+                    if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                        value,
+                        n,
+                        enclosing_symbol_and_owner_pub(n, source),
+                    ) {
+                        sql_refs.push(sql_ref);
+                    }
+                }
             }
             _ => {}
         }
@@ -81,7 +94,7 @@ pub fn extract_ruby_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 /// Resolve the callee for a Ruby `call` node.

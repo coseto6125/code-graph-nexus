@@ -15,9 +15,11 @@
 //!    - `obj.method()` where `obj`'s type is locally known is recorded as
 //!      `"Type.method"` for the resolver's Tier 2.5 qualifier-scoped lookup.
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, strip_rust_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -428,8 +430,9 @@ pub fn extract_rust_calls_and_path_literals(
     source: &[u8],
     nodes: &mut [RawNode],
     local_types: &LocalTypes,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -445,6 +448,19 @@ pub fn extract_rust_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    if let Some(value) = strip_rust_string_value(raw) {
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -453,7 +469,7 @@ pub fn extract_rust_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 /// Derive the callee name for a Rust `call_expression`.

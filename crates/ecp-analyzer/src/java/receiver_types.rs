@@ -10,9 +10,11 @@
 //! Falls back to the bare method name for unresolved receivers, matching
 //! the prior behavior of the generic `extract_calls` helper.
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, strip_java_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use ecp_core::graph::NodeKind;
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -223,15 +225,16 @@ fn java_callee(
 /// Walk the AST once, extracting `method_invocation` /
 /// `object_creation_expression` call sites (attached to enclosing
 /// function/method nodes with receiver binding) and collecting path-shaped
-/// `string_literal` / `text_block` literals.
+/// `string_literal` / `text_block` literals and SQL-shaped string literals.
 pub fn extract_java_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let local_types = collect_local_types(root, source);
 
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -255,6 +258,19 @@ pub fn extract_java_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    if let Some(value) = strip_java_string_value(raw) {
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -263,7 +279,7 @@ pub fn extract_java_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 /// Name of the innermost enclosing Class/Interface node at `line`.

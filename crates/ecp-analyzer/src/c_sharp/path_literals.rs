@@ -90,6 +90,19 @@ fn strip_quotes(raw: &str) -> Option<&str> {
     None
 }
 
+/// Re-exported for use in receiver_types SQL extraction.
+pub(super) fn strip_csharp_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
+/// Re-exported for use in receiver_types SQL extraction.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Climb the AST to find the enclosing invocation callee name.
 /// C# call nodes: `invocation_expression > argument_list > argument > string_literal`
 fn enclosing_callee(str_node: Node<'_>, source: &[u8]) -> Option<String> {
