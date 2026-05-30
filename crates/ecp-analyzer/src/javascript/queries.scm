@@ -131,6 +131,14 @@
     (identifier) @import.alias)
   source: (string (string_fragment) @import.source)) @import.namespace
 
+;; Namespace import — `import * as ns from 'lib'`. Local binding `ns` is the
+;; alias; `imported_name` is "*" (same sentinel as the namespace re-export).
+(import_statement
+  (import_clause
+    (namespace_import
+      (identifier) @import.alias))
+  source: (string (string_fragment) @import.source)) @import.namespace
+
 ;; Routes — generic method-call shape (.get/.post/... and .use with path-shaped string).
 ;; `use` is included here because router.use('/path', ...) and app.use('/path', ...)
 ;; register mount-point routes captured by ref-gitnexus. The path-shape filter in the
