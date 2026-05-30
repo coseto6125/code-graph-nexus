@@ -95,3 +95,44 @@ fn js_reexport_unaliased_named_specifier_alias_is_none() {
     assert_eq!(matches.len(), 1, "imports: {:?}", local.imports);
     assert_eq!(matches[0].alias, None);
 }
+
+#[test]
+fn ts_namespace_import_emits_star_with_alias() {
+    let src = "import * as ns from 'lib';";
+    let provider = TypeScriptProvider::new().unwrap();
+    let local = provider
+        .parse_file("test.ts".as_ref(), src.as_bytes())
+        .unwrap();
+
+    let matches = find(&local.imports, "*", "lib");
+    assert_eq!(matches.len(), 1, "imports: {:?}", local.imports);
+    assert_eq!(matches[0].alias.as_deref(), Some("ns"));
+}
+
+#[test]
+fn js_namespace_import_emits_star_with_alias() {
+    let src = "import * as ns from 'lib';";
+    let provider = JavaScriptProvider::new().unwrap();
+    let local = provider
+        .parse_file("test.js".as_ref(), src.as_bytes())
+        .unwrap();
+
+    let matches = find(&local.imports, "*", "lib");
+    assert_eq!(matches.len(), 1, "imports: {:?}", local.imports);
+    assert_eq!(matches[0].alias.as_deref(), Some("ns"));
+}
+
+#[test]
+fn ts_type_namespace_import_emits_star_with_alias() {
+    // `import type * as ns from 'lib'` uses the same namespace_import AST node;
+    // the parser does not distinguish type-only imports at the graph layer.
+    let src = "import type * as ns from 'lib';";
+    let provider = TypeScriptProvider::new().unwrap();
+    let local = provider
+        .parse_file("test.ts".as_ref(), src.as_bytes())
+        .unwrap();
+
+    let matches = find(&local.imports, "*", "lib");
+    assert_eq!(matches.len(), 1, "imports: {:?}", local.imports);
+    assert_eq!(matches[0].alias.as_deref(), Some("ns"));
+}

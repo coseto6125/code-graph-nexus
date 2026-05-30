@@ -258,6 +258,14 @@
     (identifier) @import.alias)
   source: (string (string_fragment) @import.source)) @import.namespace
 
+;; Namespace import — `import * as ns from 'lib'`. Local binding `ns` is the
+;; alias; `imported_name` is "*" (same sentinel as the namespace re-export).
+(import_statement
+  (import_clause
+    (namespace_import
+      (identifier) @import.alias))
+  source: (string (string_fragment) @import.source)) @import.namespace
+
 ;; Type aliases
 (type_alias_declaration
   name: (type_identifier) @typedef.name
