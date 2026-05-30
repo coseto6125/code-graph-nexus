@@ -216,25 +216,12 @@ pub fn extract_ts_calls_and_path_literals(
                         }
                     };
                     if let Some(value) = value_opt {
-                        if crate::sql_literal::is_sql_shaped(value) {
-                            let parsed = crate::sql_literal::parse_tables(value);
-                            let pos = n.start_position();
-                            let end = n.end_position();
-                            let span = (
-                                pos.row as u32,
-                                pos.column as u32,
-                                end.row as u32,
-                                end.column as u32,
-                            );
-                            let (enclosing_symbol, enclosing_owner) =
-                                enclosing_symbol_and_owner_pub(n, source);
-                            sql_refs.push(RawSqlRef {
-                                tables: parsed.tables,
-                                unresolved: parsed.unresolved,
-                                span,
-                                enclosing_symbol,
-                                enclosing_owner,
-                            });
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
                         }
                     }
                 }

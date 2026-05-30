@@ -50,25 +50,12 @@ pub fn extract_js_calls_and_path_literals(
                 let raw_bytes = &source[n.start_byte()..n.end_byte()];
                 if let Ok(raw) = std::str::from_utf8(raw_bytes) {
                     if let Some(value) = strip_js_string_value(raw) {
-                        if crate::sql_literal::is_sql_shaped(value) {
-                            let parsed = crate::sql_literal::parse_tables(value);
-                            let pos = n.start_position();
-                            let end = n.end_position();
-                            let span = (
-                                pos.row as u32,
-                                pos.column as u32,
-                                end.row as u32,
-                                end.column as u32,
-                            );
-                            let (enclosing_symbol, enclosing_owner) =
-                                enclosing_symbol_and_owner_pub(n, source);
-                            sql_refs.push(RawSqlRef {
-                                tables: parsed.tables,
-                                unresolved: parsed.unresolved,
-                                span,
-                                enclosing_symbol,
-                                enclosing_owner,
-                            });
+                        if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                            value,
+                            n,
+                            enclosing_symbol_and_owner_pub(n, source),
+                        ) {
+                            sql_refs.push(sql_ref);
                         }
                     }
                 }

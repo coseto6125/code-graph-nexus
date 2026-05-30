@@ -104,25 +104,12 @@ pub fn extract_php_calls_and_path_literals(
                 // SQL ref extraction: same node, separate filter.
                 // `extract_php_string_value` already skips interpolated strings.
                 if let Some(value) = extract_php_string_value(n, source) {
-                    if crate::sql_literal::is_sql_shaped(value) {
-                        let parsed = crate::sql_literal::parse_tables(value);
-                        let pos = n.start_position();
-                        let end = n.end_position();
-                        let span = (
-                            pos.row as u32,
-                            pos.column as u32,
-                            end.row as u32,
-                            end.column as u32,
-                        );
-                        let (enclosing_symbol, enclosing_owner) =
-                            enclosing_symbol_and_owner_pub(n, source);
-                        sql_refs.push(RawSqlRef {
-                            tables: parsed.tables,
-                            unresolved: parsed.unresolved,
-                            span,
-                            enclosing_symbol,
-                            enclosing_owner,
-                        });
+                    if let Some(sql_ref) = crate::sql_literal::try_sql_ref(
+                        value,
+                        n,
+                        enclosing_symbol_and_owner_pub(n, source),
+                    ) {
+                        sql_refs.push(sql_ref);
                     }
                 }
             }

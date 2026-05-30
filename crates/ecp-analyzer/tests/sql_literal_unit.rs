@@ -84,3 +84,23 @@ fn parse_tables_insert_select_separates_read_and_write_verbs() {
         r.tables
     );
 }
+
+#[test]
+fn try_sql_ref_builds_ref_for_sql_and_none_for_prose() {
+    use ecp_analyzer::sql_literal::try_sql_ref;
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_sequel::LANGUAGE.into())
+        .unwrap();
+    // The helper takes the stripped value + the source node (for span) + the
+    // pre-resolved enclosing tuple. Use a sequel parse just to get a Node.
+    let sql = "SELECT id FROM channels";
+    let tree = parser.parse(sql, None).unwrap();
+    let node = tree.root_node();
+    let r = try_sql_ref(sql, node, (Some("f".into()), None)).expect("sql → Some");
+    assert_eq!(r.tables, vec![("channels".to_string(), SqlVerb::Read)]);
+    assert_eq!(r.enclosing_symbol.as_deref(), Some("f"));
+
+    let none = try_sql_ref("just a log line", node, (None, None));
+    assert!(none.is_none(), "non-SQL → None");
+}

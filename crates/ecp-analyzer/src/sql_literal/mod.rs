@@ -3,7 +3,7 @@
 //! verb. Takes only `&str`, so per-language drift is impossible (mirrors
 //! `path_literal`). Reuses the in-tree `tree-sitter-sequel` grammar.
 
-use ecp_core::analyzer::types::SqlVerb;
+use ecp_core::analyzer::types::{RawSqlRef, SqlVerb};
 use std::cell::RefCell;
 use tree_sitter::{Node, Parser};
 
@@ -36,6 +36,37 @@ pub fn is_sql_shaped(s: &str) -> bool {
 pub struct SqlTables {
     pub tables: Vec<(String, SqlVerb)>,
     pub unresolved: bool,
+}
+
+/// Build a `RawSqlRef` from a string-literal value and its source node, or
+/// `None` when the value isn't SQL-shaped. Every per-language parser calls this
+/// from its `string_literal` walk with the value, the node (for the span), and
+/// the enclosing symbol/owner it already resolved — collapsing the otherwise
+/// 14× duplicated extraction block into one language-neutral entry point.
+pub fn try_sql_ref(
+    value: &str,
+    node: Node,
+    enclosing: (Option<String>, Option<String>),
+) -> Option<RawSqlRef> {
+    if !is_sql_shaped(value) {
+        return None;
+    }
+    let parsed = parse_tables(value);
+    let start = node.start_position();
+    let end = node.end_position();
+    let (enclosing_symbol, enclosing_owner) = enclosing;
+    Some(RawSqlRef {
+        tables: parsed.tables,
+        unresolved: parsed.unresolved,
+        span: (
+            start.row as u32,
+            start.column as u32,
+            end.row as u32,
+            end.column as u32,
+        ),
+        enclosing_symbol,
+        enclosing_owner,
+    })
 }
 
 /// Parse a SQL string and return its referenced tables + statement verb.
