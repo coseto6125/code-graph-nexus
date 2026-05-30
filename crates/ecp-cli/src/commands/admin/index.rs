@@ -70,6 +70,7 @@ pub fn run_analyzer_for_paths(
     src_root: &std::path::Path,
     out_dir: &std::path::Path,
     parse_cache_root: Option<&std::path::Path>,
+    dump_resolver: Option<&std::path::Path>,
 ) -> std::io::Result<(usize, ecp_core::graph::ZeroCopyGraph)> {
     let prof = std::env::var("ECP_PROF").is_ok();
     let t_step1 = std::time::Instant::now();
@@ -326,7 +327,8 @@ pub fn run_analyzer_for_paths(
     let t_ingest = std::time::Instant::now();
     let mut builder = GraphBuilder::new()
         .with_path_aliases(aliases)
-        .with_repo_root(src_root.to_path_buf());
+        .with_repo_root(src_root.to_path_buf())
+        .with_resolver_dump(dump_resolver.map(std::path::Path::to_path_buf));
     for graph in local_graphs {
         builder.add_graph(graph);
     }
@@ -369,14 +371,27 @@ pub fn run_analyzer_for_paths(
 }
 
 pub fn run(args: IndexArgs) -> Result<(), String> {
-    if args.dump_resolver.is_some() {
-        eprintln!(
-            "warning: --dump-resolver accepted but not yet wired in v2 layout; \
-             will be re-wired alongside `ecp diff` baseline path"
-        );
+    // --dump-resolver: produce a resolver-decision JSONL side-output. This is
+    // a debug / diff path (consumed by `ecp diff --section bindings` and the
+    // oracle harness), NOT a publish. Bypass build_l2 — its same-SHA fast-path
+    // attach would skip the analyzer, so the dump would never be produced — and
+    // discard the graph; only the JSONL is wanted. ~/.ecp is left untouched.
+    let repo_path = std::path::PathBuf::from(&args.repo);
+    if let Some(dump_path) = args.dump_resolver {
+        let worktree = repo_path;
+        if !worktree.exists() {
+            return Err(format!("repo path does not exist: {}", worktree.display()));
+        }
+        let scratch = std::env::temp_dir().join(format!("ecp-dumponly-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).map_err(|e| format!("create scratch dir: {e}"))?;
+        let result = run_analyzer_for_paths(&worktree, &scratch, None, Some(&dump_path))
+            .map_err(|e| format!("analyzer dump pass: {e}"));
+        let _ = std::fs::remove_dir_all(&scratch);
+        result?;
+        return Ok(());
     }
 
-    let worktree = std::path::PathBuf::from(&args.repo);
+    let worktree = repo_path;
     if !worktree.exists() {
         return Err(format!("repo path does not exist: {}", worktree.display()));
     }
