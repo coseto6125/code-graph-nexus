@@ -117,6 +117,9 @@ struct CSharpCaptureIndices {
     // spec, but we need the root span separately like enum_member_node).
     destructor: Option<u32>,
     event_decl: Option<u32>,
+    // Name captures (not roots) — destructor `~` prefix; event_field multi-declarator keying.
+    destructor_name: Option<u32>,
+    event_field_name: Option<u32>,
 }
 
 pub struct CSharpProvider {
@@ -178,6 +181,8 @@ impl CSharpProvider {
             event_field: query.capture_index_for_name("event_field"),
             destructor: query.capture_index_for_name("destructor"),
             event_decl: query.capture_index_for_name("event_decl"),
+            destructor_name: query.capture_index_for_name("destructor.name"),
+            event_field_name: query.capture_index_for_name("event_field.name"),
         };
 
         Ok(Self {
@@ -237,10 +242,8 @@ impl LanguageProvider for CSharpProvider {
         let idx_enum_member_node = idx.enum_member_node;
         let idx_struct = idx.struct_;
 
-        // Pre-resolve capture indices needed only for per-node name logic
-        // (destructor ~ prefix; event_field multi-declarator keying).
-        let idx_destructor_name = self.query.capture_index_for_name("destructor.name");
-        let idx_event_field_name = self.query.capture_index_for_name("event_field.name");
+        let idx_destructor_name = idx.destructor_name;
+        let idx_event_field_name = idx.event_field_name;
 
         while let Some(m) = matches.next() {
             let mut name_node = None;
@@ -560,20 +563,20 @@ impl LanguageProvider for CSharpProvider {
                     } else {
                         root.id()
                     };
-                    // Destructors: prefix the bare class name with `~`.
-                    let canonical_name = if is_destructor_name {
-                        format!("~{name_str}")
-                    } else {
-                        name_str.to_string()
-                    };
                     let idx = *node_id_to_idx.entry(node_id).or_insert_with(|| {
+                        // Destructors: prefix the bare class name with `~`.
+                        let name = if is_destructor_name {
+                            format!("~{name_str}")
+                        } else {
+                            name_str.to_string()
+                        };
                         let i = nodes.len();
                         nodes.push(RawNode {
                             decorators: vec![],
                             is_exported,
                             heritage: Vec::new(),
                             type_annotation: type_annotation.clone(),
-                            name: canonical_name.clone(),
+                            name,
                             kind: k,
                             span: (
                                 start.row as u32,
