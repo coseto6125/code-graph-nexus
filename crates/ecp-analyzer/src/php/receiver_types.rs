@@ -13,9 +13,11 @@
 //! unbound: PHP 7 property/param type hints require a second pass to propagate
 //! types through the scope and are deferred to a later improvement task.
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, extract_php_string_value,
+};
 use crate::calls::attach_to_enclosing;
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use ecp_core::graph::NodeKind;
 use tree_sitter::Node;
 
@@ -70,14 +72,16 @@ impl ClassContext {
 
 /// Walk the PHP AST once, attaching callees to enclosing nodes (with
 /// receiver binding for `$this->`, `parent::`, `self::`, `static::`)
-/// and collecting path-shaped `string` / `encapsed_string` literals.
+/// and collecting path-shaped and SQL-shaped `string` / `encapsed_string`
+/// literals.
 pub fn extract_php_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let ctx = ClassContext::from_nodes(nodes);
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -97,6 +101,30 @@ pub fn extract_php_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same node, separate filter.
+                // `extract_php_string_value` already skips interpolated strings.
+                if let Some(value) = extract_php_string_value(n, source) {
+                    if crate::sql_literal::is_sql_shaped(value) {
+                        let parsed = crate::sql_literal::parse_tables(value);
+                        let pos = n.start_position();
+                        let end = n.end_position();
+                        let span = (
+                            pos.row as u32,
+                            pos.column as u32,
+                            end.row as u32,
+                            end.column as u32,
+                        );
+                        let (enclosing_symbol, enclosing_owner) =
+                            enclosing_symbol_and_owner_pub(n, source);
+                        sql_refs.push(RawSqlRef {
+                            tables: parsed.tables,
+                            unresolved: parsed.unresolved,
+                            span,
+                            enclosing_symbol,
+                            enclosing_owner,
+                        });
+                    }
+                }
             }
             _ => {}
         }
@@ -105,7 +133,7 @@ pub fn extract_php_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 /// Resolve the callee for `$obj->method(args)`.

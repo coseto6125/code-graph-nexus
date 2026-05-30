@@ -714,7 +714,7 @@ impl LanguageProvider for TypeScriptProvider {
         // - `obj.method()` where `obj` has a type annotation → `Type.method`
         // - everything else falls back to the bare/qualified method name.
         let local_types = collect_local_types(tree.root_node(), source);
-        let raw_path_literals =
+        let (raw_path_literals, raw_sql_refs) =
             extract_ts_calls_and_path_literals(tree.root_node(), source, &mut nodes, &local_types);
         crate::calls::extract_field_reads(
             tree.root_node(),
@@ -841,6 +841,7 @@ impl LanguageProvider for TypeScriptProvider {
 
         let path_literals =
             (!raw_path_literals.is_empty()).then(|| raw_path_literals.into_boxed_slice());
+        let sql_refs = (!raw_sql_refs.is_empty()).then(|| raw_sql_refs.into_boxed_slice());
 
         Ok(LocalGraph {
             content_hash: [0; 8],
@@ -856,7 +857,7 @@ impl LanguageProvider for TypeScriptProvider {
             event_topics,
             tx_scopes,
             path_literals,
-            sql_refs: None,
+            sql_refs,
             call_metas,
             raw_function_metas,
         })

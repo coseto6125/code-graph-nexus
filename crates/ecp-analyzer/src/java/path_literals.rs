@@ -43,6 +43,23 @@ pub(super) fn build_raw_path_literal(str_node: Node<'_>, source: &[u8]) -> Optio
 /// - `"""foo"""` → `foo` (text_block; leading/trailing newlines trimmed by Java spec)
 ///
 /// Returns `None` when shape is malformed.
+///
+/// Re-exported as `strip_java_string_value` for use in receiver_types.
+pub(super) fn strip_java_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
+/// Climb the AST to find the enclosing method/constructor and enclosing class.
+/// Returns `(method_name, class_name)`.
+///
+/// Exposed as `enclosing_symbol_and_owner_pub` for use in receiver_types.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 fn strip_quotes(raw: &str) -> Option<&str> {
     let bytes = raw.as_bytes();
     // text_block: starts with `"""` and ends with `"""`

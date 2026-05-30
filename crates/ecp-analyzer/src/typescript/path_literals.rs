@@ -127,6 +127,24 @@ fn callee_name(function: Node<'_>, source: &[u8]) -> Option<String> {
     }
 }
 
+/// Re-exported for use in `receiver_types` SQL extraction.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
+/// Strip surrounding single or double quotes — re-exported for SQL extraction.
+pub(super) fn strip_ts_string_value(raw: &str) -> Option<&str> {
+    strip_quotes(raw)
+}
+
+/// Strip surrounding backticks — re-exported for SQL extraction in template strings.
+pub(super) fn strip_ts_template_value(raw: &str) -> Option<&str> {
+    strip_backticks(raw)
+}
+
 /// Climb from a string literal to find the innermost enclosing function/method
 /// and class. Returns `(function_name, owner_class)`.
 ///

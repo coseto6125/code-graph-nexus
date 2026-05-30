@@ -190,6 +190,19 @@ fn leading_callee_name(call: Node<'_>, source: &[u8]) -> Option<String> {
     }
 }
 
+/// Re-exported for use in `receiver_types` SQL-ref extraction.
+pub(super) fn strip_kotlin_string_value<'a>(raw: &'a str) -> Option<&'a str> {
+    strip_quotes(raw)
+}
+
+/// Re-exported for use in `receiver_types` SQL-ref extraction.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 /// Climb the AST to find the enclosing `function_declaration` and enclosing
 /// `class_declaration` / `object_declaration`.
 fn enclosing_symbol_and_owner(

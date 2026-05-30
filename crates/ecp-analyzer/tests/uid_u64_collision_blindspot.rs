@@ -55,6 +55,7 @@ fn make_collision_graph() -> LocalGraph {
         event_topics: None,
         tx_scopes: None,
         path_literals: None,
+        sql_refs: None,
         call_metas: vec![],
         raw_function_metas: vec![],
     }

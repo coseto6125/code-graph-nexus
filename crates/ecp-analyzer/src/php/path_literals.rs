@@ -42,6 +42,22 @@ pub(super) fn build_raw_path_literal(str_node: Node<'_>, source: &[u8]) -> Optio
 
 /// Extract the string content, skipping interpolated forms.
 /// Returns `None` for `encapsed_string` with variable interpolation.
+/// Re-exported as `pub(super)` for SQL extraction in `receiver_types`.
+pub(super) fn extract_php_string_value<'a>(
+    str_node: Node<'_>,
+    source: &'a [u8],
+) -> Option<&'a str> {
+    extract_string_content(str_node, source)
+}
+
+/// Exposed for SQL extraction in `receiver_types`.
+pub(super) fn enclosing_symbol_and_owner_pub(
+    str_node: Node<'_>,
+    source: &[u8],
+) -> (Option<String>, Option<String>) {
+    enclosing_symbol_and_owner(str_node, source)
+}
+
 fn extract_string_content<'a>(str_node: Node<'_>, source: &'a [u8]) -> Option<&'a str> {
     match str_node.kind() {
         "string" => {

@@ -16,10 +16,13 @@
 //! type annotation's inner node won't be a plain `type_identifier`, so we fall back to
 //! the bare method name (same as for un-annotated code).
 
-use super::path_literals::build_raw_path_literal;
+use super::path_literals::{
+    build_raw_path_literal, enclosing_symbol_and_owner_pub, strip_ts_string_value,
+    strip_ts_template_value,
+};
 use crate::calls::attach_to_enclosing;
 use crate::framework_helpers::{enclosing_class, node_span};
-use ecp_core::analyzer::types::{RawNode, RawPathLiteral};
+use ecp_core::analyzer::types::{RawNode, RawPathLiteral, RawSqlRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -172,13 +175,16 @@ fn simple_name_and_type(
 /// - `this.method()` → looks up the innermost enclosing class → emits `ClassName.method`
 /// - `obj.method()` where `obj` is a typed param/var → emits `Type.method`
 /// - anything else falls back to the bare method name (or full expression as before)
+///
+/// Also collects SQL-shaped string/template literals into the returned `Vec<RawSqlRef>`.
 pub fn extract_ts_calls_and_path_literals(
     root: Node<'_>,
     source: &[u8],
     nodes: &mut [RawNode],
     locals: &LocalTypes,
-) -> Vec<RawPathLiteral> {
+) -> (Vec<RawPathLiteral>, Vec<RawSqlRef>) {
     let mut path_literals: Vec<RawPathLiteral> = Vec::new();
+    let mut sql_refs: Vec<RawSqlRef> = Vec::new();
     let mut stack: Vec<Node<'_>> = vec![root];
     while let Some(n) = stack.pop() {
         match n.kind() {
@@ -192,6 +198,46 @@ pub fn extract_ts_calls_and_path_literals(
                 if let Some(rpl) = build_raw_path_literal(n, source) {
                     path_literals.push(rpl);
                 }
+                // SQL ref extraction: same string node, separate filter.
+                let raw_bytes = &source[n.start_byte()..n.end_byte()];
+                if let Ok(raw) = std::str::from_utf8(raw_bytes) {
+                    let value_opt = if n.kind() == "string" {
+                        strip_ts_string_value(raw)
+                    } else {
+                        // template_string: skip if it has substitutions.
+                        let has_substitution = (0..n.child_count() as u32).any(|i| {
+                            n.child(i)
+                                .is_some_and(|ch| ch.kind() == "template_substitution")
+                        });
+                        if has_substitution {
+                            None
+                        } else {
+                            strip_ts_template_value(raw)
+                        }
+                    };
+                    if let Some(value) = value_opt {
+                        if crate::sql_literal::is_sql_shaped(value) {
+                            let parsed = crate::sql_literal::parse_tables(value);
+                            let pos = n.start_position();
+                            let end = n.end_position();
+                            let span = (
+                                pos.row as u32,
+                                pos.column as u32,
+                                end.row as u32,
+                                end.column as u32,
+                            );
+                            let (enclosing_symbol, enclosing_owner) =
+                                enclosing_symbol_and_owner_pub(n, source);
+                            sql_refs.push(RawSqlRef {
+                                tables: parsed.tables,
+                                unresolved: parsed.unresolved,
+                                span,
+                                enclosing_symbol,
+                                enclosing_owner,
+                            });
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -200,7 +246,7 @@ pub fn extract_ts_calls_and_path_literals(
             stack.push(child);
         }
     }
-    path_literals
+    (path_literals, sql_refs)
 }
 
 fn ts_callee_name(
