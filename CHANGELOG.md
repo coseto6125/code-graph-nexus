@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6.1 - 2026-05-30
+
+### Features
+
+- SQL-in-string → code→table edges (QueriesTable) (#515)
+- list-repos as narrowed alias of `ecp summary` (#495)
+
+### Bug Fixes
+
+- capture namespace import `import * as ns` as RawImport (#513)
+- re-wire --dump-resolver + fix WarmAttach race breaking diff on fresh baselines (#488)
 ## v0.6.0 - 2026-05-29
 
 ### Features
