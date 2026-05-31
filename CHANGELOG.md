@@ -4,9 +4,19 @@
 
 ### Bug Fixes
 
+- classify multi-assigned instance field as field-reassign, not uid-collision (#525)
 - try next-best sibling instead of giving up on the newest (#522)
 - close symbol-extraction gaps across 8 languages (#520)
 - warn on unknown property name instead of silent 0 rows (#521)
+
+### Refactor
+
+- filter unknown cypher props before sort/dedup (#523)
+
+### Chore
+
+- make `ecp impact --file` the primary flag, keep `--file_path` as alias (#526)
+
 ## v0.6.1 - 2026-05-30
 
 ### Features
