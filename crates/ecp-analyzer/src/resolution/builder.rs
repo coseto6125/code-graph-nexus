@@ -117,6 +117,15 @@ fn path_pattern_ac() -> &'static (AhoCorasick, Vec<PathPatternKind>) {
 ///       portability shims). Tree-sitter parses both branches without
 ///       preprocessor evaluation, so both emit nodes that collide.
 ///
+///   `field-reassign` — A non-C-family `Property` colliding with itself: the
+///       same instance field assigned in more than one place (`self.x = …` in
+///       `__init__` then again in another method; `this.x = …`; `@x = …`).
+///       The uid `(kind, path, owner, name)` is identical across assignments
+///       by design — they ARE the same field. Deduping to one node is correct
+///       and loses no information, so this is not a parser bug and must not
+///       surface as a `uid-collision` BlindSpot (it would falsely flag
+///       `ecp impact`/`inspect` traversal as incomplete for ordinary OO code).
+///
 ///   `uid-collision`  — Everything else: a true ambiguity in the corpus
 ///       worth investigating. After this reclassification, the count
 ///       drops from ~25K to <1K on .sample_repo, making the residual
@@ -147,6 +156,11 @@ pub(crate) fn classify_collision(kind: NodeKind, path: &str) -> &'static str {
         )
     {
         return "ifdef-redef";
+    }
+    // Non-C-family Property reaching here is the same instance field assigned
+    // in more than one place — normal OO, deduped without information loss.
+    if matches!(kind, NodeKind::Property) {
+        return "field-reassign";
     }
     "uid-collision"
 }
@@ -484,46 +498,53 @@ impl GraphBuilder {
                     //   - uid-collision   : everything else (real parser bug
                     //     or unhandled corpus pattern).
                     let bs_kind = classify_collision(raw_node.kind, &path_str);
-                    // Reconstruct prev info from the first occurrence's Node
-                    // (rare path; the alloc savings on every other node pay
-                    // for this lookup many times over).
-                    let prev_node: &ecp_core::graph::Node = &nodes[prev_idx as usize];
-                    let prev_kind = prev_node.kind.as_str();
-                    let prev_path = string_pool.resolve(&files[prev_node.file_idx as usize].path);
-                    let prev_name = string_pool.resolve(&prev_node.name);
-                    let prev_owner = if prev_node.owner_class.len > 0 {
-                        string_pool.resolve(&prev_node.owner_class)
-                    } else {
-                        ""
-                    };
-                    let hint = ecp_core::graph::format_hint(
-                        bs_kind,
-                        ecp_core::graph::HintFields {
-                            kind: prev_kind,
-                            path: prev_path,
-                            owner: prev_owner,
-                            name: prev_name,
-                        },
-                        ecp_core::graph::HintFields {
-                            kind: raw_node.kind.as_str(),
-                            path: &path_str,
-                            owner: raw_node.owner_class.as_deref().unwrap_or(""),
-                            name: &raw_node.name,
-                        },
-                    );
-                    collision_blind_spots.push(BlindSpotRecord {
-                        kind: string_pool.add(bs_kind),
-                        file_path: string_pool.add(&path_str),
-                        start_row: raw_node.span.0,
-                        start_col: raw_node.span.1,
-                        end_row: raw_node.span.2,
-                        end_col: raw_node.span.3,
-                        hint: string_pool.add(&hint),
-                        // uid-collision is a parser-metric BlindSpot
-                        // (`DEV_METRIC_BS_KINDS`); not LLM-actionable, so the
-                        // is_test flag is irrelevant — fix to false.
-                        is_test: false,
-                    });
+                    // `field-reassign` is the same instance field assigned in
+                    // multiple places; deduping to one node loses no information,
+                    // so it records NO BlindSpot — otherwise it would falsely flag
+                    // `ecp impact`/`inspect` traversal as incomplete for ordinary
+                    // OO code. The tombstone below still runs (the dedup is real).
+                    if bs_kind != "field-reassign" {
+                        // Reconstruct prev info from the first occurrence's Node
+                        // (rare path; the alloc savings on every other node pay
+                        // for this lookup many times over).
+                        let prev_node: &ecp_core::graph::Node = &nodes[prev_idx as usize];
+                        let prev_kind = prev_node.kind.as_str();
+                        let prev_path =
+                            string_pool.resolve(&files[prev_node.file_idx as usize].path);
+                        let prev_name = string_pool.resolve(&prev_node.name);
+                        let prev_owner = if prev_node.owner_class.len > 0 {
+                            string_pool.resolve(&prev_node.owner_class)
+                        } else {
+                            ""
+                        };
+                        let hint = ecp_core::graph::format_hint(
+                            bs_kind,
+                            ecp_core::graph::HintFields {
+                                kind: prev_kind,
+                                path: prev_path,
+                                owner: prev_owner,
+                                name: prev_name,
+                            },
+                            ecp_core::graph::HintFields {
+                                kind: raw_node.kind.as_str(),
+                                path: &path_str,
+                                owner: raw_node.owner_class.as_deref().unwrap_or(""),
+                                name: &raw_node.name,
+                            },
+                        );
+                        collision_blind_spots.push(BlindSpotRecord {
+                            kind: string_pool.add(bs_kind),
+                            file_path: string_pool.add(&path_str),
+                            start_row: raw_node.span.0,
+                            start_col: raw_node.span.1,
+                            end_row: raw_node.span.2,
+                            end_col: raw_node.span.3,
+                            hint: string_pool.add(&hint),
+                            // parser-metric BlindSpot (`DEV_METRIC_BS_KINDS`); not
+                            // LLM-actionable, so is_test is irrelevant — fix false.
+                            is_test: false,
+                        });
+                    }
                     // Push a tombstone Node + tombstone SymbolTable entry to keep
                     // both `nodes.len()` and `node_kinds.len()` ≡ current_node_idx.
                     // The tombstone is NOT registered in file_scoped / global_scoped,
@@ -2436,7 +2457,6 @@ mod tests {
             (NodeKind::Impl, "Rust/lib.rs"),
             (NodeKind::Const, "bash/aliases.sh"),
             (NodeKind::Class, "Swift/AppDelegate.swift"),
-            (NodeKind::Property, "Rust/benches/copy.rs"),
             // C/C++ Class is not in the ifdef-redef list (class is C++-only
             // and uses body anchoring after the cpp scm tighten).
             (NodeKind::Class, "Cpp/foo.cpp"),
@@ -2447,6 +2467,24 @@ mod tests {
                 "kind={kind:?} path={path}"
             );
         }
+    }
+
+    #[test]
+    fn classify_non_c_property_is_field_reassign() {
+        // An instance field assigned in multiple places (self.x / this.x / @x)
+        // collides with itself by design — not a parser bug.
+        for path in ["py/manager.py", "js/store.js", "Rust/benches/copy.rs"] {
+            assert_eq!(
+                classify_collision(NodeKind::Property, path),
+                "field-reassign",
+                "non-C-family Property must classify as field-reassign: {path}"
+            );
+        }
+        // C-family Property stays ifdef-redef (header redefinition, not OO field).
+        assert_eq!(
+            classify_collision(NodeKind::Property, "c/foo.h"),
+            "ifdef-redef"
+        );
     }
 
     /// L0 end-to-end: caller imports `./b`, defining file lives at
